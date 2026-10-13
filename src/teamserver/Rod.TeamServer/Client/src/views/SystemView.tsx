@@ -58,130 +58,132 @@ export function SystemView() {
   }, [refresh])
 
   return (
-    <div className="card">
-      <h3>
+    <section className="view">
+      <h2>
         System
         <HelpHint>
           The host this teamserver runs on, and the environment its build pipeline found —
           toolchains, source trees, per-target readiness — so a missing prerequisite is a glance
           here, not a failed build.
         </HelpHint>
-      </h3>
-      <div className="inline-form">
-        <button className="ghost" onClick={() => void refresh()} disabled={busy}>
-          <Icon name="refresh" />
-          Refresh
-        </button>
-      </div>
-      {error && <p className="error">{error}</p>}
+      </h2>
+      <div className="card">
+        <div className="inline-form">
+          <button className="ghost" onClick={() => void refresh()} disabled={busy}>
+            <Icon name="refresh" />
+            Refresh
+          </button>
+        </div>
+        {error && <p className="error">{error}</p>}
 
-      {info ? (
-        <>
-          <h4>Server</h4>
-          <dl className="kv">
-            <dt>Host</dt>
-            <dd>{info.server.host}</dd>
-            <dt>Operating system</dt>
-            <dd>{info.server.operatingSystem}</dd>
-            <dt>Runtime</dt>
-            <dd>{info.server.runtime}</dd>
-            <dt>Uptime</dt>
-            <dd title={`Started ${new Date(info.server.startedAt).toLocaleString()}`}>
-              {elapsed(info.server.startedAt)}
-            </dd>
-          </dl>
+        {info ? (
+          <>
+            <h4>Server</h4>
+            <dl className="kv">
+              <dt>Host</dt>
+              <dd>{info.server.host}</dd>
+              <dt>Operating system</dt>
+              <dd>{info.server.operatingSystem}</dd>
+              <dt>Runtime</dt>
+              <dd>{info.server.runtime}</dd>
+              <dt>Uptime</dt>
+              <dd title={`Started ${new Date(info.server.startedAt).toLocaleString()}`}>
+                {elapsed(info.server.startedAt)}
+              </dd>
+            </dl>
 
-          <h4>Persistence</h4>
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Store</th>
-                  <th>Adapter</th>
-                </tr>
-              </thead>
-              <tbody>
-                {info.persistence.stores.map((store) => (
-                  <tr key={store.concern}>
-                    <td>{store.concern}</td>
-                    <td>
-                      <code>{store.adapter}</code>
-                    </td>
+            <h4>Persistence</h4>
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Store</th>
+                    <th>Adapter</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <p className="muted">
-            {info.persistence.postgresTarget
-              ? `Core state persists to PostgreSQL at ${info.persistence.postgresTarget} (set by ConnectionStrings:Postgres at startup -- a composition choice, not a runtime knob).`
-              : 'No database configured: core state (engagements, implants, tasks, tokens, listeners, launchers) lives in memory and dies with the process; the audit trail, artifacts, and payloads persist to ' +
-                (info.persistence.dataDirectory || '(no data directory configured)') +
-                '. Set ConnectionStrings:Postgres before startup for durable core state.'}
-          </p>
-
-          {info.buildUnits.map((unit) => (
-            <div key={unit.language} className="system-unit">
-              <h4>
-                <span className={unitStatusClass(unit.status)}>{unit.status}</span>{' '}
-                {unit.language} build unit
-              </h4>
-              <ul className="system-findings">
-                {unit.findings.map((f) => (
-                  <li key={f.area}>
-                    <span className={levelClass(f.level)}>{f.level}</span>{' '}
-                    <strong>{f.area}</strong>
-                    <span className="muted"> — {f.detail}</span>
-                  </li>
-                ))}
-              </ul>
-              <div className="table-wrap">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Target</th>
-                      <th>Triple</th>
-                      <th>Rust std</th>
-                      <th>Linker</th>
+                </thead>
+                <tbody>
+                  {info.persistence.stores.map((store) => (
+                    <tr key={store.concern}>
+                      <td>{store.concern}</td>
+                      <td>
+                        <code>{store.adapter}</code>
+                      </td>
                     </tr>
-                  </thead>
-                  <tbody>
-                    {unit.targets.map((t) => (
-                      <tr key={t.triple} className={t.stdInstalled && t.linkerFound ? '' : 'row-dim'}>
-                        <td>{t.target}</td>
-                        <td>
-                          <code>{t.triple}</code>
-                        </td>
-                        <td>
-                          <span className={t.stdInstalled ? 'status completed' : 'status failed'}>
-                            {t.stdInstalled ? 'installed' : 'missing'}
-                          </span>{' '}
-                          {!t.stdInstalled && (
-                            <span className="muted">rustup target add {t.triple}</span>
-                          )}
-                        </td>
-                        <td>
-                          <span className={t.linkerFound ? 'status completed' : 'status failed'}>
-                            {t.linkerFound ? 'present' : 'missing'}
-                          </span>{' '}
-                          <span className="muted">{t.linker}</span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                  ))}
+                </tbody>
+              </table>
             </div>
-          ))}
-        </>
-      ) : (
-        !error && (
-          <div className="empty">
-            <span className="spinner" />
-            Probing the environment…
-          </div>
-        )
-      )}
-    </div>
+            <p className="muted">
+              {info.persistence.postgresTarget
+                ? `Core state persists to PostgreSQL at ${info.persistence.postgresTarget} (set by ConnectionStrings:Postgres at startup -- a composition choice, not a runtime knob).`
+                : 'No database configured: core state (engagements, implants, tasks, tokens, listeners, launchers) lives in memory and dies with the process; the audit trail, artifacts, and payloads persist to ' +
+                  (info.persistence.dataDirectory || '(no data directory configured)') +
+                  '. Set ConnectionStrings:Postgres before startup for durable core state.'}
+            </p>
+
+            {info.buildUnits.map((unit) => (
+              <div key={unit.language} className="system-unit">
+                <h4>
+                  <span className={unitStatusClass(unit.status)}>{unit.status}</span>{' '}
+                  {unit.language} build unit
+                </h4>
+                <ul className="system-findings">
+                  {unit.findings.map((f) => (
+                    <li key={f.area}>
+                      <span className={levelClass(f.level)}>{f.level}</span>{' '}
+                      <strong>{f.area}</strong>
+                      <span className="muted"> — {f.detail}</span>
+                    </li>
+                  ))}
+                </ul>
+                <div className="table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Target</th>
+                        <th>Triple</th>
+                        <th>Rust std</th>
+                        <th>Linker</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {unit.targets.map((t) => (
+                        <tr key={t.triple} className={t.stdInstalled && t.linkerFound ? '' : 'row-dim'}>
+                          <td>{t.target}</td>
+                          <td>
+                            <code>{t.triple}</code>
+                          </td>
+                          <td>
+                            <span className={t.stdInstalled ? 'status completed' : 'status failed'}>
+                              {t.stdInstalled ? 'installed' : 'missing'}
+                            </span>{' '}
+                            {!t.stdInstalled && (
+                              <span className="muted">rustup target add {t.triple}</span>
+                            )}
+                          </td>
+                          <td>
+                            <span className={t.linkerFound ? 'status completed' : 'status failed'}>
+                              {t.linkerFound ? 'present' : 'missing'}
+                            </span>{' '}
+                            <span className="muted">{t.linker}</span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ))}
+          </>
+        ) : (
+          !error && (
+            <div className="empty">
+              <span className="spinner" />
+              Probing the environment…
+            </div>
+          )
+        )}
+      </div>
+    </section>
   )
 }

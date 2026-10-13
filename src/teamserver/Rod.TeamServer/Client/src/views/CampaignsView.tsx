@@ -101,9 +101,8 @@ export function CampaignsView({
   }
 
   return (
-    <div className="card">
-      <h3>
-        <Icon name="send" />
+    <section className="view">
+      <h2>
         Campaigns
         <HelpHint>
           The tracked lure into tasking: per-recipient messages whose links bind to per-recipient
@@ -111,84 +110,86 @@ export function CampaignsView({
           recipient is the price of enrollment attribution; delivery is single-attempt; the relay
           and its TLS posture are per-campaign decisions, never server defaults.
         </HelpHint>
-      </h3>
-      {error && <p className="error">{error}</p>}
+      </h2>
+      <div className="card">
+        {error && <p className="error">{error}</p>}
 
-      <div className="inline-form">
-        <button className="ghost" onClick={() => void refresh()}>
-          <Icon name="refresh" />
-          Refresh
-        </button>
-        <button className="primary" onClick={() => setShowCreate((v) => !v)}>
-          {showCreate ? 'Close the form' : 'New campaign'}
-        </button>
-      </div>
+        <div className="inline-form">
+          <button className="ghost" onClick={() => void refresh()}>
+            <Icon name="refresh" />
+            Refresh
+          </button>
+          <button className="primary" onClick={() => setShowCreate((v) => !v)}>
+            {showCreate ? 'Close the form' : 'New campaign'}
+          </button>
+        </div>
 
-      {showCreate && (
-        <CreateForm engagementId={engagementId} onCreated={(c) => void onCreated(c)} />
-      )}
+        {showCreate && (
+          <CreateForm engagementId={engagementId} onCreated={(c) => void onCreated(c)} />
+        )}
 
-      <div className="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>Name</th>
-              <th>State</th>
-              <th>Recipients</th>
-              <th>Evidence (o/c/x)</th>
-              <th>Created</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {campaigns.map((c) => (
-              <tr key={c.campaignId}>
-                <td>
-                  <a
-                    href={`#/engagements/${engagementId}/campaigns`}
-                    onClick={(e) => {
-                      e.preventDefault()
-                      void open(c.campaignId)
-                    }}
-                  >
-                    {c.name}
-                  </a>
-                </td>
-                <td title={STATE_HELP[c.state]}>{c.state}</td>
-                <td>
-                  {c.sent}/{c.total} sent{c.failed > 0 ? `, ${c.failed} failed` : ''}
-                </td>
-                <td>
-                  {c.opened}/{c.clicked}/{c.executed}
-                </td>
-                <td title={new Date(c.createdAt).toLocaleString()}>{ago(c.createdAt)}</td>
-                <td>
-                  {c.state === 'draft' && (
-                    <button disabled={busy} onClick={() => void act(c.campaignId, 'launch')}>
-                      Launch
-                    </button>
-                  )}
-                  {c.state !== 'revoked' && c.state !== 'draft' && (
-                    <button className="ghost" disabled={busy} onClick={() => void act(c.campaignId, 'revoke')}>
-                      Revoke
-                    </button>
-                  )}
-                </td>
-              </tr>
-            ))}
-            {campaigns.length === 0 && (
+        <div className="table-wrap">
+          <table>
+            <thead>
               <tr>
-                <td colSpan={6} className="muted">
-                  No campaigns yet.
-                </td>
+                <th>Name</th>
+                <th>State</th>
+                <th>Recipients</th>
+                <th>Evidence (o/c/x)</th>
+                <th>Created</th>
+                <th></th>
               </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+            </thead>
+            <tbody>
+              {campaigns.map((c) => (
+                <tr key={c.campaignId}>
+                  <td>
+                    <a
+                      href={`#/engagements/${engagementId}/campaigns`}
+                      onClick={(e) => {
+                        e.preventDefault()
+                        void open(c.campaignId)
+                      }}
+                    >
+                      {c.name}
+                    </a>
+                  </td>
+                  <td title={STATE_HELP[c.state]}>{c.state}</td>
+                  <td>
+                    {c.sent}/{c.total} sent{c.failed > 0 ? `, ${c.failed} failed` : ''}
+                  </td>
+                  <td>
+                    {c.opened}/{c.clicked}/{c.executed}
+                  </td>
+                  <td title={new Date(c.createdAt).toLocaleString()}>{ago(c.createdAt)}</td>
+                  <td>
+                    {c.state === 'draft' && (
+                      <button disabled={busy} onClick={() => void act(c.campaignId, 'launch')}>
+                        Launch
+                      </button>
+                    )}
+                    {c.state !== 'revoked' && c.state !== 'draft' && (
+                      <button className="ghost" disabled={busy} onClick={() => void act(c.campaignId, 'revoke')}>
+                        Revoke
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+              {campaigns.length === 0 && (
+                <tr>
+                  <td colSpan={6} className="muted">
+                    No campaigns yet.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
 
-      {selected && <Detail campaign={selected} onAct={act} busy={busy} />}
-    </div>
+        {selected && <Detail campaign={selected} onAct={act} busy={busy} />}
+      </div>
+    </section>
   )
 }
 

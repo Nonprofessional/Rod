@@ -455,8 +455,8 @@ export function ImplantsView({
   }
 
   return (
-    <div className="card">
-      <h3>
+    <section className="view">
+      <h2>
         Implants
         <HelpHint>
           Grouped by the host reported at enroll; the dot is the live session. A stream that
@@ -465,414 +465,416 @@ export function ImplantsView({
           as Sessions:Staleness:Threshold. The Last seen column always tells the truth in the
           meantime.
         </HelpHint>
-      </h3>
-      <p className="muted">
-        {sortedGroups.length} device{sortedGroups.length === 1 ? '' : 's'} ·{' '}
-        {filtered.length} implant{filtered.length === 1 ? '' : 's'} · {onlineCount} online
-        {filtering && implants.length !== filtered.length && (
-          <span title="Clear the toolbar's search and filters to see the whole fleet">
-            {' '}
-            (of {implants.length})
-          </span>
-        )}
-      </p>
-      <div className="table-toolbar">
-        <input
-          className="toolbar-search"
-          placeholder="Search host, id, user, class…"
-          value={searchDraft}
-          onChange={(e) => setSearchDraft(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') setSearch(searchDraft)
-          }}
-          title="Free text across host, id, user, class, and OS. Enter or the Search button applies; the dropdown filters are live."
-        />
-        <button
-          className="ghost"
-          onClick={() => setSearch(searchDraft)}
-          title="Apply the text search (Enter works too)"
-        >
-          Search
-        </button>
-        <select
-          value={stateFilter}
-          onChange={(e) => setStateFilter(e.target.value)}
-          aria-label="State filter"
-          title="The session/lifecycle state: online (live session), offline (no session), retired (burned)"
-        >
-          <option value="">All states</option>
-          <option value="online">Online</option>
-          <option value="offline">Offline</option>
-          <option value="retired">Retired</option>
-        </select>
-        <select
-          value={classFilter}
-          onChange={(e) => setClassFilter(e.target.value)}
-          aria-label="Class filter"
-          title="The implant class -- the capability set its build baked"
-        >
-          <option value="">All classes</option>
-          {classes.map((c) => (
-            <option key={c} value={c}>
-              {c}
-            </option>
-          ))}
-        </select>
-      </div>
-      <div className="table-wrap">
-        <table>
-            <thead>
-              <tr>
-                <th></th>
-                <th>{sortHeader('id', 'Implant')}</th>
-                <th>Status</th>
-                <th>User</th>
-                <th>{sortHeader('seen', 'Last seen')}</th>
-                <th>{sortHeader('kill', 'Kill date')}</th>
-                <th>Parent</th>
-                <th></th>
-              </tr>
-            </thead>
-          <tbody>
-            {pageGroups.length === 0 && (
-              <tr>
-                <td colSpan={8}>
-                  <div className="empty">
-                    <Icon name="cpu" />
-                    {implants.length === 0
-                      ? 'No implants enrolled yet.'
-                      : 'No implants match — clear the search or filters.'}
-                  </div>
-                </td>
-              </tr>
-            )}
-            {pageGroups.map((group) => (
-              <Fragment key={group.key}>
-                <tr
-                  className={`device-row${collapsed.has(group.key) ? ' collapsed' : ''}`}
-                  onClick={() => toggleGroup(group.key)}
-                >
-                  <td
-                    colSpan={8}
-                    title="Devices are grouped by the hostname reported at enroll. Two hosts that report the same hostname (cloned machines, a shared image) share a group -- the implant count and the rows underneath stay per-identity, so nothing merges beyond the presentation."
-                  >
-                    {/* The same left-side chevron every expandable row in the
-                        platform carries -- a group folds, a detail unfolds,
-                        one affordance either way. */}
-                    <Icon
-                      name={collapsed.has(group.key) ? 'chevronRight' : 'chevronDown'}
-                      className="device-caret"
-                    />
-                    <Icon name={osIconFor(group.os)} className="wire-icon device-os" />
-                    <strong>{group.hostname ?? 'unknown host'}</strong>
-                    <span
-                      className="device-meta device-osline"
-                      title={group.os ?? undefined}
-                    >
-                      {group.os || group.arch
-                        ? [group.os, group.arch].filter(Boolean).join(' · ')
-                        : 'no host facts reported'}
-                    </span>
-                    <span className="device-meta">
-                      {group.implants.length} implant{group.implants.length === 1 ? '' : 's'}
-                      {group.online > 0 ? ` · ${group.online} online` : ''}
-                    </span>
+      </h2>
+      <div className="card">
+        <p className="muted">
+          {sortedGroups.length} device{sortedGroups.length === 1 ? '' : 's'} ·{' '}
+          {filtered.length} implant{filtered.length === 1 ? '' : 's'} · {onlineCount} online
+          {filtering && implants.length !== filtered.length && (
+            <span title="Clear the toolbar's search and filters to see the whole fleet">
+              {' '}
+              (of {implants.length})
+            </span>
+          )}
+        </p>
+        <div className="table-toolbar">
+          <input
+            className="toolbar-search"
+            placeholder="Search host, id, user, class…"
+            value={searchDraft}
+            onChange={(e) => setSearchDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') setSearch(searchDraft)
+            }}
+            title="Free text across host, id, user, class, and OS. Enter or the Search button applies; the dropdown filters are live."
+          />
+          <button
+            className="ghost"
+            onClick={() => setSearch(searchDraft)}
+            title="Apply the text search (Enter works too)"
+          >
+            Search
+          </button>
+          <select
+            value={stateFilter}
+            onChange={(e) => setStateFilter(e.target.value)}
+            aria-label="State filter"
+            title="The session/lifecycle state: online (live session), offline (no session), retired (burned)"
+          >
+            <option value="">All states</option>
+            <option value="online">Online</option>
+            <option value="offline">Offline</option>
+            <option value="retired">Retired</option>
+          </select>
+          <select
+            value={classFilter}
+            onChange={(e) => setClassFilter(e.target.value)}
+            aria-label="Class filter"
+            title="The implant class -- the capability set its build baked"
+          >
+            <option value="">All classes</option>
+            {classes.map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="table-wrap">
+          <table>
+              <thead>
+                <tr>
+                  <th></th>
+                  <th>{sortHeader('id', 'Implant')}</th>
+                  <th>Status</th>
+                  <th>User</th>
+                  <th>{sortHeader('seen', 'Last seen')}</th>
+                  <th>{sortHeader('kill', 'Kill date')}</th>
+                  <th>Parent</th>
+                  <th></th>
+                </tr>
+              </thead>
+            <tbody>
+              {pageGroups.length === 0 && (
+                <tr>
+                  <td colSpan={8}>
+                    <div className="empty">
+                      <Icon name="cpu" />
+                      {implants.length === 0
+                        ? 'No implants enrolled yet.'
+                        : 'No implants match — clear the search or filters.'}
+                    </div>
                   </td>
                 </tr>
-                {!collapsed.has(group.key) &&
-                  group.implants.map((implant) => {
-                    const presence = presenceByImplant.get(implant.implantId)
-                    const lastSeen = seenOf(implant)
-                    const retired = !!implant.retiredAt
-                    return (
-                      <Fragment key={implant.implantId}>
-                        <tr
-                          className={implant.isOnline || retired ? 'console-row' : 'row-dim'}
-                          onContextMenu={(e) => {
-                            e.preventDefault()
-                            setMenuFor(implant.implantId)
-                            menu.openAt(e)
-                          }}
-                          onClick={() =>
-                            setDetailsFor((current) =>
-                              current === implant.implantId ? null : implant.implantId,
-                            )
-                          }
-                        >
-                          <td onClick={(e) => e.stopPropagation()}>
-                            <button
-                              className={`ghost sm row-expand${detailsFor === implant.implantId ? ' open' : ''}`}
-                              aria-label={
-                                detailsFor === implant.implantId
-                                  ? 'Hide the implant details'
-                                  : 'Expand the implant details'
-                              }
-                              title="Everything the record holds about this implant"
-                              onClick={() =>
-                                setDetailsFor((current) =>
-                                  current === implant.implantId ? null : implant.implantId,
-                                )
-                              }
-                            >
-                              <Icon
-                                name={
-                                  detailsFor === implant.implantId ? 'chevronDown' : 'chevronRight'
-                                }
-                              />
-                            </button>
-                          </td>
-                          <td>
-                            <span
-                              className={`dot ${!retired && implant.isOnline ? 'online' : 'offline'}`}
-                              title={
-                                retired
-                                  ? 'Retired: refused at handshake, untaskable'
-                                  : implant.isOnline
-                                    ? `Live session, online since ${new Date(presence?.onlineAt ?? implant.createdAt).toLocaleString()} -- a stream that dies silently holds Online until the staleness sweep closes it (see Settings)`
-                                    : lastSeen
-                                      ? `No active session; last heard ${new Date(lastSeen).toLocaleString()}`
-                                      : 'No active session'
-                              }
-                            />{' '}
-                            <code>{implant.implantId.slice(0, 8)}</code>{' '}
-                            <span className="muted">{implant.class}</span>
-                          </td>
-                          <td>
-                            <StatusBadge
-                              status={retired ? 'retired' : implant.isOnline ? 'online' : 'offline'}
-                            />
-                            {implant.isOnline && implant.lastCarrier === 'dns' && (
-                              <span
-                                className="muted"
-                                title="The degraded-mode contract: this session's last contact rode the DNS carrier -- presence, short tasking, and chunked results only. Channel tasks stay queued until a stream carrier returns."
-                              >
-                                {' '}
-                                degraded · dns
-                              </span>
-                            )}
-                            {!retired && driverHandle(implant.implantId) && (
-                              <span
-                                className="muted"
-                                title="Activity presence (Sec 4.5): the operator whose tasking this implant last saw -- soft signal, not an exclusive claim"
-                              >
-                                {' '}
-                                driving: {driverHandle(implant.implantId)}
-                              </span>
-                            )}
-                          </td>
-                          <td title="The account the implant process runs under, as reported at enroll">
-                            {implant.username ?? <span className="muted">&mdash;</span>}
-                          </td>
-                          <td>
-                            {lastSeen ? (
-                              <span
-                                title={new Date(lastSeen).toLocaleString()}
-                              >
-                                {ago(lastSeen, now)}
-                              </span>
-                            ) : (
-                              <span className="muted">&mdash;</span>
-                            )}
-                          </td>
-                          <td>
-                            {implant.killDate ? (
-                              <span title={new Date(implant.killDate).toLocaleString()}>
-                                {new Date(implant.killDate).toLocaleDateString()}
-                              </span>
-                            ) : (
-                              <span
-                                className="muted"
-                                title="No kill date baked -- the open-ended posture. The implant runs until retired; the teamserver never refuses it on time."
-                              >
-                                none
-                              </span>
-                            )}
-                          </td>
-                          <td>
-                            {implant.parentImplantId ? (
-                              <code>{implant.parentImplantId.slice(0, 8)}</code>
-                            ) : (
-                              <span className="muted">&mdash;</span>
-                            )}
-                          </td>
-                          <td onClick={(e) => e.stopPropagation()}>
-                            <div className="row-actions">
-                              <a
-                                className="button-link sm"
-                                href={`#/engagements/${engagementId}/implants/${implant.implantId}`}
-                                title="Open the session console"
-                              >
-                                Interact
-                              </a>
-                              <button className="sm" onClick={() => void onToggleNotes(implant.implantId)}>
-                                {notesFor === implant.implantId ? 'Hide notes' : 'Notes'}
-                              </button>
+              )}
+              {pageGroups.map((group) => (
+                <Fragment key={group.key}>
+                  <tr
+                    className={`device-row${collapsed.has(group.key) ? ' collapsed' : ''}`}
+                    onClick={() => toggleGroup(group.key)}
+                  >
+                    <td
+                      colSpan={8}
+                      title="Devices are grouped by the hostname reported at enroll. Two hosts that report the same hostname (cloned machines, a shared image) share a group -- the implant count and the rows underneath stay per-identity, so nothing merges beyond the presentation."
+                    >
+                      {/* The same left-side chevron every expandable row in the
+                          platform carries -- a group folds, a detail unfolds,
+                          one affordance either way. */}
+                      <Icon
+                        name={collapsed.has(group.key) ? 'chevronRight' : 'chevronDown'}
+                        className="device-caret"
+                      />
+                      <Icon name={osIconFor(group.os)} className="wire-icon device-os" />
+                      <strong>{group.hostname ?? 'unknown host'}</strong>
+                      <span
+                        className="device-meta device-osline"
+                        title={group.os ?? undefined}
+                      >
+                        {group.os || group.arch
+                          ? [group.os, group.arch].filter(Boolean).join(' · ')
+                          : 'no host facts reported'}
+                      </span>
+                      <span className="device-meta">
+                        {group.implants.length} implant{group.implants.length === 1 ? '' : 's'}
+                        {group.online > 0 ? ` · ${group.online} online` : ''}
+                      </span>
+                    </td>
+                  </tr>
+                  {!collapsed.has(group.key) &&
+                    group.implants.map((implant) => {
+                      const presence = presenceByImplant.get(implant.implantId)
+                      const lastSeen = seenOf(implant)
+                      const retired = !!implant.retiredAt
+                      return (
+                        <Fragment key={implant.implantId}>
+                          <tr
+                            className={implant.isOnline || retired ? 'console-row' : 'row-dim'}
+                            onContextMenu={(e) => {
+                              e.preventDefault()
+                              setMenuFor(implant.implantId)
+                              menu.openAt(e)
+                            }}
+                            onClick={() =>
+                              setDetailsFor((current) =>
+                                current === implant.implantId ? null : implant.implantId,
+                              )
+                            }
+                          >
+                            <td onClick={(e) => e.stopPropagation()}>
                               <button
-                                className="ghost sm menu-trigger"
-                                title="Implant actions"
-                                onClick={(e) => {
-                                  const rect = (e.currentTarget as HTMLButtonElement).getBoundingClientRect()
-                                  setMenuFor(implant.implantId)
-                                  menu.openAt({ x: rect.left, y: rect.bottom + 4 })
-                                }}
-                                onContextMenu={(e) => e.stopPropagation()}
+                                className={`ghost sm row-expand${detailsFor === implant.implantId ? ' open' : ''}`}
+                                aria-label={
+                                  detailsFor === implant.implantId
+                                    ? 'Hide the implant details'
+                                    : 'Expand the implant details'
+                                }
+                                title="Everything the record holds about this implant"
+                                onClick={() =>
+                                  setDetailsFor((current) =>
+                                    current === implant.implantId ? null : implant.implantId,
+                                  )
+                                }
                               >
-                                <Icon name="more" />
+                                <Icon
+                                  name={
+                                    detailsFor === implant.implantId ? 'chevronDown' : 'chevronRight'
+                                  }
+                                />
                               </button>
-                            </div>
-                          </td>
-                        </tr>
-                        {detailsFor === implant.implantId && (
-                          <tr className="notes-row">
-                            <td colSpan={8}>
-                              <ImplantDetail
-                                implant={implant}
-                                lastSeen={seenOf(implant)}
-                                presence={presenceByImplant.get(implant.implantId) ?? null}
-                              />
                             </td>
-                          </tr>
-                        )}
-                        {notesFor === implant.implantId && (
-                          <tr className="notes-row">
-                            <td colSpan={8}>
-                              <div className="notes-panel">
-                                <div className="label-chips">
-                                  {labels.length === 0 ? (
-                                    <span className="muted">No labels.</span>
-                                  ) : (
-                                    labels.map((l) => (
-                                      <span key={l.label} className="chip" title={`set by ${l.setBy.slice(0, 8)}`}>
-                                        {l.label}
-                                        <button
-                                          className="chip-x"
-                                          title="Clear this label (an attributed trail fact)"
-                                          onClick={() => void onClearLabel(implant.implantId, l.label)}
-                                        >
-                                          ×
-                                        </button>
-                                      </span>
-                                    ))
-                                  )}
-                                  <form className="task-form" onSubmit={onSetLabel}>
-                                    <input
-                                      placeholder="label"
-                                      value={labelDraft}
-                                      onChange={(e) => setLabelDraft(e.target.value)}
-                                    />
-                                    <button className="sm" type="submit" disabled={noteBusy || !labelDraft.trim()}>
-                                      Label
-                                    </button>
-                                  </form>
-                                </div>
-                                <ul className="notes-list">
-                                  {notes.length === 0 ? (
-                                    <li className="muted">No notes on this implant yet.</li>
-                                  ) : (
-                                    notes.map((n) => (
-                                      <li key={n.noteId}>
-                                        <span className="notes-meta">
-                                          <code>{n.author.slice(0, 8)}</code>{' '}
-                                          {new Date(n.at).toLocaleString()}
-                                        </span>
-                                        {n.text}
-                                      </li>
-                                    ))
-                                  )}
-                                </ul>
-                                <form className="task-form" onSubmit={onAddNote}>
-                                  <input
-                                    className="wide"
-                                    placeholder="whose beacon is this?"
-                                    value={noteDraft}
-                                    onChange={(e) => setNoteDraft(e.target.value)}
-                                  />
-                                  <button className="sm" type="submit" disabled={noteBusy || !noteDraft.trim()}>
-                                    Add note
-                                  </button>
-                                </form>
+                            <td>
+                              <span
+                                className={`dot ${!retired && implant.isOnline ? 'online' : 'offline'}`}
+                                title={
+                                  retired
+                                    ? 'Retired: refused at handshake, untaskable'
+                                    : implant.isOnline
+                                      ? `Live session, online since ${new Date(presence?.onlineAt ?? implant.createdAt).toLocaleString()} -- a stream that dies silently holds Online until the staleness sweep closes it (see Settings)`
+                                      : lastSeen
+                                        ? `No active session; last heard ${new Date(lastSeen).toLocaleString()}`
+                                        : 'No active session'
+                                }
+                              />{' '}
+                              <code>{implant.implantId.slice(0, 8)}</code>{' '}
+                              <span className="muted">{implant.class}</span>
+                            </td>
+                            <td>
+                              <StatusBadge
+                                status={retired ? 'retired' : implant.isOnline ? 'online' : 'offline'}
+                              />
+                              {implant.isOnline && implant.lastCarrier === 'dns' && (
+                                <span
+                                  className="muted"
+                                  title="The degraded-mode contract: this session's last contact rode the DNS carrier -- presence, short tasking, and chunked results only. Channel tasks stay queued until a stream carrier returns."
+                                >
+                                  {' '}
+                                  degraded · dns
+                                </span>
+                              )}
+                              {!retired && driverHandle(implant.implantId) && (
+                                <span
+                                  className="muted"
+                                  title="Activity presence (Sec 4.5): the operator whose tasking this implant last saw -- soft signal, not an exclusive claim"
+                                >
+                                  {' '}
+                                  driving: {driverHandle(implant.implantId)}
+                                </span>
+                              )}
+                            </td>
+                            <td title="The account the implant process runs under, as reported at enroll">
+                              {implant.username ?? <span className="muted">&mdash;</span>}
+                            </td>
+                            <td>
+                              {lastSeen ? (
+                                <span
+                                  title={new Date(lastSeen).toLocaleString()}
+                                >
+                                  {ago(lastSeen, now)}
+                                </span>
+                              ) : (
+                                <span className="muted">&mdash;</span>
+                              )}
+                            </td>
+                            <td>
+                              {implant.killDate ? (
+                                <span title={new Date(implant.killDate).toLocaleString()}>
+                                  {new Date(implant.killDate).toLocaleDateString()}
+                                </span>
+                              ) : (
+                                <span
+                                  className="muted"
+                                  title="No kill date baked -- the open-ended posture. The implant runs until retired; the teamserver never refuses it on time."
+                                >
+                                  none
+                                </span>
+                              )}
+                            </td>
+                            <td>
+                              {implant.parentImplantId ? (
+                                <code>{implant.parentImplantId.slice(0, 8)}</code>
+                              ) : (
+                                <span className="muted">&mdash;</span>
+                              )}
+                            </td>
+                            <td onClick={(e) => e.stopPropagation()}>
+                              <div className="row-actions">
+                                <a
+                                  className="button-link sm"
+                                  href={`#/engagements/${engagementId}/implants/${implant.implantId}`}
+                                  title="Open the session console"
+                                >
+                                  Interact
+                                </a>
+                                <button className="sm" onClick={() => void onToggleNotes(implant.implantId)}>
+                                  {notesFor === implant.implantId ? 'Hide notes' : 'Notes'}
+                                </button>
+                                <button
+                                  className="ghost sm menu-trigger"
+                                  title="Implant actions"
+                                  onClick={(e) => {
+                                    const rect = (e.currentTarget as HTMLButtonElement).getBoundingClientRect()
+                                    setMenuFor(implant.implantId)
+                                    menu.openAt({ x: rect.left, y: rect.bottom + 4 })
+                                  }}
+                                  onContextMenu={(e) => e.stopPropagation()}
+                                >
+                                  <Icon name="more" />
+                                </button>
                               </div>
                             </td>
                           </tr>
-                        )}
-                      </Fragment>
-                    )
-                  })}
-              </Fragment>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      {totalPages > 1 && (
-        <div className="table-pager">
-          <button
-            className="ghost sm"
-            disabled={currentPage === 0}
-            onClick={() => setPage(currentPage - 1)}
-          >
-            ‹ Prev
-          </button>
-          <span className="muted">
-            page {currentPage + 1} / {totalPages}
-          </span>
-          <button
-            className="ghost sm"
-            disabled={currentPage >= totalPages - 1}
-            onClick={() => setPage(currentPage + 1)}
-          >
-            Next ›
-          </button>
+                          {detailsFor === implant.implantId && (
+                            <tr className="notes-row">
+                              <td colSpan={8}>
+                                <ImplantDetail
+                                  implant={implant}
+                                  lastSeen={seenOf(implant)}
+                                  presence={presenceByImplant.get(implant.implantId) ?? null}
+                                />
+                              </td>
+                            </tr>
+                          )}
+                          {notesFor === implant.implantId && (
+                            <tr className="notes-row">
+                              <td colSpan={8}>
+                                <div className="notes-panel">
+                                  <div className="label-chips">
+                                    {labels.length === 0 ? (
+                                      <span className="muted">No labels.</span>
+                                    ) : (
+                                      labels.map((l) => (
+                                        <span key={l.label} className="chip" title={`set by ${l.setBy.slice(0, 8)}`}>
+                                          {l.label}
+                                          <button
+                                            className="chip-x"
+                                            title="Clear this label (an attributed trail fact)"
+                                            onClick={() => void onClearLabel(implant.implantId, l.label)}
+                                          >
+                                            ×
+                                          </button>
+                                        </span>
+                                      ))
+                                    )}
+                                    <form className="task-form" onSubmit={onSetLabel}>
+                                      <input
+                                        placeholder="label"
+                                        value={labelDraft}
+                                        onChange={(e) => setLabelDraft(e.target.value)}
+                                      />
+                                      <button className="sm" type="submit" disabled={noteBusy || !labelDraft.trim()}>
+                                        Label
+                                      </button>
+                                    </form>
+                                  </div>
+                                  <ul className="notes-list">
+                                    {notes.length === 0 ? (
+                                      <li className="muted">No notes on this implant yet.</li>
+                                    ) : (
+                                      notes.map((n) => (
+                                        <li key={n.noteId}>
+                                          <span className="notes-meta">
+                                            <code>{n.author.slice(0, 8)}</code>{' '}
+                                            {new Date(n.at).toLocaleString()}
+                                          </span>
+                                          {n.text}
+                                        </li>
+                                      ))
+                                    )}
+                                  </ul>
+                                  <form className="task-form" onSubmit={onAddNote}>
+                                    <input
+                                      className="wide"
+                                      placeholder="whose beacon is this?"
+                                      value={noteDraft}
+                                      onChange={(e) => setNoteDraft(e.target.value)}
+                                    />
+                                    <button className="sm" type="submit" disabled={noteBusy || !noteDraft.trim()}>
+                                      Add note
+                                    </button>
+                                  </form>
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                        </Fragment>
+                      )
+                    })}
+                </Fragment>
+              ))}
+            </tbody>
+          </table>
         </div>
-      )}
-      {error && <p className="error">{error}</p>}
-      {shell && (
-        <ShellDialog
-          engagementId={engagementId}
-          implantId={shell.implantId}
-          hostLabel={shell.host}
-          onClose={() => setShell(null)}
-        />
-      )}
-      {menu.menu && menuFor && (
-        <ContextMenu
-          x={menu.menu.x}
-          y={menu.menu.y}
-          entries={menuEntriesFor(menuFor)}
-          onClose={() => {
-            menu.close()
-            setMenuFor(null)
-          }}
-        />
-      )}
-      {dialog && (
-        <TaskDialog
-          engagementId={engagementId}
-          implantId={dialog.implantId}
-          verb={dialog.verb}
-          form={
-            VERB_FORMS[dialog.verb] ?? DEFAULT_TASK_FORM
-          }
-          attributes={attributesByVerb.get(dialog.verb) ?? {}}
-          onClose={() => setDialog(null)}
-          onIssued={() => void refresh()}
-        />
-      )}
-      {processesFor && (
-        <ProcessBrowser
-          engagementId={engagementId}
-          implantId={processesFor}
-          onClose={() => setProcessesFor(null)}
-        />
-      )}
-      {filesFor && (
-        <FileBrowser
-          engagementId={engagementId}
-          implantId={filesFor}
-          osHint={implants.find((i) => i.implantId === filesFor)?.os ?? null}
-          onClose={() => setFilesFor(null)}
-        />
-      )}
-    </div>
+        {totalPages > 1 && (
+          <div className="table-pager">
+            <button
+              className="ghost sm"
+              disabled={currentPage === 0}
+              onClick={() => setPage(currentPage - 1)}
+            >
+              ‹ Prev
+            </button>
+            <span className="muted">
+              page {currentPage + 1} / {totalPages}
+            </span>
+            <button
+              className="ghost sm"
+              disabled={currentPage >= totalPages - 1}
+              onClick={() => setPage(currentPage + 1)}
+            >
+              Next ›
+            </button>
+          </div>
+        )}
+        {error && <p className="error">{error}</p>}
+        {shell && (
+          <ShellDialog
+            engagementId={engagementId}
+            implantId={shell.implantId}
+            hostLabel={shell.host}
+            onClose={() => setShell(null)}
+          />
+        )}
+        {menu.menu && menuFor && (
+          <ContextMenu
+            x={menu.menu.x}
+            y={menu.menu.y}
+            entries={menuEntriesFor(menuFor)}
+            onClose={() => {
+              menu.close()
+              setMenuFor(null)
+            }}
+          />
+        )}
+        {dialog && (
+          <TaskDialog
+            engagementId={engagementId}
+            implantId={dialog.implantId}
+            verb={dialog.verb}
+            form={
+              VERB_FORMS[dialog.verb] ?? DEFAULT_TASK_FORM
+            }
+            attributes={attributesByVerb.get(dialog.verb) ?? {}}
+            onClose={() => setDialog(null)}
+            onIssued={() => void refresh()}
+          />
+        )}
+        {processesFor && (
+          <ProcessBrowser
+            engagementId={engagementId}
+            implantId={processesFor}
+            onClose={() => setProcessesFor(null)}
+          />
+        )}
+        {filesFor && (
+          <FileBrowser
+            engagementId={engagementId}
+            implantId={filesFor}
+            osHint={implants.find((i) => i.implantId === filesFor)?.os ?? null}
+            onClose={() => setFilesFor(null)}
+          />
+        )}
+      </div>
+    </section>
   )
 }
 

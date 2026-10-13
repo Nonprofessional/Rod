@@ -107,8 +107,8 @@ export function PayloadsView({ engagementId }: { engagementId: string }) {
   }
 
   return (
-    <div className="card">
-      <h3>
+    <section className="view">
+      <h2>
         Payloads
         <HelpHint>
           Every payload this engagement built — durable, restart-safe, filterable. The credential
@@ -116,226 +116,228 @@ export function PayloadsView({ engagementId }: { engagementId: string }) {
           parameters. Mint credential, beside the filter, mints a standalone delivery credential
           for hand delivery — no payload attached.
         </HelpHint>
-      </h3>
-      <div className="inline-form">
-        <input
-          className="filter-text"
-          placeholder="Filter (linux, aot, listener, fingerprint…)"
-          value={filterDraft}
-          onChange={(e) => setFilterDraft(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') setFilter(filterDraft)
-          }}
-          title="Free text across class, language, target, listener, and fingerprint. Enter or the Search button applies."
-        />
-        <button
-          className="ghost"
-          onClick={() => setFilter(filterDraft)}
-          title="Apply the filter (Enter works too)"
-        >
-          Search
-        </button>
-        <button className="ghost" onClick={() => void refresh()}>
-          <Icon name="refresh" />
-          Refresh
-        </button>
-        <button
-          className="ghost"
-          onClick={() => setMintOpen(true)}
-          title="Mint a standalone deployment credential -- the same token shape a build bakes, for hand delivery; single-use and one hour by default, the secret shows once"
-        >
-          Mint credential
-        </button>
-      </div>
-      {mintOpen && (
-        <MintTokenDialog engagementId={engagementId} onClose={() => setMintOpen(false)} />
-      )}
-      {error && <p className="error">{error}</p>}
-      <div className="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th></th>
-              <th>Built</th>
-              <th>Kind</th>
-              <th>Target</th>
-              <th>Listener</th>
-              <th>Credential</th>
-              <th>Size</th>
-              <th>Fingerprint</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {payloads.length === 0 && (
+      </h2>
+      <div className="card">
+        <div className="inline-form">
+          <input
+            className="filter-text"
+            placeholder="Filter (linux, aot, listener, fingerprint…)"
+            value={filterDraft}
+            onChange={(e) => setFilterDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') setFilter(filterDraft)
+            }}
+            title="Free text across class, language, target, listener, and fingerprint. Enter or the Search button applies."
+          />
+          <button
+            className="ghost"
+            onClick={() => setFilter(filterDraft)}
+            title="Apply the filter (Enter works too)"
+          >
+            Search
+          </button>
+          <button className="ghost" onClick={() => void refresh()}>
+            <Icon name="refresh" />
+            Refresh
+          </button>
+          <button
+            className="ghost"
+            onClick={() => setMintOpen(true)}
+            title="Mint a standalone deployment credential -- the same token shape a build bakes, for hand delivery; single-use and one hour by default, the secret shows once"
+          >
+            Mint credential
+          </button>
+        </div>
+        {mintOpen && (
+          <MintTokenDialog engagementId={engagementId} onClose={() => setMintOpen(false)} />
+        )}
+        {error && <p className="error">{error}</p>}
+        <div className="table-wrap">
+          <table>
+            <thead>
               <tr>
-                <td colSpan={9}>
-                  <div className="empty">
-                    <Icon name="package" />
-                    No payloads stored yet -- build one on the Build tab.
-                  </div>
-                </td>
+                <th></th>
+                <th>Built</th>
+                <th>Kind</th>
+                <th>Target</th>
+                <th>Listener</th>
+                <th>Credential</th>
+                <th>Size</th>
+                <th>Fingerprint</th>
+                <th></th>
               </tr>
-            )}
-            {payloads
-                .filter((p) => {
-                  const q = filter.trim().toLowerCase()
-                  if (!q) return true
-                  const front = frontFor(p.endpoint, listeners)
-                  return [p.class, p.language, p.kind, p.target, p.build?.format, p.endpoint, front?.name, p.fingerprint].some(
-                    (v) => v?.toLowerCase().includes(q),
-                  )
-                })
-                .map((p) => {
-                  const front = frontFor(p.endpoint, listeners)
-                  const expired =
-                    p.tokenExpiresAt !== null && new Date(p.tokenExpiresAt).getTime() < Date.now()
-                  const used =
-                    p.tokenMaxUses !== null && p.tokenRemainingUses !== null
-                      ? p.tokenMaxUses - p.tokenRemainingUses
-                      : null
-                  const open = expanded === p.artifactId
-                  return (
-                    <Fragment key={p.artifactId}>
-                      <tr
-                        className="console-row"
-                        onClick={() => setExpanded(open ? null : p.artifactId)}
-                      >
-                        <td onClick={(e) => e.stopPropagation()}>
-                          <button
-                            className={`ghost sm row-expand${open ? ' open' : ''}`}
-                            aria-label={open ? 'Collapse build parameters' : 'Expand build parameters'}
-                            title={open ? 'Hide the build parameters' : 'The parameters this payload was built with'}
-                            onClick={() => setExpanded(open ? null : p.artifactId)}
-                          >
-                            <Icon name={open ? 'chevronDown' : 'chevronRight'} />
-                          </button>
-                        </td>
-                        <td>{new Date(p.builtAt).toLocaleString()}</td>
-                        <td>
-                          <code>
-                            {p.language} · {kindLabel(p.class)}
-                            {p.kind === 'loader' && (
-                              <span
-                                className="muted"
-                                title={`Loader: fetches ${p.deliversPayloadId ?? 'its payload'} sealed and runs it from a memfd -- nothing lands on disk. Deleting the delivered artifact ends the delivery.`}
-                              >
-                                {' '}· loader
-                              </span>
+            </thead>
+            <tbody>
+              {payloads.length === 0 && (
+                <tr>
+                  <td colSpan={9}>
+                    <div className="empty">
+                      <Icon name="package" />
+                      No payloads stored yet -- build one on the Build tab.
+                    </div>
+                  </td>
+                </tr>
+              )}
+              {payloads
+                  .filter((p) => {
+                    const q = filter.trim().toLowerCase()
+                    if (!q) return true
+                    const front = frontFor(p.endpoint, listeners)
+                    return [p.class, p.language, p.kind, p.target, p.build?.format, p.endpoint, front?.name, p.fingerprint].some(
+                      (v) => v?.toLowerCase().includes(q),
+                    )
+                  })
+                  .map((p) => {
+                    const front = frontFor(p.endpoint, listeners)
+                    const expired =
+                      p.tokenExpiresAt !== null && new Date(p.tokenExpiresAt).getTime() < Date.now()
+                    const used =
+                      p.tokenMaxUses !== null && p.tokenRemainingUses !== null
+                        ? p.tokenMaxUses - p.tokenRemainingUses
+                        : null
+                    const open = expanded === p.artifactId
+                    return (
+                      <Fragment key={p.artifactId}>
+                        <tr
+                          className="console-row"
+                          onClick={() => setExpanded(open ? null : p.artifactId)}
+                        >
+                          <td onClick={(e) => e.stopPropagation()}>
+                            <button
+                              className={`ghost sm row-expand${open ? ' open' : ''}`}
+                              aria-label={open ? 'Collapse build parameters' : 'Expand build parameters'}
+                              title={open ? 'Hide the build parameters' : 'The parameters this payload was built with'}
+                              onClick={() => setExpanded(open ? null : p.artifactId)}
+                            >
+                              <Icon name={open ? 'chevronDown' : 'chevronRight'} />
+                            </button>
+                          </td>
+                          <td>{new Date(p.builtAt).toLocaleString()}</td>
+                          <td>
+                            <code>
+                              {p.language} · {kindLabel(p.class)}
+                              {p.kind === 'loader' && (
+                                <span
+                                  className="muted"
+                                  title={`Loader: fetches ${p.deliversPayloadId ?? 'its payload'} sealed and runs it from a memfd -- nothing lands on disk. Deleting the delivered artifact ends the delivery.`}
+                                >
+                                  {' '}· loader
+                                </span>
+                              )}
+                            </code>
+                          </td>
+                          <td>
+                            {p.target ?? '—'}
+                            {p.build?.format && p.build.format !== 'exe' && (
+                              <span className="muted"> · {p.build.format}</span>
                             )}
-                          </code>
-                        </td>
-                        <td>
-                          {p.target ?? '—'}
-                          {p.build?.format && p.build.format !== 'exe' && (
-                            <span className="muted"> · {p.build.format}</span>
-                          )}
-                        </td>
-                        <td>
-                          <span
-                            title={
-                              front
-                                ? `The engagement's ${front.transport} listener: ${p.endpoint} (enroll + contact)`
-                                : `No listener serves this address (typed for a redirector): ${p.endpoint}`
-                            }
-                          >
-                            {front ? (
-                              <>
-                                {front.name} <span className="muted">({front.transport})</span> ·{' '}
-                                <code>{hostPortOf(p.endpoint ?? '')}</code>
-                              </>
+                          </td>
+                          <td>
+                            <span
+                              title={
+                                front
+                                  ? `The engagement's ${front.transport} listener: ${p.endpoint} (enroll + contact)`
+                                  : `No listener serves this address (typed for a redirector): ${p.endpoint}`
+                              }
+                            >
+                              {front ? (
+                                <>
+                                  {front.name} <span className="muted">({front.transport})</span> ·{' '}
+                                  <code>{hostPortOf(p.endpoint ?? '')}</code>
+                                </>
+                              ) : (
+                                <>
+                                  <code>{hostPortOf(p.endpoint ?? '')}</code>{' '}
+                                  <span className="muted">manual</span>
+                                </>
+                              )}
+                            </span>
+                          </td>
+                          <td onClick={(e) => e.stopPropagation()}>
+                            {p.tokenId ? (
+                              used !== null && p.tokenMaxUses !== null && p.tokenRemainingUses !== null ? (
+                                <span
+                                  title={`Baked token ${p.tokenId}${
+                                    p.tokenExpiresAt
+                                      ? ` · expires ${new Date(p.tokenExpiresAt).toLocaleString()}`
+                                      : ''
+                                  } -- one spend per enrolled host; a zero budget is unlimited`}
+                                >
+                                  {p.tokenMaxUses === 0 ? (
+                                    <>
+                                      unlimited{used > 0 ? ` · ${used} spent` : ''}
+                                    </>
+                                  ) : (
+                                    <>
+                                      {used}/{p.tokenMaxUses} spent · {p.tokenRemainingUses} left
+                                    </>
+                                  )}
+                                  {expired ? ' · expired' : ''}
+                                  {revoking === p.tokenId ? (
+                                    ' (revoking…)'
+                                  ) : (
+                                    <>
+                                      {' '}
+                                      <button
+                                        className="sm danger"
+                                        onClick={() => void onRevokeToken(p.tokenId!)}
+                                        title="The baked credential stops working at the next enrollment attempt"
+                                      >
+                                        Revoke
+                                      </button>
+                                    </>
+                                  )}
+                                </span>
+                              ) : (
+                                // A state this row cannot read means the store no
+                                // longer holds the token: revoked (which reads as
+                                // gone by contract), or hard-deleted with its
+                                // launcher. The revoke endpoint is
+                                // idempotent-refusing -- a click here could only
+                                // ever answer 404 -- so no button is offered.
+                                <span
+                                  className="muted"
+                                  title={`Baked token ${p.tokenId} is no longer held -- revoked, or deleted with its launcher. No more enrollments, and nothing left to revoke.`}
+                                >
+                                  no enrolls left
+                                </span>
+                              )
                             ) : (
-                              <>
-                                <code>{hostPortOf(p.endpoint ?? '')}</code>{' '}
-                                <span className="muted">manual</span>
-                              </>
+                              <span className="muted">—</span>
                             )}
-                          </span>
-                        </td>
-                        <td onClick={(e) => e.stopPropagation()}>
-                          {p.tokenId ? (
-                            used !== null && p.tokenMaxUses !== null && p.tokenRemainingUses !== null ? (
-                              <span
-                                title={`Baked token ${p.tokenId}${
-                                  p.tokenExpiresAt
-                                    ? ` · expires ${new Date(p.tokenExpiresAt).toLocaleString()}`
-                                    : ''
-                                } -- one spend per enrolled host; a zero budget is unlimited`}
-                              >
-                                {p.tokenMaxUses === 0 ? (
-                                  <>
-                                    unlimited{used > 0 ? ` · ${used} spent` : ''}
-                                  </>
-                                ) : (
-                                  <>
-                                    {used}/{p.tokenMaxUses} spent · {p.tokenRemainingUses} left
-                                  </>
-                                )}
-                                {expired ? ' · expired' : ''}
-                                {revoking === p.tokenId ? (
-                                  ' (revoking…)'
-                                ) : (
-                                  <>
-                                    {' '}
-                                    <button
-                                      className="sm danger"
-                                      onClick={() => void onRevokeToken(p.tokenId!)}
-                                      title="The baked credential stops working at the next enrollment attempt"
-                                    >
-                                      Revoke
-                                    </button>
-                                  </>
-                                )}
-                              </span>
-                            ) : (
-                              // A state this row cannot read means the store no
-                              // longer holds the token: revoked (which reads as
-                              // gone by contract), or hard-deleted with its
-                              // launcher. The revoke endpoint is
-                              // idempotent-refusing -- a click here could only
-                              // ever answer 404 -- so no button is offered.
-                              <span
-                                className="muted"
-                                title={`Baked token ${p.tokenId} is no longer held -- revoked, or deleted with its launcher. No more enrollments, and nothing left to revoke.`}
-                              >
-                                no enrolls left
-                              </span>
-                            )
-                          ) : (
-                            <span className="muted">—</span>
-                          )}
-                        </td>
-                        <td title={`${p.size} bytes`}>{fmtBytes(p.size)}</td>
-                        <td>
-                          <code title={p.fingerprint}>{p.fingerprint.slice(0, 16)}</code>
-                        </td>
-                        <td onClick={(e) => e.stopPropagation()}>
-                          <a
-                            className="download-link"
-                            href={`engagements/${engagementId}/payloads/${p.artifactId}`}
-                            download
-                          >
-                            Download
-                          </a>{' '}
-                          <button className="sm danger" onClick={() => void onDelete(p)}>
-                            Delete
-                          </button>
-                        </td>
-                      </tr>
-                      {open && (
-                        <tr className="payload-detail-row">
-                          <td colSpan={9}>
-                            <PayloadDetail payload={p} />
+                          </td>
+                          <td title={`${p.size} bytes`}>{fmtBytes(p.size)}</td>
+                          <td>
+                            <code title={p.fingerprint}>{p.fingerprint.slice(0, 16)}</code>
+                          </td>
+                          <td onClick={(e) => e.stopPropagation()}>
+                            <a
+                              className="download-link"
+                              href={`engagements/${engagementId}/payloads/${p.artifactId}`}
+                              download
+                            >
+                              Download
+                            </a>{' '}
+                            <button className="sm danger" onClick={() => void onDelete(p)}>
+                              Delete
+                            </button>
                           </td>
                         </tr>
-                      )}
-                    </Fragment>
-                  )
-                })}
-          </tbody>
-        </table>
+                        {open && (
+                          <tr className="payload-detail-row">
+                            <td colSpan={9}>
+                              <PayloadDetail payload={p} />
+                            </td>
+                          </tr>
+                        )}
+                      </Fragment>
+                    )
+                  })}
+            </tbody>
+          </table>
+        </div>
       </div>
-    </div>
+    </section>
   )
 }
 

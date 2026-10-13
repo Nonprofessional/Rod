@@ -4,6 +4,9 @@ The operator UI keeps its panels to a headline row with a question mark
 beside it: the standfirst -- the sentence or two of orientation each panel
 opens with -- is folded behind that mark and rides out on hover or keyboard
 focus, and everything else lives in hover text on the field it describes.
+Every page -- top-level or engagement tab -- opens on the same single page
+title naming its sidebar entry; the smaller headings inside a page belong
+to their cards, which are sections of the page, not titles of their own.
 This page is the long form: what each panel shows, and what every build and
 listener field does, in one place. Screenshots-age; this text is the
 reference.

@@ -119,10 +119,16 @@ export function SettingsView({ operator }: { operator: SessionOperator }) {
   }
 
   return (
-    <>
+    <section className="view">
+      <h2>
+        Settings
+        <HelpHint>
+          Server-wide runtime settings, this browser's own behavior, and the account roster.
+        </HelpHint>
+      </h2>
       <div className="card">
         <h3>
-          Settings
+          Runtime settings
           <HelpHint>
             Teamserver runtime settings -- server-wide, live on save, remembered across
             restarts.
@@ -189,7 +195,7 @@ export function SettingsView({ operator }: { operator: SessionOperator }) {
 
       <ConsoleCard />
       <OperatorsCard operator={operator} />
-    </>
+    </section>
   )
 }
 

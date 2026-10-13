@@ -33,30 +33,32 @@ const LOOT_KINDS = ['screenshot', 'credential', 'file', 'other'] as const
 export function IntelView({ engagementId, onlineTick }: { engagementId: string; onlineTick: number }) {
   const [section, setSection] = useState<Section>('hosts')
   return (
-    <div className="card">
-      <h3>
+    <section className="view">
+      <h2>
         Intel
         <HelpHint>
           What the engagement learned: hosts grouped by the name they reported at enroll, loot
           typed by what gathered it, and the network picture with its pivot links. Labels and
           notes are attributed trail facts; opening loot records the pull.
         </HelpHint>
-      </h3>
-      <div className="table-toolbar">
-        {(['hosts', 'loot', 'topology'] as const).map((s) => (
-          <button
-            key={s}
-            className={section === s ? 'sm' : 'ghost sm'}
-            onClick={() => setSection(s)}
-          >
-            {s === 'hosts' ? 'Hosts' : s === 'loot' ? 'Loot' : 'Topology'}
-          </button>
-        ))}
+      </h2>
+      <div className="card">
+        <div className="table-toolbar">
+          {(['hosts', 'loot', 'topology'] as const).map((s) => (
+            <button
+              key={s}
+              className={section === s ? 'sm' : 'ghost sm'}
+              onClick={() => setSection(s)}
+            >
+              {s === 'hosts' ? 'Hosts' : s === 'loot' ? 'Loot' : 'Topology'}
+            </button>
+          ))}
+        </div>
+        {section === 'hosts' && <HostsSection engagementId={engagementId} onlineTick={onlineTick} />}
+        {section === 'loot' && <LootSection engagementId={engagementId} onlineTick={onlineTick} />}
+        {section === 'topology' && <TopologySection engagementId={engagementId} onlineTick={onlineTick} />}
       </div>
-      {section === 'hosts' && <HostsSection engagementId={engagementId} onlineTick={onlineTick} />}
-      {section === 'loot' && <LootSection engagementId={engagementId} onlineTick={onlineTick} />}
-      {section === 'topology' && <TopologySection engagementId={engagementId} onlineTick={onlineTick} />}
-    </div>
+    </section>
   )
 }
 

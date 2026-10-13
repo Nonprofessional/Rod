@@ -542,7 +542,15 @@ export function LaunchersView({
           </>
         )}
 
-        <h3 className="jobs-head">Kept launchers</h3>
+        <h3 className="jobs-head">
+          Kept launchers
+          <HelpHint>
+            Every fetch render lands in this list. Commands re-render from each row's URL and
+            credential, so an old row always copies in the current shape. Delete closes a row's
+            whole lifecycle: the credential dies wherever a copy of the command carries it, the
+            row goes, and the mint's history is the audit trail's to keep.
+          </HelpHint>
+        </h3>
         <div className="table-wrap">
           <table>
             <thead>
@@ -698,14 +706,6 @@ export function LaunchersView({
             </tbody>
           </table>
         </div>
-        {rows.length > 0 && (
-          <p className="muted">
-            Commands re-render from each row's URL and credential, so an old row always copies in
-            the current shape. Delete closes a row's whole lifecycle: the credential dies wherever
-            a copy of the command carries it, the row goes, and the mint's history is the audit
-            trail's to keep.
-          </p>
-        )}
       </div>
     </section>
   )

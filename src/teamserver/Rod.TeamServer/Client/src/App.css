@@ -389,16 +389,15 @@ a.topbar-link.active {
   margin: 0 auto;
 }
 
-.page-head {
+/* The one page-title row: every page -- top-level or engagement tab --
+   opens on a single headline at one size (the sidebar reads smaller, the
+   in-card h3 sections read as sections), so tabs never swap title shapes
+   as the operator moves between them. */
+.view > h2 {
   display: flex;
   align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
+  gap: 8px;
   margin: 0 0 18px;
-}
-
-.page-head h2 {
-  margin: 0;
   font-size: 18px;
   font-weight: 650;
   letter-spacing: -0.01em;
@@ -702,6 +701,17 @@ input[type='file']::file-selector-button {
   width: 14px;
   height: 14px;
   flex: none;
+}
+
+/* Beside an in-card h4 section label (uppercase, 11.5px) the mark sits a
+   breath off the text and steps down a size. */
+h4 .help-hint {
+  margin-left: 6px;
+}
+
+h4 .help-hint-icon {
+  width: 12px;
+  height: 12px;
 }
 
 .help-hint-body {

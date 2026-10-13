@@ -181,8 +181,8 @@ export function ReconView({
   }
 
   return (
-    <div className="card">
-      <h3>
+    <section className="view">
+      <h2>
         Recon
         <HelpHint>
           Pre-foothold scoping on the teamserver: registration lookups, the
@@ -191,125 +191,127 @@ export function ReconView({
           once its egress service is configured -- docs/operations/recon.md -- and a half that is
           not answers with the setting it wants.
         </HelpHint>
-      </h3>
-      <div className="table-toolbar">
-        {MODES.map((m) => (
-          <button
-            key={m.id}
-            className={mode === m.id ? 'sm' : 'ghost sm'}
-            onClick={() => {
-              setMode(m.id)
-              setError(null)
-            }}
-          >
-            {m.label}
-          </button>
-        ))}
-      </div>
-      <form
-        className="task-form"
-        onSubmit={(e) => {
-          e.preventDefault()
-          void submit()
-        }}
-      >
-        <textarea
-          className="wide"
-          rows={mode === 'resolve' ? 4 : 1}
-          placeholder={modeHint(mode)}
-          value={targetDraft}
-          onChange={(e) => setTargetDraft(e.target.value)}
-          spellCheck={false}
-        />
-        {mode === 'portscan' && (
-          <input
+      </h2>
+      <div className="card">
+        <div className="table-toolbar">
+          {MODES.map((m) => (
+            <button
+              key={m.id}
+              className={mode === m.id ? 'sm' : 'ghost sm'}
+              onClick={() => {
+                setMode(m.id)
+                setError(null)
+              }}
+            >
+              {m.label}
+            </button>
+          ))}
+        </div>
+        <form
+          className="task-form"
+          onSubmit={(e) => {
+            e.preventDefault()
+            void submit()
+          }}
+        >
+          <textarea
             className="wide"
-            placeholder="ports: 22,80,443 or 1-1024 -- blank scans the curated default set"
-            value={portsDraft}
-            onChange={(e) => setPortsDraft(e.target.value)}
+            rows={mode === 'resolve' ? 4 : 1}
+            placeholder={modeHint(mode)}
+            value={targetDraft}
+            onChange={(e) => setTargetDraft(e.target.value)}
             spellCheck={false}
           />
-        )}
-        <button className="sm" type="submit" disabled={busy || targetDraft.trim().length === 0}>
-          {busy ? 'Running…' : 'Run'}
-        </button>
-      </form>
-      {engagement && (
-        <p className="muted">
-          Engagement scope: {roeSummary(engagement.roe)}{' '}
-          {engagement.yourRole !== 'reader' && (
-            <button className="ghost sm" onClick={() => setRoeOpen(true)}>
-              Edit scope
-            </button>
-          )}
-          {roeOpen && (
-            <RoeDialog
-              engagementId={engagementId}
-              profile={engagement.roe}
-              onApplied={(roe) =>
-                setEngagement({ ...engagement, roe })
-              }
-              onClose={() => setRoeOpen(false)}
+          {mode === 'portscan' && (
+            <input
+              className="wide"
+              placeholder="ports: 22,80,443 or 1-1024 -- blank scans the curated default set"
+              value={portsDraft}
+              onChange={(e) => setPortsDraft(e.target.value)}
+              spellCheck={false}
             />
           )}
-        </p>
-      )}
-      {mode === 'portscan' && engagement && (
-        <p className="muted">
-          {engagement.roe.permittedTargets.length === 0
-            ? 'ROE target scope: unrestricted -- any scan target passes the gate.'
-            : `ROE target scope: ${engagement.roe.permittedTargets.join(
-                ', ',
-              )} -- a target outside it is refused before any connection opens.`}
-        </p>
-      )}
-      {busy && (
-        <p className="muted">
-          The run happens inside the request; a scan at the port cap can take half a minute.
-        </p>
-      )}
-      {error && <p className="error">{error}</p>}
-      {finding && (
-        <FindingPane
-          engagementId={engagementId}
-          finding={finding}
-          onClose={() => setFinding(null)}
-        />
-      )}
-      <h3>Findings</h3>
-      <div className="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>Name</th>
-              <th>Captured</th>
-              <th>Size</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {history.map((entry) => (
-              <tr key={entry.artifactId}>
-                <td title={entry.contentType}>{entry.name}</td>
-                <td>{new Date(entry.storedAt).toLocaleString()}</td>
-                <td>{fmtBytes(entry.size)}</td>
-                <td>
-                  <button className="ghost sm" onClick={() => setFinding(entry)}>
-                    View
-                  </button>
-                </td>
+          <button className="sm" type="submit" disabled={busy || targetDraft.trim().length === 0}>
+            {busy ? 'Running…' : 'Run'}
+          </button>
+        </form>
+        {engagement && (
+          <p className="muted">
+            Engagement scope: {roeSummary(engagement.roe)}{' '}
+            {engagement.yourRole !== 'reader' && (
+              <button className="ghost sm" onClick={() => setRoeOpen(true)}>
+                Edit scope
+              </button>
+            )}
+            {roeOpen && (
+              <RoeDialog
+                engagementId={engagementId}
+                profile={engagement.roe}
+                onApplied={(roe) =>
+                  setEngagement({ ...engagement, roe })
+                }
+                onClose={() => setRoeOpen(false)}
+              />
+            )}
+          </p>
+        )}
+        {mode === 'portscan' && engagement && (
+          <p className="muted">
+            {engagement.roe.permittedTargets.length === 0
+              ? 'ROE target scope: unrestricted -- any scan target passes the gate.'
+              : `ROE target scope: ${engagement.roe.permittedTargets.join(
+                  ', ',
+                )} -- a target outside it is refused before any connection opens.`}
+          </p>
+        )}
+        {busy && (
+          <p className="muted">
+            The run happens inside the request; a scan at the port cap can take half a minute.
+          </p>
+        )}
+        {error && <p className="error">{error}</p>}
+        {finding && (
+          <FindingPane
+            engagementId={engagementId}
+            finding={finding}
+            onClose={() => setFinding(null)}
+          />
+        )}
+        <h3>Findings</h3>
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Captured</th>
+                <th>Size</th>
+                <th></th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {history.map((entry) => (
+                <tr key={entry.artifactId}>
+                  <td title={entry.contentType}>{entry.name}</td>
+                  <td>{new Date(entry.storedAt).toLocaleString()}</td>
+                  <td>{fmtBytes(entry.size)}</td>
+                  <td>
+                    <button className="ghost sm" onClick={() => setFinding(entry)}>
+                      View
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {history.length === 0 && <p className="muted">No workbench findings yet.</p>}
+        {historyCursor && (
+          <button className="ghost sm" onClick={() => void loadOlder()}>
+            Load older
+          </button>
+        )}
       </div>
-      {history.length === 0 && <p className="muted">No workbench findings yet.</p>}
-      {historyCursor && (
-        <button className="ghost sm" onClick={() => void loadOlder()}>
-          Load older
-        </button>
-      )}
-    </div>
+    </section>
   )
 }
 

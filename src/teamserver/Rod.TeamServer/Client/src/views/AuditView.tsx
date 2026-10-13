@@ -51,37 +51,39 @@ export function AuditView({
   const [mode, setMode] = useState<'ledger' | 'window'>('ledger')
 
   return (
-    <div className="card">
-      <h3>
-        Audit trail
+    <section className="view">
+      <h2>
+        Audit
         <HelpHint>
           The engagement's append-only, hash-chained ledger — tampering with a stored event breaks
           the chain at the next link — every recorded fact paged and filterable, with the windowed
           watch-resume read beside it.
         </HelpHint>
-      </h3>
-      <div className="table-toolbar">
-        <button
-          className={mode === 'ledger' ? 'sm' : 'ghost sm'}
-          onClick={() => setMode('ledger')}
-          title="The dense, paged, filterable table a forensic read wants."
-        >
-          Ledger
-        </button>
-        <button
-          className={mode === 'window' ? 'sm' : 'ghost sm'}
-          onClick={() => setMode('window')}
-          title="The handoff digest: the window you pick, the watch as one ordered account (architecture.md Sec 11.1)."
-        >
-          Handoff window
-        </button>
+      </h2>
+      <div className="card">
+        <div className="table-toolbar">
+          <button
+            className={mode === 'ledger' ? 'sm' : 'ghost sm'}
+            onClick={() => setMode('ledger')}
+            title="The dense, paged, filterable table a forensic read wants."
+          >
+            Ledger
+          </button>
+          <button
+            className={mode === 'window' ? 'sm' : 'ghost sm'}
+            onClick={() => setMode('window')}
+            title="The handoff digest: the window you pick, the watch as one ordered account (architecture.md Sec 11.1)."
+          >
+            Handoff window
+          </button>
+        </div>
+        {mode === 'ledger' ? (
+          <LedgerSection engagementId={engagementId} onlineTick={onlineTick} />
+        ) : (
+          <HandoffWindowSection engagementId={engagementId} onlineTick={onlineTick} />
+        )}
       </div>
-      {mode === 'ledger' ? (
-        <LedgerSection engagementId={engagementId} onlineTick={onlineTick} />
-      ) : (
-        <HandoffWindowSection engagementId={engagementId} onlineTick={onlineTick} />
-      )}
-    </div>
+    </section>
   )
 }
 

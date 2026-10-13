@@ -394,8 +394,8 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
   }
 
   return (
-    <div className="card">
-      <h3>
+    <section className="view">
+      <h2>
         Listeners
         <HelpHint>
           This engagement's C2 ingress — bind is the socket this server opens, public endpoint is
@@ -406,464 +406,467 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
           the lab one. Hover the fields for specifics; the full guide is
           docs/operations/operator-ui.md.
         </HelpHint>
-      </h3>
+      </h2>
+      <div className="card">
 
-      {/* The same labeled-grid shape as the Build form: every field carries
-          its name above it, placeholders stay as hints only. */}
-      {/* Three row groups, one concern each: identity (name, wire, the
-          egress fold it opens), the socket (interface, host, port), and the
-          dial (what address, whose certificate) -- each row wraps on a
-          narrow card instead of the fields interleaving across grid
-          columns. */}
-      <form className="listener-form" onSubmit={onCreate}>
-        <div className="listener-row">
-          <label>
-            Name
-            <input
-              placeholder="front"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              required
-            />
-          </label>
-          <label>
-            Transport
-            <select
-              value={transport}
-              onChange={(e) => {
-                setTransport(e.target.value)
-                const port = TRANSPORTS.find((t) => t.value === e.target.value)?.port ?? ''
-                if (port !== '') setBindPort(port)
-              }}
-              title="The wire this listener speaks. Every front carries every behavior; the wires differ in their own properties -- encryption (TLS, app-layer seal, or the DNS tradeoff), posture (recommended, lab, weak-inspection, internal segment), and mode shape (a held stream or one exchange per contact). How each behavior rides is the build's pick -- the Build form's summary spells it out. The DNS family below the fold answers DNS-only egress."
-            >
-              {TRANSPORT_GROUPS.map((group) => (
-                <optgroup key={group.label} label={group.label}>
-                  {group.transports.map((t) => (
-                    <option key={t.value} value={t.value}>
-                      {t.label}
-                    </option>
-                  ))}
-                </optgroup>
-              ))}
-              {showEgress && (
-                <optgroup label={EGRESS_GROUP.label}>
-                  {EGRESS_GROUP.transports.map((t) => (
-                    <option key={t.value} value={t.value}>
-                      {t.label}
-                    </option>
-                  ))}
-                </optgroup>
-              )}
-              <optgroup label={CATCHERS_GROUP.label}>
-                {CATCHERS_GROUP.transports.map((t) => (
-                  <option key={t.value} value={t.value}>
-                    {t.label}
-                  </option>
-                ))}
-              </optgroup>
-            </select>
-          </label>
-          <label
-            className="checkbox-label"
-            title="The DNS family — TXT over UDP or the same grammar over HTTPS: the refresh carrier for egress that only lets DNS-shaped traffic leave. Contacts step down to it (presence, short tasking, chunked results); no enroll and no interactive — a datagram poll has no input half, so channel tasks queue until a stream front answers. Show them when that is the shape you have."
-          >
-            Egress &amp; pivots
-            <span className="checkbox-row">
-              <input
-                type="checkbox"
-                checked={showEgress}
-                onChange={(e) => {
-                  setShowEgress(e.target.checked)
-                  // Hiding the family cannot leave one of its transports
-                  // selected: fall back to the default posture.
-                  if (!e.target.checked && EGRESS_TRANSPORTS.has(transport)) {
-                    setTransport('https')
-                    setBindPort('443')
-                  }
-                }}
-              />
-            </span>
-          </label>
-        </div>
-        <div className="listener-row">
-          <label>
-            Bind interface
-            <select
-              value={bindInterface}
-              onChange={(e) => setBindInterface(e.target.value)}
-              title="The interface this listener opens its socket on"
-            >
-              <option value={ALL_INTERFACES}>All interfaces (0.0.0.0)</option>
-              {interfaces.map((i) => (
-                <option key={`${i.name}-${i.address}`} value={i.address}>
-                  {i.name} ({i.address})
-                </option>
-              ))}
-              {loopbackMissing && <option value="127.0.0.1">Loopback (127.0.0.1)</option>}
-              <option value={CUSTOM}>Custom address…</option>
-            </select>
-          </label>
-          <label>
-            Custom host
-            {/* Always rendered, disabled unless Custom is picked, so the
-                row never reshuffles when the custom entry comes and goes;
-                the disabled value mirrors the selected interface, so the
-                host about to be bound stays readable. */}
-            <input
-              className="bind-host"
-              placeholder="192.168.1.5"
-              value={
-                bindInterface === CUSTOM
-                  ? customHost
-                  : bindInterface === ''
-                    ? ALL_INTERFACES
-                    : bindInterface
-              }
-              onChange={(e) => setCustomHost(e.target.value)}
-              disabled={bindInterface !== CUSTOM}
-              title="The address to bind. Pick 'Custom address…' to type one — a NIC the host has not reported, or an address that is not up yet. IPv6 literals are bracketed automatically."
-              required={bindInterface === CUSTOM}
-            />
-          </label>
-          <label>
-            Bind port
-            <input
-              className="bind-port"
-              placeholder="443"
-              value={bindPort}
-              onChange={(e) => setBindPort(e.target.value)}
-              title="The port this listener opens"
-              required
-            />
-          </label>
-        </div>
-        <div className="listener-row listener-dial">
-          <label className="endpoint-label">
-            Public endpoint
-            <input
-              className="endpoint-input"
-              placeholder={endpointPlaceholder}
-              title={endpointTitle}
-              value={publicEndpoint}
-              onChange={(e) => setPublicEndpoint(e.target.value)}
-            />
-          </label>
-          {isWebTransport && (
+        {/* The same labeled-grid shape as the Build form: every field carries
+            its name above it, placeholders stay as hints only. */}
+        {/* Three row groups, one concern each: identity (name, wire, the
+            egress fold it opens), the socket (interface, host, port), and the
+            dial (what address, whose certificate) -- each row wraps on a
+            narrow card instead of the fields interleaving across grid
+            columns. */}
+        <form className="listener-form" onSubmit={onCreate}>
+          <div className="listener-row">
             <label>
-              Certificate
+              Name
+              <input
+                placeholder="front"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                required
+              />
+            </label>
+            <label>
+              Transport
               <select
-                value={trust}
-                onChange={(e) => setTrust(e.target.value)}
-                title="Whose certificate this front presents -- the fact every build against it inherits as its TLS roots. Pinned (the default): the engagement CA terminates the front, and artifacts pin that CA -- works for any domain you point at the listener, no public CA involved. Public: a real domain whose publicly-trusted certificate an operator-run edge terminates in front of this listener -- the shape that survives TLS inspection; the public endpoint must be the https address of that edge."
+                value={transport}
+                onChange={(e) => {
+                  setTransport(e.target.value)
+                  const port = TRANSPORTS.find((t) => t.value === e.target.value)?.port ?? ''
+                  if (port !== '') setBindPort(port)
+                }}
+                title="The wire this listener speaks. Every front carries every behavior; the wires differ in their own properties -- encryption (TLS, app-layer seal, or the DNS tradeoff), posture (recommended, lab, weak-inspection, internal segment), and mode shape (a held stream or one exchange per contact). How each behavior rides is the build's pick -- the Build form's summary spells it out. The DNS family below the fold answers DNS-only egress."
               >
-                <option value="pinned">engagement CA (default)</option>
-                <option value="public">public — real-domain edge</option>
+                {TRANSPORT_GROUPS.map((group) => (
+                  <optgroup key={group.label} label={group.label}>
+                    {group.transports.map((t) => (
+                      <option key={t.value} value={t.value}>
+                        {t.label}
+                      </option>
+                    ))}
+                  </optgroup>
+                ))}
+                {showEgress && (
+                  <optgroup label={EGRESS_GROUP.label}>
+                    {EGRESS_GROUP.transports.map((t) => (
+                      <option key={t.value} value={t.value}>
+                        {t.label}
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
+                <optgroup label={CATCHERS_GROUP.label}>
+                  {CATCHERS_GROUP.transports.map((t) => (
+                    <option key={t.value} value={t.value}>
+                      {t.label}
+                    </option>
+                  ))}
+                </optgroup>
               </select>
             </label>
-          )}
-        </div>
-        <div className="listener-form-actions">
-          <button
-            className="ghost"
-            type="button"
-            onClick={onFillEndpoint}
-            disabled={transport === 'dns' || transport === 'doh'}
-            title={
-              transport === 'dns' || transport === 'doh'
-                ? 'A DNS zone is a fact about the target network — a host this server runs on cannot derive it from its interfaces. Type it directly.'
-                : 'Compose the public endpoint from the picks above: the dialable host (the interface, or the host\'s first dialable NIC for a wildcard bind), the bind port, and this transport\'s own dial shape. A redirector replaces it later.'
-            }
-          >
-            Fill endpoint
-          </button>
-          <button className="primary" type="submit" disabled={busy}>
-            Create
-          </button>
-        </div>
-      </form>
-
-      {/* The enrolled-fleet half (architecture.md Sec 8): attach a front to
-          one of the listeners below, fronted by a redirector from the
-          roster. The dns family waits on the redirector's datagram relay;
-          the form's listener list names the frontable transports only. It
-          sits with the create form above the roster: both are actions on
-          the table, and the table is the result. */}
-      <h4>Attach a front</h4>
-      <p className="muted">
-        Stand an enrolled redirector in front of a listener: the redirector binds the endpoint
-        you name, splices every byte to the listener's own bind, and implants dial the
-        redirector's public address — never the teamserver. <strong>Redirector listens on</strong>{' '}
-        is the socket on the redirector itself (wildcard or its IP); <strong>Public
-        endpoint</strong> is what builds bake as the address implants dial — leave it empty and
-        the listen port completes a bare host (a dns/doh listener wants the resolver implants
-        query, the zone stays the listener's); <strong>Primary</strong> makes this front the
-        endpoint new builds bake — the attach form of rotation, unchecked it serves beside the
-        current fronts.
-      </p>
-      <form className="listener-form" onSubmit={onAttachFront}>
-        <div className="listener-row">
-          <label>
-            Listener
-            <select
-              value={frontListener}
-              onChange={(e) => onPickFrontListener(e.target.value)}
-              title="The listener this front serves -- the redirector splices to its bind. Picking one drafts the form: standard listen port, Primary pre-checked for a first front."
-              required
+            <label
+              className="checkbox-label"
+              title="The DNS family — TXT over UDP or the same grammar over HTTPS: the refresh carrier for egress that only lets DNS-shaped traffic leave. Contacts step down to it (presence, short tasking, chunked results); no enroll and no interactive — a datagram poll has no input half, so channel tasks queue until a stream front answers. Show them when that is the shape you have."
             >
-              <option value="">Pick a listener…</option>
-              {frontable.map((l) => (
-                <option key={l.id} value={l.id}>
-                  {l.name} ({l.transport})
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Redirector
-            {nodes.length > 0 ? (
+              Egress &amp; pivots
+              <span className="checkbox-row">
+                <input
+                  type="checkbox"
+                  checked={showEgress}
+                  onChange={(e) => {
+                    setShowEgress(e.target.checked)
+                    // Hiding the family cannot leave one of its transports
+                    // selected: fall back to the default posture.
+                    if (!e.target.checked && EGRESS_TRANSPORTS.has(transport)) {
+                      setTransport('https')
+                      setBindPort('443')
+                    }
+                  }}
+                />
+              </span>
+            </label>
+          </div>
+          <div className="listener-row">
+            <label>
+              Bind interface
               <select
-                value={frontNode}
-                onChange={(e) => setFrontNode(e.target.value)}
-                title="An enrolled redirector (the Redirectors page mints credentials)."
+                value={bindInterface}
+                onChange={(e) => setBindInterface(e.target.value)}
+                title="The interface this listener opens its socket on"
+              >
+                <option value={ALL_INTERFACES}>All interfaces (0.0.0.0)</option>
+                {interfaces.map((i) => (
+                  <option key={`${i.name}-${i.address}`} value={i.address}>
+                    {i.name} ({i.address})
+                  </option>
+                ))}
+                {loopbackMissing && <option value="127.0.0.1">Loopback (127.0.0.1)</option>}
+                <option value={CUSTOM}>Custom address…</option>
+              </select>
+            </label>
+            <label>
+              Custom host
+              {/* Always rendered, disabled unless Custom is picked, so the
+                  row never reshuffles when the custom entry comes and goes;
+                  the disabled value mirrors the selected interface, so the
+                  host about to be bound stays readable. */}
+              <input
+                className="bind-host"
+                placeholder="192.168.1.5"
+                value={
+                  bindInterface === CUSTOM
+                    ? customHost
+                    : bindInterface === ''
+                      ? ALL_INTERFACES
+                      : bindInterface
+                }
+                onChange={(e) => setCustomHost(e.target.value)}
+                disabled={bindInterface !== CUSTOM}
+                title="The address to bind. Pick 'Custom address…' to type one — a NIC the host has not reported, or an address that is not up yet. IPv6 literals are bracketed automatically."
+                required={bindInterface === CUSTOM}
+              />
+            </label>
+            <label>
+              Bind port
+              <input
+                className="bind-port"
+                placeholder="443"
+                value={bindPort}
+                onChange={(e) => setBindPort(e.target.value)}
+                title="The port this listener opens"
+                required
+              />
+            </label>
+          </div>
+          <div className="listener-row listener-dial">
+            <label className="endpoint-label">
+              Public endpoint
+              <input
+                className="endpoint-input"
+                placeholder={endpointPlaceholder}
+                title={endpointTitle}
+                value={publicEndpoint}
+                onChange={(e) => setPublicEndpoint(e.target.value)}
+              />
+            </label>
+            {isWebTransport && (
+              <label>
+                Certificate
+                <select
+                  value={trust}
+                  onChange={(e) => setTrust(e.target.value)}
+                  title="Whose certificate this front presents -- the fact every build against it inherits as its TLS roots. Pinned (the default): the engagement CA terminates the front, and artifacts pin that CA -- works for any domain you point at the listener, no public CA involved. Public: a real domain whose publicly-trusted certificate an operator-run edge terminates in front of this listener -- the shape that survives TLS inspection; the public endpoint must be the https address of that edge."
+                >
+                  <option value="pinned">engagement CA (default)</option>
+                  <option value="public">public — real-domain edge</option>
+                </select>
+              </label>
+            )}
+          </div>
+          <div className="listener-form-actions">
+            <button
+              className="ghost"
+              type="button"
+              onClick={onFillEndpoint}
+              disabled={transport === 'dns' || transport === 'doh'}
+              title={
+                transport === 'dns' || transport === 'doh'
+                  ? 'A DNS zone is a fact about the target network — a host this server runs on cannot derive it from its interfaces. Type it directly.'
+                  : 'Compose the public endpoint from the picks above: the dialable host (the interface, or the host\'s first dialable NIC for a wildcard bind), the bind port, and this transport\'s own dial shape. A redirector replaces it later.'
+              }
+            >
+              Fill endpoint
+            </button>
+            <button className="primary" type="submit" disabled={busy}>
+              Create
+            </button>
+          </div>
+        </form>
+
+        {/* The enrolled-fleet half (architecture.md Sec 8): attach a front to
+            one of the listeners below, fronted by a redirector from the
+            roster. The dns family waits on the redirector's datagram relay;
+            the form's listener list names the frontable transports only. It
+            sits with the create form above the roster: both are actions on
+            the table, and the table is the result. */}
+        <h4>
+          Attach a front
+          <HelpHint>
+            Stand an enrolled redirector in front of a listener: the redirector binds the
+            endpoint you name, splices every byte to the listener's own bind, and implants dial
+            the redirector's public address — never the teamserver. Redirector listens on is the
+            socket on the redirector itself (wildcard or its IP); Public endpoint is what builds
+            bake as the address implants dial — leave it empty and the listen port completes a
+            bare host (a dns/doh listener wants the resolver implants query, the zone stays the
+            listener's own); Primary makes this front the endpoint new builds bake — the attach
+            form of rotation, unchecked it serves beside the current fronts.
+          </HelpHint>
+        </h4>
+        <form className="listener-form" onSubmit={onAttachFront}>
+          <div className="listener-row">
+            <label>
+              Listener
+              <select
+                value={frontListener}
+                onChange={(e) => onPickFrontListener(e.target.value)}
+                title="The listener this front serves -- the redirector splices to its bind. Picking one drafts the form: standard listen port, Primary pre-checked for a first front."
                 required
               >
-                <option value="">Pick a redirector…</option>
-                {nodes.map((n) => (
-                  <option key={n.id} value={n.id}>
-                    {n.name} {n.online ? '(online)' : '(offline)'}
+                <option value="">Pick a listener…</option>
+                {frontable.map((l) => (
+                  <option key={l.id} value={l.id}>
+                    {l.name} ({l.transport})
                   </option>
                 ))}
               </select>
-            ) : (
+            </label>
+            <label>
+              Redirector
+              {nodes.length > 0 ? (
+                <select
+                  value={frontNode}
+                  onChange={(e) => setFrontNode(e.target.value)}
+                  title="An enrolled redirector (the Redirectors page mints credentials)."
+                  required
+                >
+                  <option value="">Pick a redirector…</option>
+                  {nodes.map((n) => (
+                    <option key={n.id} value={n.id}>
+                      {n.name} {n.online ? '(online)' : '(offline)'}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <input
+                  placeholder="redirector id"
+                  value={frontNode}
+                  onChange={(e) => setFrontNode(e.target.value)}
+                  title="No roster loaded -- type the enrolled redirector's id."
+                  required
+                />
+              )}
+            </label>
+          </div>
+          <div className="listener-row">
+            <label>
+              Redirector listens on
               <input
-                placeholder="redirector id"
-                value={frontNode}
-                onChange={(e) => setFrontNode(e.target.value)}
-                title="No roster loaded -- type the enrolled redirector's id."
+                placeholder="0.0.0.0:443"
+                value={frontListen}
+                onChange={(e) => setFrontListen(e.target.value)}
+                title="The endpoint the redirector binds -- host:port on the redirector itself (a wildcard or its own IP), not the public address. Pre-filled with the transport's standard port when the listener is picked."
                 required
               />
-            )}
-          </label>
-        </div>
-        <div className="listener-row">
-          <label>
-            Redirector listens on
-            <input
-              placeholder="0.0.0.0:443"
-              value={frontListen}
-              onChange={(e) => setFrontListen(e.target.value)}
-              title="The endpoint the redirector binds -- host:port on the redirector itself (a wildcard or its own IP), not the public address. Pre-filled with the transport's standard port when the listener is picked."
-              required
-            />
-            </label>
-          <label>
-            Public endpoint
-            <input
-              placeholder="c2.example.test — empty completes from the listen port"
-              value={frontPublic}
-              onChange={(e) => setFrontPublic(e.target.value)}
-              title="What implants dial through this front. The web family completes a bare host with the scheme and the node's listen port; the socket family wants host:port; the DNS family (dns/doh) wants the RESOLVER implants dial -- a bare host or host:port, the zone stays the listener's own."
-            />
-          </label>
-          <label className="checkbox-label" title="Insert at the head of the front list and repoint the listener to this front -- the attach form of rotation. Without it, the front serves beside the current one.">
-            Primary
-            <span className="checkbox-row">
+              </label>
+            <label>
+              Public endpoint
               <input
-                type="checkbox"
-                checked={frontPrimary}
-                onChange={(e) => setFrontPrimary(e.target.checked)}
+                placeholder="c2.example.test — empty completes from the listen port"
+                value={frontPublic}
+                onChange={(e) => setFrontPublic(e.target.value)}
+                title="What implants dial through this front. The web family completes a bare host with the scheme and the node's listen port; the socket family wants host:port; the DNS family (dns/doh) wants the RESOLVER implants dial -- a bare host or host:port, the zone stays the listener's own."
               />
-            </span>
-          </label>
-        </div>
-        <div className="listener-form-actions">
-          <button className="primary" type="submit" disabled={busy}>
-            Attach
+            </label>
+            <label className="checkbox-label" title="Insert at the head of the front list and repoint the listener to this front -- the attach form of rotation. Without it, the front serves beside the current one.">
+              Primary
+              <span className="checkbox-row">
+                <input
+                  type="checkbox"
+                  checked={frontPrimary}
+                  onChange={(e) => setFrontPrimary(e.target.checked)}
+                />
+              </span>
+            </label>
+          </div>
+          <div className="listener-form-actions">
+            <button className="primary" type="submit" disabled={busy}>
+              Attach
+            </button>
+          </div>
+        </form>
+
+        <div className="inline-form">
+          <button className="ghost" onClick={() => void refresh()} disabled={busy}>
+            <Icon name="refresh" />
+            Refresh
           </button>
         </div>
-      </form>
-
-      <div className="inline-form">
-        <button className="ghost" onClick={() => void refresh()} disabled={busy}>
-          <Icon name="refresh" />
-          Refresh
-        </button>
-      </div>
-      {error && <p className="error">{error}</p>}
-      <div className="table-wrap">
-        <table className="listeners-table">
-          <thead>
-            <tr>
-              <th>Name</th>
-              <th>Transport</th>
-              <th>Bind</th>
-              <th>Public endpoint</th>
-              <th>State</th>
-              <th className="col-actions"></th>
-            </tr>
-          </thead>
-          <tbody>
-            {listeners.length === 0 && (
+        {error && <p className="error">{error}</p>}
+        <div className="table-wrap">
+          <table className="listeners-table">
+            <thead>
               <tr>
-                <td colSpan={6}>
-                  <div className="empty">
-                    <Icon name="radio" />
-                    No listeners for this engagement yet -- create the ingress its implants will
-                    dial.
-                  </div>
-                </td>
+                <th>Name</th>
+                <th>Transport</th>
+                <th>Bind</th>
+                <th>Public endpoint</th>
+                <th>State</th>
+                <th className="col-actions"></th>
               </tr>
-            )}
-            {listeners.map((l) => (
-              <Fragment key={l.id}>
+            </thead>
+            <tbody>
+              {listeners.length === 0 && (
                 <tr>
-                  <td className="listener-name-cell">
-                    <Icon name="radio" className="row-icon" />
-                    <span className="row-label">{l.name}</span>
-                  </td>
-                  <td>
-                    {l.transport}
-                    {l.trustPosture === 'public' && (
-                      <span
-                        className="muted"
-                        title="This front presents a real-domain certificate an operator-run edge terminates; builds against it validate against public roots."
-                      >
-                        {' '}· public cert
-                      </span>
-                    )}
-                  </td>
-                  <td>
-                    <code>{l.bindAddress}</code>
-                  </td>
-                  <td>
-                    {editing?.id === l.id ? (
-                      <form
-                        className="endpoint-edit"
-                        onSubmit={(e) => {
-                          e.preventDefault()
-                          void onRepoint()
-                        }}
-                      >
-                        <input
-                          value={editing.draft}
-                          onChange={(e) =>
-                            setEditing({ id: l.id, draft: e.target.value })
-                          }
-                          autoFocus
-                          title="The address deployed implants should dial — a burned redirector's replacement."
-                        />
-                        <button className="sm" type="submit" title="Save the new endpoint">
-                          <Icon name="check" />
-                        </button>
-                        <button
-                          className="ghost sm"
-                          type="button"
-                          title="Cancel"
-                          onClick={() => setEditing(null)}
-                        >
-                          <Icon name="x" />
-                        </button>
-                      </form>
-                    ) : (
-                      <span className="endpoint-cell">
-                        <code>{l.publicEndpoint}</code>
-                        {l.repointedAt && <span className="muted"> (repointed)</span>}
-                        <button
-                          className="ghost sm menu-trigger"
-                          title="Repoint this endpoint"
-                          onClick={() => setEditing({ id: l.id, draft: l.publicEndpoint })}
-                        >
-                          <Icon name="edit" />
-                        </button>
-                      </span>
-                    )}
-                  </td>
-                  <td>
-                    <StatusBadge status={l.state} />
-                  </td>
-                  <td>
-                    <button
-                      className={`sm danger${armed === l.id ? ' armed' : ''}`}
-                      onClick={() => onArmDelete(l)}
-                      title={
-                        armed === l.id
-                          ? 'Click again to delete — the button reverts on its own after a few seconds'
-                          : 'Delete this listener (two clicks: the first arms, the second deletes). A listener live implants enrolled through asks once more.'
-                      }
-                    >
-                      {armed === l.id ? 'Confirm' : 'Delete'}
-                    </button>
+                  <td colSpan={6}>
+                    <div className="empty">
+                      <Icon name="radio" />
+                      No listeners for this engagement yet -- create the ingress its implants will
+                      dial.
+                    </div>
                   </td>
                 </tr>
-                {l.fronts.length > 0 &&
-                  l.fronts.map((f) => (
-                    <tr key={f.frontId} className="front-row">
-                      <td className="front-name-cell">
-                        {/* The listener row's antenna icon sits ahead of its
-                            name; an equally wide blank keeps the front's name
-                            on the same starting line. */}
-                        <span className="row-icon" aria-hidden="true" />
-                        <strong className="row-label" title={f.nodeId}>
-                          {f.nodeName || f.nodeId.slice(0, 8)}
-                        </strong>
-                      </td>
-                      <td></td>
-                      <td>
-                        <code title="The endpoint this redirector binds">{f.listenEndpoint}</code>
-                      </td>
-                      <td>
-                        <code title="What implants dial through this front">{f.publicEndpoint}</code>
-                        {f.allowList && (
-                          <span className="muted" title="The source CIDRs the redirector enforces on this front.">
-                            {' '}
-                            · allow {f.allowList}
-                          </span>
-                        )}
-                      </td>
-                      <td>
-                        {f.isPrimary ? (
-                          <span className="status completed" title="The primary front -- the public endpoint builds bake.">
-                            primary
-                          </span>
-                        ) : (
-                          <span className="status queued">front</span>
-                        )}
-                      </td>
-                      <td>
-                        {!f.isPrimary && (
+              )}
+              {listeners.map((l) => (
+                <Fragment key={l.id}>
+                  <tr>
+                    <td className="listener-name-cell">
+                      <Icon name="radio" className="row-icon" />
+                      <span className="row-label">{l.name}</span>
+                    </td>
+                    <td>
+                      {l.transport}
+                      {l.trustPosture === 'public' && (
+                        <span
+                          className="muted"
+                          title="This front presents a real-domain certificate an operator-run edge terminates; builds against it validate against public roots."
+                        >
+                          {' '}· public cert
+                        </span>
+                      )}
+                    </td>
+                    <td>
+                      <code>{l.bindAddress}</code>
+                    </td>
+                    <td>
+                      {editing?.id === l.id ? (
+                        <form
+                          className="endpoint-edit"
+                          onSubmit={(e) => {
+                            e.preventDefault()
+                            void onRepoint()
+                          }}
+                        >
+                          <input
+                            value={editing.draft}
+                            onChange={(e) =>
+                              setEditing({ id: l.id, draft: e.target.value })
+                            }
+                            autoFocus
+                            title="The address deployed implants should dial — a burned redirector's replacement."
+                          />
+                          <button className="sm" type="submit" title="Save the new endpoint">
+                            <Icon name="check" />
+                          </button>
                           <button
                             className="ghost sm"
-                            onClick={() => void onPromoteFront(l, f.frontId)}
-                            title="Make this the primary front: the public endpoint builds bake follows it. The rotation op for enrolled fleets."
+                            type="button"
+                            title="Cancel"
+                            onClick={() => setEditing(null)}
                           >
-                            Promote
+                            <Icon name="x" />
                           </button>
-                        )}
-                        <button
-                          className={`ghost sm danger${armed === f.frontId ? ' armed' : ''}`}
-                          onClick={() => onDetachFront(l, f.frontId)}
-                          title={
-                            armed === f.frontId
-                              ? 'Click again — the button reverts on its own after a few seconds'
-                              : 'Detach this front: the redirector stops forwarding on the next rule push. Detaching the primary promotes the next front.'
-                          }
-                        >
-                          {armed === f.frontId ? 'Confirm' : 'Detach'}
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-              </Fragment>
-            ))}
-          </tbody>
-        </table>
-      </div>
+                        </form>
+                      ) : (
+                        <span className="endpoint-cell">
+                          <code>{l.publicEndpoint}</code>
+                          {l.repointedAt && <span className="muted"> (repointed)</span>}
+                          <button
+                            className="ghost sm menu-trigger"
+                            title="Repoint this endpoint"
+                            onClick={() => setEditing({ id: l.id, draft: l.publicEndpoint })}
+                          >
+                            <Icon name="edit" />
+                          </button>
+                        </span>
+                      )}
+                    </td>
+                    <td>
+                      <StatusBadge status={l.state} />
+                    </td>
+                    <td>
+                      <button
+                        className={`sm danger${armed === l.id ? ' armed' : ''}`}
+                        onClick={() => onArmDelete(l)}
+                        title={
+                          armed === l.id
+                            ? 'Click again to delete — the button reverts on its own after a few seconds'
+                            : 'Delete this listener (two clicks: the first arms, the second deletes). A listener live implants enrolled through asks once more.'
+                        }
+                      >
+                        {armed === l.id ? 'Confirm' : 'Delete'}
+                      </button>
+                    </td>
+                  </tr>
+                  {l.fronts.length > 0 &&
+                    l.fronts.map((f) => (
+                      <tr key={f.frontId} className="front-row">
+                        <td className="front-name-cell">
+                          {/* The listener row's antenna icon sits ahead of its
+                              name; an equally wide blank keeps the front's name
+                              on the same starting line. */}
+                          <span className="row-icon" aria-hidden="true" />
+                          <strong className="row-label" title={f.nodeId}>
+                            {f.nodeName || f.nodeId.slice(0, 8)}
+                          </strong>
+                        </td>
+                        <td></td>
+                        <td>
+                          <code title="The endpoint this redirector binds">{f.listenEndpoint}</code>
+                        </td>
+                        <td>
+                          <code title="What implants dial through this front">{f.publicEndpoint}</code>
+                          {f.allowList && (
+                            <span className="muted" title="The source CIDRs the redirector enforces on this front.">
+                              {' '}
+                              · allow {f.allowList}
+                            </span>
+                          )}
+                        </td>
+                        <td>
+                          {f.isPrimary ? (
+                            <span className="status completed" title="The primary front -- the public endpoint builds bake.">
+                              primary
+                            </span>
+                          ) : (
+                            <span className="status queued">front</span>
+                          )}
+                        </td>
+                        <td>
+                          {!f.isPrimary && (
+                            <button
+                              className="ghost sm"
+                              onClick={() => void onPromoteFront(l, f.frontId)}
+                              title="Make this the primary front: the public endpoint builds bake follows it. The rotation op for enrolled fleets."
+                            >
+                              Promote
+                            </button>
+                          )}
+                          <button
+                            className={`ghost sm danger${armed === f.frontId ? ' armed' : ''}`}
+                            onClick={() => onDetachFront(l, f.frontId)}
+                            title={
+                              armed === f.frontId
+                                ? 'Click again — the button reverts on its own after a few seconds'
+                                : 'Detach this front: the redirector stops forwarding on the next rule push. Detaching the primary promotes the next front.'
+                            }
+                          >
+                            {armed === f.frontId ? 'Confirm' : 'Detach'}
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                </Fragment>
+              ))}
+            </tbody>
+          </table>
+        </div>
 
-      {/* The enrolled-fleet half (architecture.md Sec 8): attach a front to
-          one of the listeners above, fronted by a node from the roster. The
-          dns family waits on the node's datagram relay; the form's listener
-          list names the frontable transports only. */}
-    </div>
+        {/* The enrolled-fleet half (architecture.md Sec 8): attach a front to
+            one of the listeners above, fronted by a node from the roster. The
+            dns family waits on the node's datagram relay; the form's listener
+            list names the frontable transports only. */}
+      </div>
+    </section>
   )
 }

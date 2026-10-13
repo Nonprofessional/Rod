@@ -141,15 +141,15 @@ export function EngagementsView() {
   }
 
   return (
-    <section>
-      <div className="page-head">
-        <h2>Engagements</h2>
+    <section className="view">
+      <h2>
+        Engagements
         <HelpHint>
           Scoped workspaces; everything else lives inside one. Create and edit the records here,
-          drive the close-out arc (freeze, export evidence, retire) from the row, and drill in for
-          the full capability surface.
+          drive the close-out arc (freeze, export evidence, retire) from the row, and drill in
+          for the full capability surface.
         </HelpHint>
-      </div>
+      </h2>
       {error && <p className="error">{error}</p>}
       <form className="card create-form" onSubmit={onCreate}>
         <div className="create-form-row">

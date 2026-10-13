@@ -143,144 +143,148 @@ export function TaskLogView({
 
   if (loading) {
     return (
-      <div className="card">
-        <h3>Task log</h3>
-        <div className="empty">
-          <span className="spinner" />
-          Loading the task log…
+      <section className="view">
+        <h2>Task log</h2>
+        <div className="card">
+          <div className="empty">
+            <span className="spinner" />
+            Loading the task log…
+          </div>
         </div>
-      </div>
+      </section>
     )
   }
 
   return (
-    <div className="card">
-      <h3>
+    <section className="view">
+      <h2>
         Task log
         <HelpHint>
           Every task this engagement issued, newest first, live as operators work -- read-only;
           cancel queued tasking from the implant's session console.
         </HelpHint>
-      </h3>
-      <div className="inline-form">
-        <select
-          value={implantFilter}
-          onChange={(e) => setImplantFilter(e.target.value)}
-          title="Filter by implant (switches to that implant's own history)"
-        >
-          <option value="">All implants</option>
-          {implants.map((i) => (
-            <option key={i.implantId} value={i.implantId}>
-              {i.hostname ? `${i.hostname} · ` : ''}
-              {i.implantId.slice(0, 8)} ({i.class})
-            </option>
-          ))}
-        </select>
-        <select value={verbFilter} onChange={(e) => setVerbFilter(e.target.value)} title="Filter by verb">
-          <option value="">All verbs</option>
-          {verbs.map((v) => (
-            <option key={v} value={v}>
-              {v}
-            </option>
-          ))}
-        </select>
-        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} title="Filter by status">
-          <option value="">Any status</option>
-          {statuses.map((s) => (
-            <option key={s} value={s}>
-              {s}
-            </option>
-          ))}
-        </select>
-        <select
-          value={operatorFilter}
-          onChange={(e) => setOperatorFilter(e.target.value)}
-          title="Filter by the issuing operator"
-        >
-          <option value="">Any operator</option>
-          {operators.map((o) => (
-            <option key={o} value={o}>
-              {o.slice(0, 8)}
-            </option>
-          ))}
-        </select>
-        <input
-          className="filter-text"
-          placeholder="Search verb, arguments, output…"
-          value={textDraft}
-          onChange={(e) => setTextDraft(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') setTextFilter(textDraft)
-          }}
-          title="Free text across verb, arguments, and output. Enter or the Search button applies; the dropdown filters above are live."
-        />
-        <button
-          className="ghost"
-          onClick={() => setTextFilter(textDraft)}
-          title="Apply the text search (Enter works too)"
-        >
-          Search
-        </button>
-      </div>
-
-      {interactTask && (
-        <InteractPane
-          engagementId={engagementId}
-          taskId={interactTask}
-          verb={tasks.find((t) => t.taskId === interactTask)?.verb ?? 'channel'}
-          onClose={() => setInteractTask(null)}
-        />
-      )}
-
-      <div className="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th></th>
-              <th>Verb</th>
-              <th>Implant</th>
-              <th>Status</th>
-              <th>By</th>
-              <th>At</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {filtered.length === 0 && (
-              <tr>
-                <td colSpan={7}>
-                  <div className="empty">
-                    <Icon name="inbox" />
-                    {tasks.length === 0 ? 'No tasks yet.' : 'No tasks match the filters.'}
-                  </div>
-                </td>
-              </tr>
-            )}
-            {[...filtered].reverse().map((t) => (
-              <LogRow
-                key={t.taskId}
-                engagementId={engagementId}
-                task={t}
-                expanded={expanded.has(t.taskId)}
-                onToggle={() => toggleExpanded(t.taskId)}
-                onInteract={() =>
-                  setInteractTask(interactTask === t.taskId ? null : t.taskId)
-                }
-                interactOpen={interactTask === t.taskId}
-              />
+      </h2>
+      <div className="card">
+        <div className="inline-form">
+          <select
+            value={implantFilter}
+            onChange={(e) => setImplantFilter(e.target.value)}
+            title="Filter by implant (switches to that implant's own history)"
+          >
+            <option value="">All implants</option>
+            {implants.map((i) => (
+              <option key={i.implantId} value={i.implantId}>
+                {i.hostname ? `${i.hostname} · ` : ''}
+                {i.implantId.slice(0, 8)} ({i.class})
+              </option>
             ))}
-          </tbody>
-        </table>
-      </div>
-      {cursor && (
-        <div className="load-more">
-          <button className="ghost" onClick={() => void loadOlder()} disabled={loadingMore}>
-            {loadingMore ? 'Loading…' : 'Load older'}
+          </select>
+          <select value={verbFilter} onChange={(e) => setVerbFilter(e.target.value)} title="Filter by verb">
+            <option value="">All verbs</option>
+            {verbs.map((v) => (
+              <option key={v} value={v}>
+                {v}
+              </option>
+            ))}
+          </select>
+          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} title="Filter by status">
+            <option value="">Any status</option>
+            {statuses.map((s) => (
+              <option key={s} value={s}>
+                {s}
+              </option>
+            ))}
+          </select>
+          <select
+            value={operatorFilter}
+            onChange={(e) => setOperatorFilter(e.target.value)}
+            title="Filter by the issuing operator"
+          >
+            <option value="">Any operator</option>
+            {operators.map((o) => (
+              <option key={o} value={o}>
+                {o.slice(0, 8)}
+              </option>
+            ))}
+          </select>
+          <input
+            className="filter-text"
+            placeholder="Search verb, arguments, output…"
+            value={textDraft}
+            onChange={(e) => setTextDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') setTextFilter(textDraft)
+            }}
+            title="Free text across verb, arguments, and output. Enter or the Search button applies; the dropdown filters above are live."
+          />
+          <button
+            className="ghost"
+            onClick={() => setTextFilter(textDraft)}
+            title="Apply the text search (Enter works too)"
+          >
+            Search
           </button>
         </div>
-      )}
-      {error && <p className="error">{error}</p>}
-    </div>
+
+        {interactTask && (
+          <InteractPane
+            engagementId={engagementId}
+            taskId={interactTask}
+            verb={tasks.find((t) => t.taskId === interactTask)?.verb ?? 'channel'}
+            onClose={() => setInteractTask(null)}
+          />
+        )}
+
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th></th>
+                <th>Verb</th>
+                <th>Implant</th>
+                <th>Status</th>
+                <th>By</th>
+                <th>At</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.length === 0 && (
+                <tr>
+                  <td colSpan={7}>
+                    <div className="empty">
+                      <Icon name="inbox" />
+                      {tasks.length === 0 ? 'No tasks yet.' : 'No tasks match the filters.'}
+                    </div>
+                  </td>
+                </tr>
+              )}
+              {[...filtered].reverse().map((t) => (
+                <LogRow
+                  key={t.taskId}
+                  engagementId={engagementId}
+                  task={t}
+                  expanded={expanded.has(t.taskId)}
+                  onToggle={() => toggleExpanded(t.taskId)}
+                  onInteract={() =>
+                    setInteractTask(interactTask === t.taskId ? null : t.taskId)
+                  }
+                  interactOpen={interactTask === t.taskId}
+                />
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {cursor && (
+          <div className="load-more">
+            <button className="ghost" onClick={() => void loadOlder()} disabled={loadingMore}>
+              {loadingMore ? 'Loading…' : 'Load older'}
+            </button>
+          </div>
+        )}
+        {error && <p className="error">{error}</p>}
+      </div>
+    </section>
   )
 }
 

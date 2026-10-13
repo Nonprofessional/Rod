@@ -109,126 +109,127 @@ export function MembersView({
   }
 
   return (
-    <div className="card">
-      <h3>
-        <Icon name="users" />
+    <section className="view">
+      <h2>
         Members
         <HelpHint>
           The crew that decides reach: a reader watches, a writer acts, the owner manages this
           roster. Every grant, re-tier, and removal lands in the engagement's audit trail.
         </HelpHint>
-      </h3>
+      </h2>
+      <div className="card">
 
-      {isOwner ? (
-        <form className="build-form" onSubmit={onInvite}>
-          <fieldset>
-            <legend>Invite an operator</legend>
-            <label>
-              Handle
-              <input
-                value={handle}
-                onChange={(e) => setHandle(e.target.value)}
-                placeholder="alice"
-                title="The account's login handle (provisioned in Settings). The invite names a person, not a role."
-                required
-              />
-            </label>
-            <label>
-              Tier
-              <select
-                value={role}
-                onChange={(e) => setRole(e.target.value as 'reader' | 'writer')}
-                title={ROLE_HELP.writer + ' ' + ROLE_HELP.reader}
-              >
-                <option value="writer">writer -- act and manage</option>
-                <option value="reader">reader -- watch only</option>
-              </select>
-            </label>
-          </fieldset>
-          <button className="primary" type="submit" disabled={busy}>
-            Grant access
+        {isOwner ? (
+          <form className="build-form" onSubmit={onInvite}>
+            <fieldset>
+              <legend>Invite an operator</legend>
+              <label>
+                Handle
+                <input
+                  value={handle}
+                  onChange={(e) => setHandle(e.target.value)}
+                  placeholder="alice"
+                  title="The account's login handle (provisioned in Settings). The invite names a person, not a role."
+                  required
+                />
+              </label>
+              <label>
+                Tier
+                <select
+                  value={role}
+                  onChange={(e) => setRole(e.target.value as 'reader' | 'writer')}
+                  title={ROLE_HELP.writer + ' ' + ROLE_HELP.reader}
+                >
+                  <option value="writer">writer -- act and manage</option>
+                  <option value="reader">reader -- watch only</option>
+                </select>
+              </label>
+            </fieldset>
+            <button className="primary" type="submit" disabled={busy}>
+              Grant access
+            </button>
+          </form>
+        ) : (
+          <p className="muted">
+            Grant management is the owner's alone -- you hold the{' '}
+            {members.find((m) => m.operatorId === operator.operatorId)?.role ?? 'member'} tier on this
+            engagement.
+          </p>
+        )}
+        {note && <p className="muted">{note}</p>}
+        {error && <p className="error">{error}</p>}
+
+        <div className="inline-form">
+          <button className="ghost" onClick={() => void refresh()} disabled={busy}>
+            <Icon name="refresh" />
+            Refresh
           </button>
-        </form>
-      ) : (
-        <p className="muted">
-          Grant management is the owner's alone -- you hold the{' '}
-          {members.find((m) => m.operatorId === operator.operatorId)?.role ?? 'member'} tier on this
-          engagement.
-        </p>
-      )}
-      {note && <p className="muted">{note}</p>}
-      {error && <p className="error">{error}</p>}
-
-      <div className="inline-form">
-        <button className="ghost" onClick={() => void refresh()} disabled={busy}>
-          <Icon name="refresh" />
-          Refresh
-        </button>
-      </div>
-      <div className="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>Handle</th>
-              <th>Display name</th>
-              <th>Tier</th>
-              <th>Granted</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {members.length === 0 && (
+        </div>
+        <div className="table-wrap">
+          <table>
+            <thead>
               <tr>
-                <td colSpan={5}>
-                  <div className="empty">
-                    <Icon name="users" />
-                    The roster did not load -- refresh to try again.
-                  </div>
-                </td>
+                <th>Handle</th>
+                <th>Display name</th>
+                <th>Tier</th>
+                <th>Granted</th>
+                <th></th>
               </tr>
-            )}
-            {members.map((member) => (
-              <tr key={member.operatorId}>
-                <td>
-                  <span className="endpoint-cell">
-                    <code>{member.handle}</code>
-                    {member.operatorId === operator.operatorId && <span className="muted"> (you)</span>}
-                  </span>
-                </td>
-                <td>{member.displayName}</td>
-                <td title={ROLE_HELP[member.role] ?? member.role}>
-                  {member.role}
-                </td>
-                <td title={new Date(member.addedAt).toLocaleString()}>
-                  {new Date(member.addedAt).toLocaleDateString()}
-                </td>
-                <td>
-                  {isOwner && member.role !== 'owner' && (
-                    <span className="row-actions">
-                      <button
-                        className="ghost sm"
-                        onClick={() =>
-                          void onSetRole(member, member.role === 'writer' ? 'reader' : 'writer')
-                        }
-                        title={`Move to the ${member.role === 'writer' ? 'reader (watch only)' : 'writer (act and manage)'} tier. Takes effect on the member's next request.`}
-                      >
-                        Make {member.role === 'writer' ? 'reader' : 'writer'}
-                      </button>
-                      <button
-                        className="ghost sm"
-                        onClick={() => void onRemove(member)}
-                        title="Remove this membership. From its next request on, the operator cannot even see the engagement exists. The row can be re-granted at any time."
-                      >
-                        Remove
-                      </button>
+            </thead>
+            <tbody>
+              {members.length === 0 && (
+                <tr>
+                  <td colSpan={5}>
+                    <div className="empty">
+                      <Icon name="users" />
+                      The roster did not load -- refresh to try again.
+                    </div>
+                  </td>
+                </tr>
+              )}
+              {members.map((member) => (
+                <tr key={member.operatorId}>
+                  <td>
+                    <span className="endpoint-cell">
+                      <code>{member.handle}</code>
+                      {member.operatorId === operator.operatorId && <span className="muted"> (you)</span>}
                     </span>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+                  </td>
+                  <td>{member.displayName}</td>
+                  <td title={ROLE_HELP[member.role] ?? member.role}>
+                    {member.role}
+                  </td>
+                  <td title={new Date(member.addedAt).toLocaleString()}>
+                    {new Date(member.addedAt).toLocaleDateString()}
+                  </td>
+                  <td>
+                    {isOwner && member.role !== 'owner' && (
+                      <span className="row-actions">
+                        <button
+                          className="ghost sm"
+                          onClick={() =>
+                            void onSetRole(member, member.role === 'writer' ? 'reader' : 'writer')
+                          }
+                          title={`Move to the ${member.role === 'writer' ? 'reader (watch only)' : 'writer (act and manage)'} tier. Takes effect on the member's next request.`}
+                        >
+                          Make {member.role === 'writer' ? 'reader' : 'writer'}
+                        </button>
+                        <button
+                          className="ghost sm"
+                          onClick={() => void onRemove(member)}
+                          title="Remove this membership. From its next request on, the operator cannot even see the engagement exists. The row can be re-granted at any time."
+                        >
+                          Remove
+                        </button>
+                      </span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
-    </div>
+    </section>
   )
 }
