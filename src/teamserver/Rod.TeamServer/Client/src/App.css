@@ -1736,6 +1736,21 @@ textarea:focus-visible {
   vertical-align: bottom;
 }
 
+/* Row separators ride the top edge, not the bottom one: the front
+   sub-rows carry no border at all, so a listener, its sub-rows, and any
+   further sub-rows read as one seamless block -- the shared bottom-edge
+   separators were cutting the raised ground into bands with a dark seam
+   between each. The row after the block draws the separating line. */
+.listeners-table td {
+  border-bottom: none;
+  border-top: 1px solid var(--border);
+}
+
+.listeners-table tbody tr:first-child td,
+.listeners-table tr.front-row td {
+  border-top: none;
+}
+
 .listeners-table th.col-actions {
   width: 12rem;
   min-width: 12rem;
