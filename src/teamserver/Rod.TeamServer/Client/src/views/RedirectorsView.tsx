@@ -73,6 +73,18 @@ export function RedirectorsView() {
     void refresh()
   }, [refresh])
 
+  // Presence flips when a node's control connection opens or drops, and
+  // nothing pushes that to this page (the live event stream is
+  // engagement-scoped). Poll on a short cadence while the tab is visible
+  // so a node enrolling shows up without a manual refresh; a hidden tab
+  // stays quiet rather than polling into the void.
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === 'visible') void refresh()
+    }, 5000)
+    return () => window.clearInterval(timer)
+  }, [refresh])
+
   const onMint = async (event: React.FormEvent) => {
     event.preventDefault()
     try {

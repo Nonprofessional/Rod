@@ -718,6 +718,16 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
           dns family waits on the node's datagram relay; the form's listener
           list names the frontable transports only. */}
       <h4>Attach a front</h4>
+      <p className="muted">
+        Stand an enrolled node in front of a listener: the node binds the endpoint you name,
+        splices every byte to the listener's own bind, and implants dial the node's public
+        address — never the teamserver. <strong>Node listens on</strong> is the socket on the
+        node itself (wildcard or its IP); <strong>Public endpoint</strong> is what builds bake
+        as the address implants dial — leave it empty and the listen port completes a bare
+        host (a dns/doh listener wants the resolver implants query, the zone stays the
+        listener's); <strong>Primary</strong> makes this front the endpoint new builds bake —
+        the attach form of rotation, unchecked it serves beside the current fronts.
+      </p>
       <form className="listener-form" onSubmit={onAttachFront}>
         <div className="listener-row">
           <label>
