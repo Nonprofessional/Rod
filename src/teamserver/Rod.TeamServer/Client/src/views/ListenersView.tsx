@@ -70,6 +70,17 @@ const EGRESS_GROUP = {
   ],
 } satisfies { label: string; transports: readonly TransportOption[] }
 
+// The attach form's default front bind per transport: the public wire's
+// customary port on the redirector, matching the port the listener form
+// itself pre-fills.
+const FRONT_DEFAULT_LISTEN: Record<string, string> = {
+  https: '0.0.0.0:443',
+  http: '0.0.0.0:8080',
+  tcp: '0.0.0.0:443',
+  dns: '0.0.0.0:53',
+  doh: '0.0.0.0:443',
+}
+
 const CATCHERS_GROUP = {
   label: 'Catchers',
   transports: [
@@ -298,6 +309,23 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
   // socket ride the TCP splice, the DNS family rides the node's datagram
   // relay. The catcher fronts no implant dial.
   const frontable = listeners.filter((l) => l.transport !== 'shellcatch')
+
+  // Picking a listener drafts the attach form: the front's bind pre-fills
+  // with the transport's standard public port (the same number the
+  // listener form pre-fills), and a listener with no fronts pre-checks
+  // Primary -- until it has one, the endpoint builds bake is still the
+  // bare bind. Both are drafts to correct, not choices made for the
+  // operator: a hand-typed endpoint survives a re-pick.
+  const onPickFrontListener = (id: string) => {
+    setFrontListener(id)
+    const picked = listeners.find((l) => l.id === id)
+    if (!picked) return
+    const defaultListen = FRONT_DEFAULT_LISTEN[picked.transport]
+    if (defaultListen) {
+      setFrontListen((current) => (current.trim() === '' ? defaultListen : current))
+    }
+    setFrontPrimary(picked.fronts.length === 0)
+  }
 
   const onAttachFront = async (event: React.FormEvent) => {
     event.preventDefault()
@@ -677,7 +705,7 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
                           <span className="muted">· dials</span>
                           <code>{f.publicEndpoint}</code>
                           {f.allowList && (
-                            <span className="muted" title="The source CIDRs the node enforces on this front.">
+                            <span className="muted" title="The source CIDRs the redirector enforces on this front.">
                               · allow {f.allowList}
                             </span>
                           )}
@@ -697,7 +725,7 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
                               title={
                                 armed === f.frontId
                                   ? 'Click again — the button reverts on its own after a few seconds'
-                                  : 'Detach this front: the node stops forwarding on the next rule push. Detaching the primary promotes the next front.'
+                                  : 'Detach this front: the redirector stops forwarding on the next rule push. Detaching the primary promotes the next front.'
                               }
                             >
                               {armed === f.frontId ? 'Confirm detach' : 'Detach'}
@@ -719,14 +747,15 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
           list names the frontable transports only. */}
       <h4>Attach a front</h4>
       <p className="muted">
-        Stand an enrolled node in front of a listener: the node binds the endpoint you name,
-        splices every byte to the listener's own bind, and implants dial the node's public
-        address — never the teamserver. <strong>Node listens on</strong> is the socket on the
-        node itself (wildcard or its IP); <strong>Public endpoint</strong> is what builds bake
-        as the address implants dial — leave it empty and the listen port completes a bare
-        host (a dns/doh listener wants the resolver implants query, the zone stays the
-        listener's); <strong>Primary</strong> makes this front the endpoint new builds bake —
-        the attach form of rotation, unchecked it serves beside the current fronts.
+        Stand an enrolled redirector in front of a listener: the redirector binds the endpoint
+        you name, splices every byte to the listener's own bind, and implants dial the
+        redirector's public address — never the teamserver. <strong>Redirector listens on</strong>{' '}
+        is the socket on the redirector itself (wildcard or its IP); <strong>Public
+        endpoint</strong> is what builds bake as the address implants dial — leave it empty and
+        the listen port completes a bare host (a dns/doh listener wants the resolver implants
+        query, the zone stays the listener's); <strong>Primary</strong> makes this front the
+        endpoint new builds bake — the attach form of rotation, unchecked it serves beside the
+        current fronts.
       </p>
       <form className="listener-form" onSubmit={onAttachFront}>
         <div className="listener-row">
@@ -734,8 +763,8 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
             Listener
             <select
               value={frontListener}
-              onChange={(e) => setFrontListener(e.target.value)}
-              title="The listener this front serves -- the node splices to its bind."
+              onChange={(e) => onPickFrontListener(e.target.value)}
+              title="The listener this front serves -- the redirector splices to its bind. Picking one drafts the form: standard listen port, Primary pre-checked for a first front."
               required
             >
               <option value="">Pick a listener…</option>
@@ -747,15 +776,15 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
             </select>
           </label>
           <label>
-            Node
+            Redirector
             {nodes.length > 0 ? (
               <select
                 value={frontNode}
                 onChange={(e) => setFrontNode(e.target.value)}
-                title="An enrolled redirector node (the Redirectors page mints credentials)."
+                title="An enrolled redirector (the Redirectors page mints credentials)."
                 required
               >
-                <option value="">Pick a node…</option>
+                <option value="">Pick a redirector…</option>
                 {nodes.map((n) => (
                   <option key={n.id} value={n.id}>
                     {n.name} {n.online ? '(online)' : '(offline)'}
@@ -764,10 +793,10 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
               </select>
             ) : (
               <input
-                placeholder="node id"
+                placeholder="redirector id"
                 value={frontNode}
                 onChange={(e) => setFrontNode(e.target.value)}
-                title="No roster loaded -- type the enrolled node's id."
+                title="No roster loaded -- type the enrolled redirector's id."
                 required
               />
             )}
@@ -775,15 +804,15 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
         </div>
         <div className="listener-row">
           <label>
-            Node listens on
+            Redirector listens on
             <input
               placeholder="0.0.0.0:443"
               value={frontListen}
               onChange={(e) => setFrontListen(e.target.value)}
-              title="The endpoint the node binds -- host:port on the node itself (a wildcard or its own IP), not the public address."
+              title="The endpoint the redirector binds -- host:port on the redirector itself (a wildcard or its own IP), not the public address. Pre-filled with the transport's standard port when the listener is picked."
               required
             />
-          </label>
+            </label>
           <label>
             Public endpoint
             <input
