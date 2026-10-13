@@ -111,9 +111,16 @@ export function CampaignsView({
           and its TLS posture are per-campaign decisions, never server defaults.
         </HelpHint>
       </h2>
-      <div className="card">
-        {error && <p className="error">{error}</p>}
+      {error && <p className="error">{error}</p>}
 
+      {showCreate && (
+        <div className="card">
+          <h3>New campaign</h3>
+          <CreateForm engagementId={engagementId} onCreated={(c) => void onCreated(c)} />
+        </div>
+      )}
+
+      <div className="card">
         <div className="inline-form">
           <button className="ghost" onClick={() => void refresh()}>
             <Icon name="refresh" />
@@ -123,10 +130,6 @@ export function CampaignsView({
             {showCreate ? 'Close the form' : 'New campaign'}
           </button>
         </div>
-
-        {showCreate && (
-          <CreateForm engagementId={engagementId} onCreated={(c) => void onCreated(c)} />
-        )}
 
         <div className="table-wrap">
           <table>

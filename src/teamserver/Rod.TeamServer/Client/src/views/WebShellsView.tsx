@@ -132,145 +132,151 @@ export function WebShellsView({
       </h2>
       {error && <p className="error">{error}</p>}
 
-      <form className="task-form" onSubmit={onRegister}>
-        <select
-          value={claimId}
-          onChange={(e) => setClaimId(e.target.value)}
-          disabled={scripts.length === 0}
-          title="Claim a generated script (under Build): the family and the credential come from the stored payload, no key copying. With none claimed, the family and credential are picked by hand below."
-        >
-          <option value="">
-            {scripts.length === 0 ? 'no generated scripts yet' : 'paste credential (no claim)'}
-          </option>
-          {scripts.map((s) => (
-            <option key={s.artifactId} value={s.artifactId}>
-              claim {s.target} · {s.fingerprint.slice(0, 8)} ·{' '}
-              {new Date(s.builtAt).toLocaleDateString()}
-            </option>
-          ))}
-        </select>
-        <input
-          className="wide"
-          placeholder="https://target.example.test/uploads/cmd.php"
-          value={registerUrl}
-          onChange={(e) => setRegisterUrl(e.target.value)}
-        />
-        {!claim && (
+      <div className="card">
+        <h3>Register</h3>
+        <form className="task-form" onSubmit={onRegister}>
           <select
-            value={registerAdapter}
-            onChange={(e) => setRegisterAdapter(e.target.value)}
-            title="The protocol the placed script speaks -- the sealed Rod family (AES-256-GCM under a baked key; PHP or JSP) or the universal one-liner (the classic eval shape any manager drives)."
+            value={claimId}
+            onChange={(e) => setClaimId(e.target.value)}
+            disabled={scripts.length === 0}
+            title="Claim a generated script (under Build): the family and the credential come from the stored payload, no key copying. With none claimed, the family and credential are picked by hand below."
           >
-            <option value="rod-php">Sealed (Rod, PHP)</option>
-            <option value="rod-jsp">Sealed (Rod, JSP)</option>
-            <option value="eval-php">One-liner (PHP)</option>
-            <option value="eval-aspx">One-liner (ASPX)</option>
-            <option value="eval-asp">One-liner (ASP)</option>
-          </select>
-        )}
-        {!claim && (
-          <input
-            placeholder={
-              isRod ? 'connection key (from the generated script)' : 'connection password (optional)'
-            }
-            title={
-              isRod
-                ? 'The 256-bit key baked into the generated script (shown when it was generated under Build, and in the Payloads detail). Leave empty and registration mints a fresh script with a new key.'
-                : 'The POST parameter the eval one-liner answers to. Leave empty and one is generated.'
-            }
-            value={registerPassword}
-            onChange={(e) => setRegisterPassword(e.target.value)}
-          />
-        )}
-        <button className="primary sm" type="submit" disabled={registering || !registerUrl}>
-          Register
-        </button>
-      </form>
-
-      {placed && (
-        <div className="upgrade-panel">
-          <p>
-            Place this one-liner in the target's web root (the connection credential is{' '}
-            <code>{placed.password}</code>), then register the reachable URL if you have not
-            already.
-          </p>
-          <div className="upgrade-launcher">
-            <code className="upgrade-command">{placed.script}</code>
-            <CopyButton text={placed.script} />
-          </div>
-        </div>
-      )}
-
-      <div className="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>URL</th>
-              <th>Adapter</th>
-              <th>Password</th>
-              <th>Last probe</th>
-              <th>Status</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {shells.length === 0 && (
-              <tr>
-                <td colSpan={6}>
-                  <div className="empty">
-                    <Icon name="globe" />
-                    No web-shell endpoints registered yet -- register a URL above or generate a
-                    script to place.
-                  </div>
-                </td>
-              </tr>
-            )}
-            {shells.map((shell) => (
-              <tr
-                key={shell.implantId}
-                className={shell.implantId === selectedId ? 'selected' : undefined}
-              >
-                <td>
-                  <code>{shell.url}</code>
-                </td>
-                <td>
-                  <code>{shell.adapterId}</code>
-                </td>
-                <td>
-                  <code>{shell.password}</code>
-                </td>
-                <td>
-                  {shell.lastProbeAt
-                    ? `${shell.lastProbeOk ? 'ok' : 'failed'} · ${new Date(shell.lastProbeAt).toLocaleTimeString()}`
-                    : 'never'}
-                </td>
-                <td>
-                  <StatusBadge status={shell.retired ? 'retired' : 'registered'} />
-                </td>
-                <td>
-                  <div className="row-actions">
-                    <button className="ghost sm" onClick={() => void onProbe(shell.implantId)}>
-                      Test
-                    </button>
-                    <button
-                      className={shell.implantId === selectedId ? 'ghost sm' : 'primary sm'}
-                      onClick={() =>
-                        setSelectedId((current) =>
-                          current === shell.implantId ? null : shell.implantId,
-                        )
-                      }
-                    >
-                      {shell.implantId === selectedId ? 'Hide console' : 'Console'}
-                    </button>
-                    <button className="ghost sm" onClick={() => void onRemove(shell.implantId)}>
-                      Remove
-                    </button>
-                  </div>
-                </td>
-              </tr>
+            <option value="">
+              {scripts.length === 0 ? 'no generated scripts yet' : 'paste credential (no claim)'}
+            </option>
+            {scripts.map((s) => (
+              <option key={s.artifactId} value={s.artifactId}>
+                claim {s.target} · {s.fingerprint.slice(0, 8)} ·{' '}
+                {new Date(s.builtAt).toLocaleDateString()}
+              </option>
             ))}
-          </tbody>
-        </table>
+          </select>
+          <input
+            className="wide"
+            placeholder="https://target.example.test/uploads/cmd.php"
+            value={registerUrl}
+            onChange={(e) => setRegisterUrl(e.target.value)}
+          />
+          {!claim && (
+            <select
+              value={registerAdapter}
+              onChange={(e) => setRegisterAdapter(e.target.value)}
+              title="The protocol the placed script speaks -- the sealed Rod family (AES-256-GCM under a baked key; PHP or JSP) or the universal one-liner (the classic eval shape any manager drives)."
+            >
+              <option value="rod-php">Sealed (Rod, PHP)</option>
+              <option value="rod-jsp">Sealed (Rod, JSP)</option>
+              <option value="eval-php">One-liner (PHP)</option>
+              <option value="eval-aspx">One-liner (ASPX)</option>
+              <option value="eval-asp">One-liner (ASP)</option>
+            </select>
+          )}
+          {!claim && (
+            <input
+              placeholder={
+                isRod ? 'connection key (from the generated script)' : 'connection password (optional)'
+              }
+              title={
+                isRod
+                  ? 'The 256-bit key baked into the generated script (shown when it was generated under Build, and in the Payloads detail). Leave empty and registration mints a fresh script with a new key.'
+                  : 'The POST parameter the eval one-liner answers to. Leave empty and one is generated.'
+              }
+              value={registerPassword}
+              onChange={(e) => setRegisterPassword(e.target.value)}
+            />
+          )}
+          <button className="primary sm" type="submit" disabled={registering || !registerUrl}>
+            Register
+          </button>
+        </form>
+
+        {placed && (
+          <div className="upgrade-panel">
+            <p>
+              Place this one-liner in the target's web root (the connection credential is{' '}
+              <code>{placed.password}</code>), then register the reachable URL if you have not
+              already.
+            </p>
+            <div className="upgrade-launcher">
+              <code className="upgrade-command">{placed.script}</code>
+              <CopyButton text={placed.script} />
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="card">
+        <h3>Roster</h3>
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>URL</th>
+                <th>Adapter</th>
+                <th>Password</th>
+                <th>Last probe</th>
+                <th>Status</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {shells.length === 0 && (
+                <tr>
+                  <td colSpan={6}>
+                    <div className="empty">
+                      <Icon name="globe" />
+                      No web-shell endpoints registered yet -- register a URL above or generate a
+                      script to place.
+                    </div>
+                  </td>
+                </tr>
+              )}
+              {shells.map((shell) => (
+                <tr
+                  key={shell.implantId}
+                  className={shell.implantId === selectedId ? 'selected' : undefined}
+                >
+                  <td>
+                    <code>{shell.url}</code>
+                  </td>
+                  <td>
+                    <code>{shell.adapterId}</code>
+                  </td>
+                  <td>
+                    <code>{shell.password}</code>
+                  </td>
+                  <td>
+                    {shell.lastProbeAt
+                      ? `${shell.lastProbeOk ? 'ok' : 'failed'} · ${new Date(shell.lastProbeAt).toLocaleTimeString()}`
+                      : 'never'}
+                  </td>
+                  <td>
+                    <StatusBadge status={shell.retired ? 'retired' : 'registered'} />
+                  </td>
+                  <td>
+                    <div className="row-actions">
+                      <button className="ghost sm" onClick={() => void onProbe(shell.implantId)}>
+                        Test
+                      </button>
+                      <button
+                        className={shell.implantId === selectedId ? 'ghost sm' : 'primary sm'}
+                        onClick={() =>
+                          setSelectedId((current) =>
+                            current === shell.implantId ? null : shell.implantId,
+                          )
+                        }
+                      >
+                        {shell.implantId === selectedId ? 'Hide console' : 'Console'}
+                      </button>
+                      <button className="ghost sm" onClick={() => void onRemove(shell.implantId)}>
+                        Remove
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       {selected && (

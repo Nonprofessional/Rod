@@ -409,6 +409,7 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
       </h2>
       <div className="card">
 
+        <h4>Create a listener</h4>
         {/* The same labeled-grid shape as the Build form: every field carries
             its name above it, placeholders stay as hints only. */}
         {/* Three row groups, one concern each: identity (name, wire, the
@@ -686,6 +687,7 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
           </div>
         </form>
 
+        <h4>Roster</h4>
         <div className="inline-form">
           <button className="ghost" onClick={() => void refresh()} disabled={busy}>
             <Icon name="refresh" />

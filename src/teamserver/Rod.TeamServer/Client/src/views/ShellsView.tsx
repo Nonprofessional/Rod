@@ -88,73 +88,75 @@ export function ShellsView({
       </h2>
       {error && <p className="error">{error}</p>}
 
-      {catchers.length > 0 && (
-        <p className="muted">
-          Paste-ready catch one-liners live under{' '}
-          <a href={`#/engagements/${engagementId}/launchers`}>Launchers</a> — copy one there,
-          paste it on the target, and the shell lands in this roster.
-        </p>
-      )}
-
-      <div className="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>Status</th>
-              <th>Remote</th>
-              <th>Shell</th>
-              <th>Opened</th>
-              <th>Last output</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {shells.length === 0 && (
+      <div className="card">
+        <h3>Roster</h3>
+        {catchers.length > 0 && (
+          <p className="muted">
+            Paste-ready catch one-liners live under{' '}
+            <a href={`#/engagements/${engagementId}/launchers`}>Launchers</a> — copy one there,
+            paste it on the target, and the shell lands in this roster.
+          </p>
+        )}
+        <div className="table-wrap">
+          <table>
+            <thead>
               <tr>
-                <td colSpan={6}>
-                  <div className="empty">
-                    <Icon name="terminal" />
-                    {catchers.length > 0
-                      ? 'No shells caught yet -- copy a catch one-liner under Launchers and paste it on the target.'
-                      : 'No shells caught yet -- create a shellcatch listener under Listeners first.'}
-                  </div>
-                </td>
+                <th>Status</th>
+                <th>Remote</th>
+                <th>Shell</th>
+                <th>Opened</th>
+                <th>Last output</th>
+                <th></th>
               </tr>
-            )}
-            {shells.map((shell) => (
-              <tr
-                key={shell.sessionId}
-                className={shell.sessionId === selectedId ? 'selected' : undefined}
-              >
-                <td>
-                  <StatusBadge status={shell.status} />
-                </td>
-                <td>
-                  <code>{shell.remoteAddress}</code>
-                </td>
-                <td>
-                  <code>{shell.os}</code>
-                </td>
-                <td>{new Date(shell.openedAt).toLocaleTimeString()}</td>
-                <td>
-                  {shell.lastOutputAt ? new Date(shell.lastOutputAt).toLocaleTimeString() : '—'}
-                </td>
-                <td>
-                  <button
-                    className={shell.sessionId === selectedId ? 'ghost sm' : 'primary sm'}
-                    onClick={() =>
-                      setSelectedId((current) =>
-                        current === shell.sessionId ? null : shell.sessionId,
-                      )
-                    }
-                  >
-                    {shell.sessionId === selectedId ? 'Hide console' : 'Console'}
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {shells.length === 0 && (
+                <tr>
+                  <td colSpan={6}>
+                    <div className="empty">
+                      <Icon name="terminal" />
+                      {catchers.length > 0
+                        ? 'No shells caught yet -- copy a catch one-liner under Launchers and paste it on the target.'
+                        : 'No shells caught yet -- create a shellcatch listener under Listeners first.'}
+                    </div>
+                  </td>
+                </tr>
+              )}
+              {shells.map((shell) => (
+                <tr
+                  key={shell.sessionId}
+                  className={shell.sessionId === selectedId ? 'selected' : undefined}
+                >
+                  <td>
+                    <StatusBadge status={shell.status} />
+                  </td>
+                  <td>
+                    <code>{shell.remoteAddress}</code>
+                  </td>
+                  <td>
+                    <code>{shell.os}</code>
+                  </td>
+                  <td>{new Date(shell.openedAt).toLocaleTimeString()}</td>
+                  <td>
+                    {shell.lastOutputAt ? new Date(shell.lastOutputAt).toLocaleTimeString() : '—'}
+                  </td>
+                  <td>
+                    <button
+                      className={shell.sessionId === selectedId ? 'ghost sm' : 'primary sm'}
+                      onClick={() =>
+                        setSelectedId((current) =>
+                          current === shell.sessionId ? null : shell.sessionId,
+                        )
+                      }
+                    >
+                      {shell.sessionId === selectedId ? 'Hide console' : 'Console'}
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
       {selected && (
         <ShellConsole

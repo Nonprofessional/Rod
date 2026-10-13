@@ -138,6 +138,7 @@ export function RedirectorsView() {
         </HelpHint>
       </h2>
       <div className="card">
+        <h3>Fleet</h3>
         <div className="inline-form">
           <button className="ghost" onClick={() => void refresh()} disabled={busy}>
             <Icon name="refresh" />
@@ -145,8 +146,6 @@ export function RedirectorsView() {
           </button>
         </div>
         {error && <p className="error">{error}</p>}
-
-        <h4>Fleet</h4>
         <div className="table-wrap">
           <table>
             <thead>
@@ -225,7 +224,10 @@ export function RedirectorsView() {
           </table>
         </div>
 
-        <h4>Enrollment credentials</h4>
+      </div>
+
+      <div className="card">
+        <h3>Enrollment credentials</h3>
         <form className="inline-form" onSubmit={onMint}>
           <label>
             Node name

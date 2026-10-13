@@ -5,11 +5,14 @@ beside it: the standfirst -- the sentence or two of orientation each panel
 opens with -- is folded behind that mark and rides out on hover or keyboard
 focus, and everything else lives in hover text on the field it describes.
 Every page -- top-level or engagement tab -- opens on the same single page
-title naming its sidebar entry; the smaller headings inside a page belong
-to their cards, which are sections of the page, not titles of their own.
-This page is the long form: what each panel shows, and what every build and
-listener field does, in one place. Screenshots-age; this text is the
-reference.
+title naming its sidebar entry; page content sits in cards, one concern per
+card (a flow's form and the roster it feeds may share one). A card opens on
+a header of its own: either a heading naming the concern in the console's
+vocabulary -- Roster, Fleet, New campaign, Invite an operator, never the
+page title repeated -- or the control row (toolbar, toggle, filter line)
+that drives it; nothing sits bare on the page. This page is the long form:
+what each panel shows, and what every build and listener field does, in
+one place. Screenshots-age; this text is the reference.
 
 ## Operating surfaces
 

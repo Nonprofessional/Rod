@@ -117,12 +117,11 @@ export function MembersView({
           roster. Every grant, re-tier, and removal lands in the engagement's audit trail.
         </HelpHint>
       </h2>
-      <div className="card">
-
-        {isOwner ? (
+      {isOwner ? (
+        <div className="card">
+          <h3>Invite an operator</h3>
           <form className="build-form" onSubmit={onInvite}>
             <fieldset>
-              <legend>Invite an operator</legend>
               <label>
                 Handle
                 <input
@@ -149,13 +148,16 @@ export function MembersView({
               Grant access
             </button>
           </form>
-        ) : (
-          <p className="muted">
-            Grant management is the owner's alone -- you hold the{' '}
-            {members.find((m) => m.operatorId === operator.operatorId)?.role ?? 'member'} tier on this
-            engagement.
-          </p>
-        )}
+        </div>
+      ) : (
+        <p className="muted">
+          Grant management is the owner's alone -- you hold the{' '}
+          {members.find((m) => m.operatorId === operator.operatorId)?.role ?? 'member'} tier on
+          this engagement.
+        </p>
+      )}
+
+      <div className="card">
         {note && <p className="muted">{note}</p>}
         {error && <p className="error">{error}</p>}
 

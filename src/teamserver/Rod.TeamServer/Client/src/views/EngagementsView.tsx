@@ -180,10 +180,11 @@ export function EngagementsView() {
           Loading engagements…
         </div>
       ) : (
-        <>
+        <div className="card">
           {/* The roster at a glance: the close-out pipeline's stages sized
               before the table tells it, with the deployment's live fleet
               posture beside them. */}
+          <h3>Roster</h3>
           {items.length > 0 && (
             <div className="count-row">
               <span className="chip">
@@ -321,7 +322,7 @@ export function EngagementsView() {
             </tbody>
           </table>
           </div>
-        </>
+        </div>
       )}
 
       {editing && (
