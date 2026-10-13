@@ -392,7 +392,7 @@ export function AutomationView({
       </div>
 
       <div className="card">
-        <div className="table-toolbar">
+        <div className="card-head">
           <h3>Rules</h3>
           <button className="ghost" onClick={() => void refresh()} disabled={busy}>
             <Icon name="refresh" />

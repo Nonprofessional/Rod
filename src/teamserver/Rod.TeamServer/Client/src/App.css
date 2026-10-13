@@ -667,6 +667,29 @@ input[type='file']::file-selector-button {
   letter-spacing: -0.005em;
 }
 
+/* A card's header row: the concern's heading on the left, the card's own
+   actions (refresh, the form toggle) on the right, one aligned line. The
+   heading selector outspecifies .card h3 above on purpose -- the row owns
+   its spacing, the card's section margins do not apply. */
+.card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  margin: 0 0 12px;
+}
+
+.card .card-head h3 {
+  margin: 0;
+}
+
+/* A grouped action cluster in the header row (two buttons sharing the
+   right side) rides flush like the lone buttons do. */
+.card-head .inline-form {
+  margin: 0;
+}
+
 .card > p.muted {
   margin: 0 0 14px;
   font-size: 12.5px;
@@ -701,17 +724,6 @@ input[type='file']::file-selector-button {
   width: 14px;
   height: 14px;
   flex: none;
-}
-
-/* Beside an in-card h4 section label (uppercase, 11.5px) the mark sits a
-   breath off the text and steps down a size. */
-h4 .help-hint {
-  margin-left: 6px;
-}
-
-h4 .help-hint-icon {
-  width: 12px;
-  height: 12px;
 }
 
 .help-hint-body {

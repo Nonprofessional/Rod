@@ -121,14 +121,17 @@ export function CampaignsView({
       )}
 
       <div className="card">
-        <div className="inline-form">
-          <button className="ghost" onClick={() => void refresh()}>
-            <Icon name="refresh" />
-            Refresh
-          </button>
-          <button className="primary" onClick={() => setShowCreate((v) => !v)}>
-            {showCreate ? 'Close the form' : 'New campaign'}
-          </button>
+        <div className="card-head">
+          <h3>Roster</h3>
+          <div className="inline-form">
+            <button className="ghost" onClick={() => void refresh()}>
+              <Icon name="refresh" />
+              Refresh
+            </button>
+            <button className="primary" onClick={() => setShowCreate((v) => !v)}>
+              {showCreate ? 'Close the form' : 'New campaign'}
+            </button>
+          </div>
         </div>
 
         <div className="table-wrap">

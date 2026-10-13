@@ -138,8 +138,8 @@ export function RedirectorsView() {
         </HelpHint>
       </h2>
       <div className="card">
-        <h3>Fleet</h3>
-        <div className="inline-form">
+        <div className="card-head">
+          <h3>Fleet</h3>
           <button className="ghost" onClick={() => void refresh()} disabled={busy}>
             <Icon name="refresh" />
             Refresh

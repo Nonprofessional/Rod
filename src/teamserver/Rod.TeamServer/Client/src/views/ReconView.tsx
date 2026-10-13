@@ -277,6 +277,9 @@ export function ReconView({
             onClose={() => setFinding(null)}
           />
         )}
+      </div>
+
+      <div className="card">
         <h3>Findings</h3>
         <div className="table-wrap">
           <table>

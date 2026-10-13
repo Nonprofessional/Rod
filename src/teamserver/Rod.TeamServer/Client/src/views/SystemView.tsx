@@ -67,32 +67,43 @@ export function SystemView() {
           here, not a failed build.
         </HelpHint>
       </h2>
+      {error && <p className="error">{error}</p>}
+
       <div className="card">
-        <div className="inline-form">
+        <div className="card-head">
+          <h3>Server</h3>
           <button className="ghost" onClick={() => void refresh()} disabled={busy}>
             <Icon name="refresh" />
             Refresh
           </button>
         </div>
-        {error && <p className="error">{error}</p>}
-
         {info ? (
-          <>
-            <h4>Server</h4>
-            <dl className="kv">
-              <dt>Host</dt>
-              <dd>{info.server.host}</dd>
-              <dt>Operating system</dt>
-              <dd>{info.server.operatingSystem}</dd>
-              <dt>Runtime</dt>
-              <dd>{info.server.runtime}</dd>
-              <dt>Uptime</dt>
-              <dd title={`Started ${new Date(info.server.startedAt).toLocaleString()}`}>
-                {elapsed(info.server.startedAt)}
-              </dd>
-            </dl>
+          <dl className="kv">
+            <dt>Host</dt>
+            <dd>{info.server.host}</dd>
+            <dt>Operating system</dt>
+            <dd>{info.server.operatingSystem}</dd>
+            <dt>Runtime</dt>
+            <dd>{info.server.runtime}</dd>
+            <dt>Uptime</dt>
+            <dd title={`Started ${new Date(info.server.startedAt).toLocaleString()}`}>
+              {elapsed(info.server.startedAt)}
+            </dd>
+          </dl>
+        ) : (
+          !error && (
+            <div className="empty">
+              <span className="spinner" />
+              Probing the environment…
+            </div>
+          )
+        )}
+      </div>
 
-            <h4>Persistence</h4>
+      {info && (
+        <>
+          <div className="card">
+            <h3>Persistence</h3>
             <div className="table-wrap">
               <table>
                 <thead>
@@ -120,7 +131,10 @@ export function SystemView() {
                   (info.persistence.dataDirectory || '(no data directory configured)') +
                   '. Set ConnectionStrings:Postgres before startup for durable core state.'}
             </p>
+          </div>
 
+          <div className="card">
+            <h3>Build units</h3>
             {info.buildUnits.map((unit) => (
               <div key={unit.language} className="system-unit">
                 <h4>
@@ -174,16 +188,9 @@ export function SystemView() {
                 </div>
               </div>
             ))}
-          </>
-        ) : (
-          !error && (
-            <div className="empty">
-              <span className="spinner" />
-              Probing the environment…
-            </div>
-          )
-        )}
-      </div>
+          </div>
+        </>
+      )}
     </section>
   )
 }

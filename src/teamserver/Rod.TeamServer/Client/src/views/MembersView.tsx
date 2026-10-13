@@ -158,15 +158,15 @@ export function MembersView({
       )}
 
       <div className="card">
-        {note && <p className="muted">{note}</p>}
-        {error && <p className="error">{error}</p>}
-
-        <div className="inline-form">
+        <div className="card-head">
+          <h3>Roster</h3>
           <button className="ghost" onClick={() => void refresh()} disabled={busy}>
             <Icon name="refresh" />
             Refresh
           </button>
         </div>
+        {note && <p className="muted">{note}</p>}
+        {error && <p className="error">{error}</p>}
         <div className="table-wrap">
           <table>
             <thead>

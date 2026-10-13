@@ -10,7 +10,9 @@ card (a flow's form and the roster it feeds may share one). A card opens on
 a header of its own: either a heading naming the concern in the console's
 vocabulary -- Roster, Fleet, New campaign, Invite an operator, never the
 page title repeated -- or the control row (toolbar, toggle, filter line)
-that drives it; nothing sits bare on the page. This page is the long form:
+that drives it; nothing sits bare on the page. A heading that pairs with
+the card's own actions (refresh, a form toggle) is a header row: heading
+left, actions right, one aligned line. This page is the long form:
 what each panel shows, and what every build and listener field does, in
 one place. Screenshots-age; this text is the reference.
 

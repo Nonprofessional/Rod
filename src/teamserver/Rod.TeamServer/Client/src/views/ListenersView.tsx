@@ -407,9 +407,10 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
           docs/operations/operator-ui.md.
         </HelpHint>
       </h2>
-      <div className="card">
+      {error && <p className="error">{error}</p>}
 
-        <h4>Create a listener</h4>
+      <div className="card">
+        <h3>Create a listener</h3>
         {/* The same labeled-grid shape as the Build form: every field carries
             its name above it, placeholders stay as hints only. */}
         {/* Three row groups, one concern each: identity (name, wire, the
@@ -584,14 +585,14 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
             </button>
           </div>
         </form>
+      </div>
 
+      <div className="card">
         {/* The enrolled-fleet half (architecture.md Sec 8): attach a front to
             one of the listeners below, fronted by a redirector from the
             roster. The dns family waits on the redirector's datagram relay;
-            the form's listener list names the frontable transports only. It
-            sits with the create form above the roster: both are actions on
-            the table, and the table is the result. */}
-        <h4>
+            the form's listener list names the frontable transports only. */}
+        <h3>
           Attach a front
           <HelpHint>
             Stand an enrolled redirector in front of a listener: the redirector binds the
@@ -603,7 +604,7 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
             listener's own); Primary makes this front the endpoint new builds bake — the attach
             form of rotation, unchecked it serves beside the current fronts.
           </HelpHint>
-        </h4>
+        </h3>
         <form className="listener-form" onSubmit={onAttachFront}>
           <div className="listener-row">
             <label>
@@ -686,15 +687,16 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
             </button>
           </div>
         </form>
+      </div>
 
-        <h4>Roster</h4>
-        <div className="inline-form">
+      <div className="card">
+        <div className="card-head">
+          <h3>Roster</h3>
           <button className="ghost" onClick={() => void refresh()} disabled={busy}>
             <Icon name="refresh" />
             Refresh
           </button>
         </div>
-        {error && <p className="error">{error}</p>}
         <div className="table-wrap">
           <table className="listeners-table">
             <thead>
