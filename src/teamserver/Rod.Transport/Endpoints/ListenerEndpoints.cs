@@ -513,14 +513,20 @@ public static class ListenerEndpoints
     private static async Task<IResult> ListListenersAsync(
         string engagementId,
         IListenerRegistry listeners,
+        CoreState.Redirectors.IRedirectorFleet fleet,
         CancellationToken cancellationToken)
     {
         if (!Guid.TryParse(engagementId, out var engagementValue))
             return Results.BadRequest(new Problem("Engagement id is not a valid identifier."));
 
+        // Each front row names its redirector; one roster read serves the
+        // whole listing (the attach response carries the name, the listing
+        // must too or the roster shows bare ids after every refresh).
+        var nodeNames = (await fleet.ListNodesAsync(cancellationToken))
+            .ToDictionary(n => n.Id, n => n.Name);
         var owned = (await listeners.ListAsync(cancellationToken))
             .Where(l => l.EngagementId == new EngagementId(engagementValue))
-            .Select(Response.Of)
+            .Select(l => Response.Of(l, nodeNames))
             .ToArray();
         return Results.Ok(owned);
     }
@@ -767,8 +773,12 @@ public static class ListenerEndpoints
 
     private static class Response
     {
-        public static ListenerResponse Of(Listener l)
-            => new(
+        public static ListenerResponse Of(
+            Listener l,
+            IReadOnlyDictionary<CoreState.RedirectorNodeId, string>? nodeNames = null)
+        {
+            nodeNames ??= new Dictionary<CoreState.RedirectorNodeId, string>();
+            return new ListenerResponse(
                 l.Id.ToString(),
                 l.Name,
                 // The transport's wire name (the registry key a provider
@@ -782,7 +792,10 @@ public static class ListenerEndpoints
                 l.CreatedAt,
                 l.RepointedAt,
                 l.Fronts.Select(f => ListenerFrontResponse.Of(
-                    f, isPrimary: f.FrontId == l.Fronts.FirstOrDefault()?.FrontId)).ToList());
+                    f,
+                    isPrimary: f.FrontId == l.Fronts.FirstOrDefault()?.FrontId,
+                    nodeNames.GetValueOrDefault(f.NodeId, ""))).ToList());
+        }
     }
 
 }
