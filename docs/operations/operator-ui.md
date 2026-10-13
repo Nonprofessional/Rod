@@ -524,16 +524,21 @@ unbinds and forgets the listener. A listener nothing depends on dies in two
 clicks and no dialogs.
 
 **Fronts** are the enrolled-fleet half (architecture.md Sec 8): attached
-redirector nodes render as indented sub-rows under their listener -- the
-primary badge first, the node's name, the endpoint it binds, and the address
-implants dial through it. Attaching a front (the form under the roster)
-names the listener (every payload-ingress family -- the web pair and the
-raw socket ride the TCP splice, the DNS family the node's datagram relay),
-a node from the fleet roster, the endpoint that node binds, and the public
+redirectors render as indented sub-rows under their listener -- the
+primary badge first, the redirector's name, the endpoint it binds, and the
+address implants dial through it. Attaching a front (the form under the
+roster) names the listener (every payload-ingress family -- the web pair
+and the raw socket ride the TCP splice, the DNS family the redirector's
+datagram relay), a redirector from the fleet roster, the endpoint that
+redirector binds, and the public
 endpoint implants dial (completed like the listener's own; a dns or doh
 front names the **resolver** -- host or host:port -- because the zone is
 the listener record's own, and the DNS family's record never follows its
-primary front). **Primary** inserts the front at the head and repoints the
+primary front). Picking the listener drafts the form: the bind pre-fills
+with the transport's standard public port, and Primary pre-checks when
+the listener has no fronts yet -- the drafts are there to correct, and a
+hand-typed endpoint survives a re-pick. **Primary** inserts the front at
+the head and repoints the
 listener to it; *Promote* does the same later -- the rotation op that
 replaces repointing for enrolled fleets, since the node receives and serves
 its rule the moment the attach lands. *Detach* (two clicks) removes the
@@ -899,7 +904,14 @@ evidence stays readable while the record stops serving.
 ## Settings
 
 `#/settings`, from the topbar's settings entry -- operator-level runtime
-settings, server-wide rather than per-engagement. **Build cache** is the
+settings, server-wide rather than per-engagement. **Console behavior** is
+the exception to that scope: this browser's own preferences, kept in
+localStorage and never sent to the server. Its one knob is the refresh
+cadence -- how often presence-style surfaces (the redirector roster, the
+engagement view's fallback refresh, the shell roster) re-read while
+their tab is visible; build progress keeps its own faster cadence because
+it is task progress, not presence. Saves re-arm running timers on the
+spot. **Build cache** is the
 shared cargo target dir payload builds compile against: a persistent
 directory turns a cold cross-compile into a one-time cost (dependency
 artifacts are reused; concurrent builds queue on cargo's own lock),

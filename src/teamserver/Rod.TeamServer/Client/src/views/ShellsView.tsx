@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { type ListenerSummary, type ShellSession, listListeners, listShells } from '../api'
+import { usePollIntervalMs } from '../clientPrefs'
 import { Icon } from '../components/Icons'
 import { ShellConsole } from '../components/ShellConsole'
 import { StatusBadge } from '../components/StatusBadge'
@@ -26,6 +27,8 @@ export function ShellsView({
   const [webListeners, setWebListeners] = useState<ListenerSummary[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  // The reconciliation poll's cadence, set per browser in Settings.
+  const pollMs = usePollIntervalMs()
 
   const refresh = useCallback(async () => {
     try {
@@ -59,9 +62,9 @@ export function ShellsView({
   // Reconciliation only: a dropped SSE connection loses the roster events,
   // and the slow poll re-anchors to the server's view.
   useEffect(() => {
-    const timer = window.setInterval(() => void refresh(), 5000)
+    const timer = window.setInterval(() => void refresh(), pollMs)
     return () => window.clearInterval(timer)
-  }, [refresh])
+  }, [refresh, pollMs])
 
   // The selected shell's console reads the live entity from the roster, so
   // the status pill moves with the roster refreshes rather than a stale

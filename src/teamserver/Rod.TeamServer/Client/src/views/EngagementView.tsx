@@ -11,6 +11,7 @@ import {
 } from '../api'
 import type { TabId } from '../tabs'
 import { LiveContext } from '../shell'
+import { usePollIntervalMs } from '../clientPrefs'
 import { AuditView } from './AuditView'
 import { ImplantsView } from './ImplantsView'
 import { InteractView } from './InteractView'
@@ -69,6 +70,8 @@ export function EngagementView({
   const [claims, setClaims] = useState<ClaimSummary[]>([])
   const [driving, setDriving] = useState<DrivingEntry[]>([])
   const [error, setError] = useState<string | null>(null)
+  // The fallback poll's cadence, set per browser in Settings.
+  const pollMs = usePollIntervalMs()
 
   const refreshCount = useCallback(async () => {
     try {
@@ -155,12 +158,12 @@ export function EngagementView({
       }
     }
     void refresh()
-    const timer = window.setInterval(() => void refresh(), 5_000)
+    const timer = window.setInterval(() => void refresh(), pollMs)
     return () => {
       cancelled = true
       window.clearInterval(timer)
     }
-  }, [engagementId, tick])
+  }, [engagementId, tick, pollMs])
 
   const live = useMemo(
     () => ({

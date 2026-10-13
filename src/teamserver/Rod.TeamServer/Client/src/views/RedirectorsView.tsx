@@ -11,6 +11,7 @@ import {
 } from '../api'
 import { Icon } from '../components/Icons'
 import { CopyButton } from '../components/CopyButton'
+import { usePollIntervalMs } from '../clientPrefs'
 import { ago } from '../when'
 import { useArmedDelete } from '../useArmedDelete'
 
@@ -75,15 +76,16 @@ export function RedirectorsView() {
 
   // Presence flips when a node's control connection opens or drops, and
   // nothing pushes that to this page (the live event stream is
-  // engagement-scoped). Poll on a short cadence while the tab is visible
-  // so a node enrolling shows up without a manual refresh; a hidden tab
-  // stays quiet rather than polling into the void.
+  // engagement-scoped). Poll on the browser's cadence while the tab is
+  // visible so a node enrolling shows up without a manual refresh; a hidden
+  // tab stays quiet rather than polling into the void.
+  const pollMs = usePollIntervalMs()
   useEffect(() => {
     const timer = window.setInterval(() => {
       if (document.visibilityState === 'visible') void refresh()
-    }, 5000)
+    }, pollMs)
     return () => window.clearInterval(timer)
-  }, [refresh])
+  }, [refresh, pollMs])
 
   const onMint = async (event: React.FormEvent) => {
     event.preventDefault()
@@ -126,7 +128,7 @@ export function RedirectorsView() {
       <h3>Redirectors</h3>
       <p className="muted">
         The deployment's forwarding fleet. Mint a credential below and the console renders the full
-        node invocation to paste on the machine — the node enrolls once, then receives and serves
+        redirector invocation to paste on the machine — it enrolls once, then receives and serves
         the fronts this teamserver's listeners attach to it. The control URL it bakes follows this
         console's own address and TLS posture (wss behind HTTPS, ws otherwise). Presence is the
         control connection itself; retirement refuses the next reconnect by name.
@@ -226,7 +228,7 @@ export function RedirectorsView() {
             placeholder="edge-fra-1"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            title="The credential's name becomes the enrolled node's roster name."
+            title="The credential's name becomes the enrolled redirector's roster name."
             required
           />
         </label>
@@ -248,7 +250,7 @@ export function RedirectorsView() {
       {minted && (
         <div className="minted-secret" title="The secret is shown once, here, and never again.">
           <p>
-            <strong>{minted.name}</strong> — paste this on the node's machine:
+            <strong>{minted.name}</strong> — paste this on the redirector's machine:
           </p>
           <code>{nodeCommand(minted.secret)}</code>
           <div className="table-toolbar">

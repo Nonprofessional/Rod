@@ -1,4 +1,5 @@
 import { Fragment, useCallback, useEffect, useState } from 'react'
+import { readPollIntervalSeconds, writePollIntervalSeconds } from '../clientPrefs'
 import {
   type MintedOperatorToken,
   type OperatorAccount,
@@ -182,8 +183,62 @@ export function SettingsView({ operator }: { operator: SessionOperator }) {
         {cacheSaved && <p className="muted">{cacheSaved}</p>}
       </div>
 
+      <ConsoleCard />
       <OperatorsCard operator={operator} />
     </>
+  )
+}
+
+// This browser's own console preferences: presentation state the UI keeps
+// in localStorage, applies on the spot, and never sends to the server --
+// unlike the card above, these follow the operator's browser, not the
+// teamserver.
+function ConsoleCard() {
+  const [pollDraft, setPollDraft] = useState(() => String(readPollIntervalSeconds()))
+  const [saved, setSaved] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  const onSavePoll = (event: React.FormEvent) => {
+    event.preventDefault()
+    const seconds = Number(pollDraft.trim())
+    if (!Number.isFinite(seconds)) {
+      setError('Seconds must be a number.')
+      setSaved(null)
+      return
+    }
+    const clamped = writePollIntervalSeconds(seconds)
+    setPollDraft(String(clamped))
+    setSaved(`Applied -- presence surfaces now re-read every ${clamped}s.`)
+    setError(null)
+  }
+
+  return (
+    <div className="card">
+      <h3>Console behavior</h3>
+      <p className="muted">
+        This browser's own preferences -- saved locally, applied on the spot, never sent to the
+        teamserver.
+      </p>
+      <form className="build-form" onSubmit={onSavePoll}>
+        <fieldset>
+          <legend>Refresh cadence</legend>
+          <label>
+            Poll every (seconds)
+            <input
+              value={pollDraft}
+              onChange={(e) => setPollDraft(e.target.value)}
+              title="How often presence-style surfaces re-read while their tab is visible: the redirector fleet's roster, the engagement view's fallback refresh, the shell roster. Build progress keeps its own faster cadence -- it is task progress, not presence. 2..60; default 5."
+            />
+            <span className="field-help">2..60 · default 5</span>
+          </label>
+        </fieldset>
+        <button className="primary" type="submit">
+          Save
+        </button>
+      </form>
+      {saved && <p className="muted">{saved}</p>}
+      {error && <p className="error">{error}</p>}
+    </div>
   )
 }
 
