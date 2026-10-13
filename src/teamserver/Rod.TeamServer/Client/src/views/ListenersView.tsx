@@ -699,16 +699,22 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
                           ) : (
                             <span className="status queued">front</span>
                           )}
-                          <strong>{f.nodeName || f.nodeId.slice(0, 8)}</strong>
-                          <span className="muted">binds</span>
-                          <code>{f.listenEndpoint}</code>
-                          <span className="muted">· dials</span>
-                          <code>{f.publicEndpoint}</code>
-                          {f.allowList && (
-                            <span className="muted" title="The source CIDRs the redirector enforces on this front.">
-                              · allow {f.allowList}
-                            </span>
-                          )}
+                          <strong className="front-node" title={f.nodeId}>
+                            {f.nodeName || f.nodeId.slice(0, 8)}
+                          </strong>
+                          <span className="front-slot">
+                            <span className="muted">binds</span>
+                            <code>{f.listenEndpoint}</code>
+                          </span>
+                          <span className="front-slot">
+                            <span className="muted">implants dial</span>
+                            <code>{f.publicEndpoint}</code>
+                            {f.allowList && (
+                              <span className="muted" title="The source CIDRs the redirector enforces on this front.">
+                                · allow {f.allowList}
+                              </span>
+                            )}
+                          </span>
                           <span className="row-actions">
                             {!f.isPrimary && (
                               <button
