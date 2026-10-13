@@ -712,7 +712,10 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
             {listeners.map((l) => (
               <Fragment key={l.id}>
                 <tr>
-                  <td>{l.name}</td>
+                  <td className="listener-name-cell">
+                    <Icon name="radio" className="row-icon" />
+                    {l.name}
+                  </td>
                   <td>
                     {l.transport}
                     {l.trustPosture === 'public' && (

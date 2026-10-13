@@ -1751,6 +1751,38 @@ textarea:focus-visible {
   border-top: none;
 }
 
+/* A listener row opens its group: a heavier rule above it, the antenna
+   icon, and a bold name. The front rows under it carry neither, so the
+   eye separates "one of these headings" from "one of its fronts" without
+   any two-tone banding. */
+.listeners-table tbody tr:not(.front-row) td {
+  border-top: 2px solid var(--border-strong);
+}
+
+.listeners-table tbody tr:first-child td {
+  border-top: none;
+}
+
+.listener-name-cell {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-weight: 600;
+}
+
+.row-icon {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  color: var(--muted);
+}
+
+/* The front rows sit one step in: the rule edge stays at the cell's left,
+   the content steps past it. */
+.front-name-cell {
+  padding-left: 1.1rem;
+}
+
 .listeners-table th.col-actions {
   width: 12rem;
   min-width: 12rem;
