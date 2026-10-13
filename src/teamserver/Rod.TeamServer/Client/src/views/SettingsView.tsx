@@ -569,7 +569,7 @@ function OperatorsCard({ operator }: { operator: SessionOperator }) {
                                   : "Switch this account off (two clicks: the first arms, the second disables). Every authentication path refuses at its next use; enabling restores exactly what it had. The last enabled account can't be disabled."
                             }
                           >
-                            {armed === account.id ? 'Confirm disable' : 'Disable'}
+                            {armed === account.id ? 'Confirm' : 'Disable'}
                           </button>
                         )}
                       </span>

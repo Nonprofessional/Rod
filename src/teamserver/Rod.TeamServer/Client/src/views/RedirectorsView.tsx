@@ -152,7 +152,7 @@ export function RedirectorsView() {
               <th>Last seen</th>
               <th>Address</th>
               <th>Enrolled</th>
-              <th></th>
+              <th className="col-actions"></th>
             </tr>
           </thead>
           <tbody>
@@ -210,7 +210,7 @@ export function RedirectorsView() {
                           : 'Retire this node: its live control session closes and the next reconnect is refused by name. The two-click guard applies.'
                       }
                     >
-                      {armed === n.id ? 'Confirm retire' : 'Retire'}
+                      {armed === n.id ? 'Confirm' : 'Retire'}
                     </button>
                   )}
                 </td>
@@ -273,7 +273,7 @@ export function RedirectorsView() {
               <th>State</th>
               <th>Issued</th>
               <th>Expires</th>
-              <th></th>
+              <th className="col-actions"></th>
             </tr>
           </thead>
           <tbody>
@@ -313,7 +313,7 @@ export function RedirectorsView() {
                           : 'Revoke this credential: it can never enroll. Idempotent.'
                       }
                     >
-                      {armed === c.id ? 'Confirm revoke' : 'Revoke'}
+                      {armed === c.id ? 'Confirm' : 'Revoke'}
                     </button>
                   )}
                 </td>

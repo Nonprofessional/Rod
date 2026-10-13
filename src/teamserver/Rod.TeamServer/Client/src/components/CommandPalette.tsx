@@ -599,7 +599,7 @@ function SnippetInspector({
             Run
           </button>
           <button className={armed ? 'danger' : 'ghost'} onClick={() => void onDelete()}>
-            {armed ? 'Confirm delete' : 'Delete'}
+            {armed ? 'Confirm' : 'Delete'}
           </button>
         </div>
       </div>

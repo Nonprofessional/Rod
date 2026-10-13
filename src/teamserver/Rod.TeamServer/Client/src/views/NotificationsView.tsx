@@ -312,7 +312,7 @@ export function NotificationsView({
                           arm(subscription.id, () => void onDelete(subscription))
                         }
                       >
-                        {armed === subscription.id ? 'Confirm delete' : 'Delete'}
+                        {armed === subscription.id ? 'Confirm' : 'Delete'}
                       </button>
                     </div>
                   </td>

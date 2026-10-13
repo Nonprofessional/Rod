@@ -594,7 +594,7 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
               <th>Public endpoint</th>
               <th>Fronts</th>
               <th>State</th>
-              <th></th>
+              <th className="col-actions"></th>
             </tr>
           </thead>
           <tbody>
@@ -683,61 +683,59 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
                           : 'Delete this listener (two clicks: the first arms, the second deletes). A listener live implants enrolled through asks once more.'
                       }
                     >
-                      {armed === l.id ? 'Confirm delete' : 'Delete'}
+                      {armed === l.id ? 'Confirm' : 'Delete'}
                     </button>
                   </td>
                 </tr>
                 {l.fronts.length > 0 &&
                   l.fronts.map((f) => (
                     <tr key={f.frontId} className="front-row">
-                      <td colSpan={7}>
-                        <span className="front-cell">
-                          {f.isPrimary ? (
-                            <span className="status completed" title="The primary front -- the public endpoint builds bake.">
-                              primary
-                            </span>
-                          ) : (
-                            <span className="status queued">front</span>
-                          )}
-                          <strong className="front-node" title={f.nodeId}>
-                            {f.nodeName || f.nodeId.slice(0, 8)}
-                          </strong>
-                          <span className="front-slot">
-                            <span className="muted">binds</span>
-                            <code>{f.listenEndpoint}</code>
+                      <td className="front-name-cell">
+                        {f.isPrimary ? (
+                          <span className="status completed" title="The primary front -- the public endpoint builds bake.">
+                            primary
                           </span>
-                          <span className="front-slot">
-                            <span className="muted">implants dial</span>
-                            <code>{f.publicEndpoint}</code>
-                            {f.allowList && (
-                              <span className="muted" title="The source CIDRs the redirector enforces on this front.">
-                                · allow {f.allowList}
-                              </span>
-                            )}
+                        ) : (
+                          <span className="status queued">front</span>
+                        )}
+                        <strong title={f.nodeId}>{f.nodeName || f.nodeId.slice(0, 8)}</strong>
+                      </td>
+                      <td></td>
+                      <td>
+                        <code title="The endpoint this redirector binds">{f.listenEndpoint}</code>
+                      </td>
+                      <td>
+                        <code title="What implants dial through this front">{f.publicEndpoint}</code>
+                        {f.allowList && (
+                          <span className="muted" title="The source CIDRs the redirector enforces on this front.">
+                            {' '}
+                            · allow {f.allowList}
                           </span>
-                          <span className="row-actions">
-                            {!f.isPrimary && (
-                              <button
-                                className="ghost sm"
-                                onClick={() => void onPromoteFront(l, f.frontId)}
-                                title="Make this the primary front: the public endpoint builds bake follows it. The rotation op for enrolled fleets."
-                              >
-                                Promote
-                              </button>
-                            )}
-                            <button
-                              className={`ghost sm danger${armed === f.frontId ? ' armed' : ''}`}
-                              onClick={() => onDetachFront(l, f.frontId)}
-                              title={
-                                armed === f.frontId
-                                  ? 'Click again — the button reverts on its own after a few seconds'
-                                  : 'Detach this front: the redirector stops forwarding on the next rule push. Detaching the primary promotes the next front.'
-                              }
-                            >
-                              {armed === f.frontId ? 'Confirm detach' : 'Detach'}
-                            </button>
-                          </span>
-                        </span>
+                        )}
+                      </td>
+                      <td></td>
+                      <td></td>
+                      <td>
+                        {!f.isPrimary && (
+                          <button
+                            className="ghost sm"
+                            onClick={() => void onPromoteFront(l, f.frontId)}
+                            title="Make this the primary front: the public endpoint builds bake follows it. The rotation op for enrolled fleets."
+                          >
+                            Promote
+                          </button>
+                        )}
+                        <button
+                          className={`ghost sm danger${armed === f.frontId ? ' armed' : ''}`}
+                          onClick={() => onDetachFront(l, f.frontId)}
+                          title={
+                            armed === f.frontId
+                              ? 'Click again — the button reverts on its own after a few seconds'
+                              : 'Detach this front: the redirector stops forwarding on the next rule push. Detaching the primary promotes the next front.'
+                          }
+                        >
+                          {armed === f.frontId ? 'Confirm' : 'Detach'}
+                        </button>
                       </td>
                     </tr>
                   ))}

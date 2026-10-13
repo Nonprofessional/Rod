@@ -463,7 +463,7 @@ export function AutomationView({
                         className={`sm danger${armed === rule.id ? ' armed' : ''}`}
                         onClick={() => arm(rule.id, () => void onDelete(rule))}
                       >
-                        {armed === rule.id ? 'Confirm delete' : 'Delete'}
+                        {armed === rule.id ? 'Confirm' : 'Delete'}
                       </button>
                     </div>
                   </td>
