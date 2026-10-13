@@ -1766,8 +1766,11 @@ textarea:focus-visible {
 .listener-name-cell {
   display: flex;
   align-items: center;
-  gap: 0.45rem;
-  font-weight: 600;
+  gap: 0.5rem;
+}
+
+.listener-name-cell .row-label {
+  font-weight: 700;
 }
 
 .row-icon {
@@ -1777,10 +1780,18 @@ textarea:focus-visible {
   color: var(--muted);
 }
 
-/* The front rows sit one step in: the rule edge stays at the cell's left,
-   the content steps past it. */
+/* The front rows carry the rule edge at the cell's left and a blank as
+   wide as the listener's antenna icon, so every name in the column --
+   listener or front -- starts on the same line. The front's own name
+   reads regular weight against the listener's bold. */
 .front-name-cell {
-  padding-left: 1.1rem;
+  /* Compensate the rule edge so the shared 12px cell padding and the
+     icon slot land at the same x as the listener row above. */
+  padding-left: 10px;
+}
+
+.front-name-cell .row-label {
+  font-weight: 400;
 }
 
 .listeners-table th.col-actions {

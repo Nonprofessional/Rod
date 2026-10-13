@@ -714,7 +714,7 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
                 <tr>
                   <td className="listener-name-cell">
                     <Icon name="radio" className="row-icon" />
-                    {l.name}
+                    <span className="row-label">{l.name}</span>
                   </td>
                   <td>
                     {l.transport}
@@ -794,7 +794,13 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
                   l.fronts.map((f) => (
                     <tr key={f.frontId} className="front-row">
                       <td className="front-name-cell">
-                        <strong title={f.nodeId}>{f.nodeName || f.nodeId.slice(0, 8)}</strong>
+                        {/* The listener row's antenna icon sits ahead of its
+                            name; an equally wide blank keeps the front's name
+                            on the same starting line. */}
+                        <span className="row-icon" aria-hidden="true" />
+                        <strong className="row-label" title={f.nodeId}>
+                          {f.nodeName || f.nodeId.slice(0, 8)}
+                        </strong>
                       </td>
                       <td></td>
                       <td>
