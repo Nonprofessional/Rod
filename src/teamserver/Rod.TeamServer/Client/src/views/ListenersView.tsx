@@ -14,6 +14,7 @@ import {
   promoteListenerFront,
   repointListener,
 } from '../api'
+import { HelpHint } from '../components/HelpHint'
 import { Icon } from '../components/Icons'
 import { StatusBadge } from '../components/StatusBadge'
 import { useArmedDelete } from '../useArmedDelete'
@@ -394,13 +395,18 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
 
   return (
     <div className="card">
-      <h3>Listeners</h3>
-      <p className="muted" title="Bind is the socket this server opens; the public endpoint is what implants dial. Hover the fields for specifics; the full guide is docs/operations/operator-ui.md.">
-        This engagement's C2 ingress — bind is the socket here, public endpoint is what implants
-        dial. Every front carries every behavior; the wires differ in encryption, posture, and
-        speed — pick by the target's egress (the Build form's summary spells out how each
-        behavior rides). HTTPS/mTLS remain the recommended posture, cleartext HTTP the lab one.
-      </p>
+      <h3>
+        Listeners
+        <HelpHint>
+          This engagement's C2 ingress — bind is the socket this server opens, public endpoint is
+          what implants dial, and the fronts attached from the redirector fleet ride the roster as
+          sub-rows under their listener. Every front carries every behavior; the wires differ in
+          encryption, posture, and speed — pick by the target's egress (the Build form's summary
+          spells out how each behavior rides). HTTPS is the recommended posture, cleartext HTTP
+          the lab one. Hover the fields for specifics; the full guide is
+          docs/operations/operator-ui.md.
+        </HelpHint>
+      </h3>
 
       {/* The same labeled-grid shape as the Build form: every field carries
           its name above it, placeholders stay as hints only. */}

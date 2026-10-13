@@ -11,6 +11,7 @@ import {
   revokeCampaign,
 } from '../api'
 import { CopyButton } from '../components/CopyButton'
+import { HelpHint } from '../components/HelpHint'
 import { Icon } from '../components/Icons'
 import { ago } from '../when'
 
@@ -104,13 +105,13 @@ export function CampaignsView({
       <h3>
         <Icon name="send" />
         Campaigns
+        <HelpHint>
+          The tracked lure into tasking: per-recipient messages whose links bind to per-recipient
+          builds, followed from send to open, click, and the enrollment itself. One build per
+          recipient is the price of enrollment attribution; delivery is single-attempt; the relay
+          and its TLS posture are per-campaign decisions, never server defaults.
+        </HelpHint>
       </h3>
-      <p className="muted">
-        The tracked lure into tasking: per-recipient messages whose links bind to per-recipient
-        builds, followed from send to open, click, and the enrollment itself. One build per
-        recipient is the price of enrollment attribution; delivery is single-attempt; the relay
-        and its TLS posture are per-campaign decisions, never server defaults.
-      </p>
       {error && <p className="error">{error}</p>}
 
       <div className="inline-form">

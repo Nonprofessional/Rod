@@ -10,6 +10,7 @@ import {
   revokeDeployToken,
 } from '../api'
 import { frontFor, hostPortOf } from '../fronts'
+import { HelpHint } from '../components/HelpHint'
 import { Icon } from '../components/Icons'
 import { fmtBytes } from '../format'
 import { StatusBadge } from '../components/StatusBadge'
@@ -438,19 +439,25 @@ export function PayloadBuildView({
       </div>
       {artifact === 'webshell' ? (
         <>
-          <h3>Generate web-shell script</h3>
-          <p className="muted">
-            A placement script with its credential baked in — generate here, drop it in the
-            target's web root, register the reachable URL under Web shells.
-          </p>
+          <h3>
+            Generate web-shell script
+            <HelpHint>
+              A placement script with its credential baked in — generate here, drop it in the
+              target's web root, register the reachable URL under Web shells.
+            </HelpHint>
+          </h3>
           <WebShellGenerateForm engagementId={engagementId} />
         </>
       ) : (
         <>
-          <h3>Build payload</h3>
-          <p className="muted" title="A self-contained executable with its enrollment credential baked in — drop it and run. Every knob is baked at generation.">
-            Pick a listener and a target, leave the rest at the defaults.
-          </p>
+          <h3>
+            Build payload
+            <HelpHint>
+              Pick a listener and a target, leave the rest at the defaults. The artifact is a
+              self-contained executable with its enrollment credential baked in — drop it and
+              run. Every knob is baked at generation.
+            </HelpHint>
+          </h3>
           <form className="build-form" onSubmit={onBuild}>
         <fieldset>
           <legend>Target</legend>

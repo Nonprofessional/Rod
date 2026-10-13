@@ -9,6 +9,7 @@ import {
   listAutomationRules,
   listImplants,
 } from '../api'
+import { HelpHint } from '../components/HelpHint'
 import { Icon } from '../components/Icons'
 import { OpsecBadges } from '../components/OpsecBadges'
 import { StatusBadge } from '../components/StatusBadge'
@@ -211,12 +212,14 @@ export function AutomationView({
 
   return (
     <section className="view">
-      <h2>Automation</h2>
-      <p className="muted">
-        Rules that fire while no operator watches -- every firing issues through the ordinary
-        tasking gates, attributes to the automation operator, and lands in the audit trail.
-        Disabling is the cancel; a disabled rule fires nothing until re-armed from now.
-      </p>
+      <h2>
+        Automation
+        <HelpHint>
+          Rules that fire while no operator watches -- every firing issues through the ordinary
+          tasking gates, attributes to the automation operator, and lands in the audit trail.
+          Disabling is the cancel; a disabled rule fires nothing until re-armed from now.
+        </HelpHint>
+      </h2>
 
       {error && <p className="error">{error}</p>}
 

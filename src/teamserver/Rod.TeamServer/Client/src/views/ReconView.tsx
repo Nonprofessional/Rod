@@ -10,6 +10,7 @@ import {
   runReconPortScan,
   runReconResolve,
 } from '../api'
+import { HelpHint } from '../components/HelpHint'
 import { RoeDialog } from '../components/RoeDialog'
 import { saveBlob } from '../download'
 import { fmtBytes } from '../format'
@@ -181,14 +182,16 @@ export function ReconView({
 
   return (
     <div className="card">
-      <h3>Recon</h3>
-      <p className="muted">
-        Pre-foothold scoping on the teamserver: registration lookups, the certificate-transparency
-        census, name resolution, and the ROE-gated port scan. Every run lands its findings as
-        attributed loot and joins the Intel picture. Each half runs only once its egress service
-        is configured -- docs/operations/recon.md -- and a half that is not answers with the
-        setting it wants.
-      </p>
+      <h3>
+        Recon
+        <HelpHint>
+          Pre-foothold scoping on the teamserver: registration lookups, the
+          certificate-transparency census, name resolution, and the ROE-gated port scan. Every run
+          lands its findings as attributed loot and joins the Intel picture. Each half runs only
+          once its egress service is configured -- docs/operations/recon.md -- and a half that is
+          not answers with the setting it wants.
+        </HelpHint>
+      </h3>
       <div className="table-toolbar">
         {MODES.map((m) => (
           <button

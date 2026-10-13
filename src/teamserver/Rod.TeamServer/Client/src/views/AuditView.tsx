@@ -8,6 +8,7 @@ import {
   getHandoffDigestMarkdown,
   listAudit,
 } from '../api'
+import { HelpHint } from '../components/HelpHint'
 import { Icon } from '../components/Icons'
 
 // The operational event log: the per-engagement, append-only,
@@ -51,11 +52,14 @@ export function AuditView({
 
   return (
     <div className="card">
-      <h3>Audit trail</h3>
-      <p className="muted" title="Append-only and hash-chained: tampering with a stored event breaks the chain at the next link.">
-        The engagement's append-only ledger — every recorded fact, paged and filterable —
-        with the windowed watch-resume read beside it.
-      </p>
+      <h3>
+        Audit trail
+        <HelpHint>
+          The engagement's append-only, hash-chained ledger — tampering with a stored event breaks
+          the chain at the next link — every recorded fact paged and filterable, with the windowed
+          watch-resume read beside it.
+        </HelpHint>
+      </h3>
       <div className="table-toolbar">
         <button
           className={mode === 'ledger' ? 'sm' : 'ghost sm'}

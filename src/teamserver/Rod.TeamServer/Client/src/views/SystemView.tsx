@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { type SystemInfo, getSystemInfo } from '../api'
+import { HelpHint } from '../components/HelpHint'
 import { Icon } from '../components/Icons'
 
 // The system page: the deployment's preflight, read at a glance. The host
@@ -58,12 +59,14 @@ export function SystemView() {
 
   return (
     <div className="card">
-      <h3>System</h3>
-      <p className="muted">
-        The host this teamserver runs on, and the environment its build pipeline
-        found — toolchains, source trees, per-target readiness — so a missing
-        prerequisite is a glance here, not a failed build.
-      </p>
+      <h3>
+        System
+        <HelpHint>
+          The host this teamserver runs on, and the environment its build pipeline found —
+          toolchains, source trees, per-target readiness — so a missing prerequisite is a glance
+          here, not a failed build.
+        </HelpHint>
+      </h3>
       <div className="inline-form">
         <button className="ghost" onClick={() => void refresh()} disabled={busy}>
           <Icon name="refresh" />

@@ -17,6 +17,7 @@ import {
 import { catchLaunchers } from '../catchOneLiners'
 import { launcherHint } from '../launcherFamilies'
 import { CopyButton } from '../components/CopyButton'
+import { HelpHint } from '../components/HelpHint'
 import { Icon } from '../components/Icons'
 import { osIconFor } from '../osKind'
 import { useNow } from '../when'
@@ -256,23 +257,28 @@ export function LaunchersView({
 
   return (
     <section className="view">
-      <h2>Launchers</h2>
-      <p className="muted">
-        Every paste-ready one-liner this engagement can cut, in one place: reverse shells that land
-        in the Shells roster, and payload fetches that grow a beacon in the Implants table. Every
-        fetch render is kept below — re-copy it any time; Delete closes its lifecycle (the
-        credential dies with the row, and the mint's history is the audit trail's to keep).
-      </p>
+      <h2>
+        Launchers
+        <HelpHint>
+          Every paste-ready one-liner this engagement can cut, in one place: reverse shells that
+          land in the Shells roster, payload fetches that grow a beacon in the Implants table,
+          and the browser hook that enrolls a victim's browser as a Browser-class implant. Every
+          fetch render is kept below — re-copy it any time; Delete closes its lifecycle (the
+          credential dies with the row, and the mint's history is the audit trail's to keep).
+        </HelpHint>
+      </h2>
       {error && <p className="error">{error}</p>}
 
       {catchers.length > 0 && (
         <div className="card">
-          <h3>Catch a shell</h3>
-          <p className="muted">
-            Reverse-shell one-liners per shellcatch listener. No credential is involved — the
-            address is the listener's public endpoint; paste one on the target and the shell lands
-            in the Shells roster.
-          </p>
+          <h3>
+            Catch a shell
+            <HelpHint>
+              Reverse-shell one-liners per shellcatch listener. No credential is involved — the
+              address is the listener's public endpoint; paste one on the target and the shell
+              lands in the Shells roster.
+            </HelpHint>
+          </h3>
           {catchers.map((listener) => {
             const launchers = catchLaunchers(listener.publicEndpoint)
             if (launchers.length === 0) return null
@@ -306,7 +312,15 @@ export function LaunchersView({
           then appear in the Implants table as Browser-class rows, taskable
           from the same menu as any implant. */}
       <div className="card">
-        <h3>Hook a browser</h3>
+          <h3>
+            Hook a browser
+            <HelpHint>
+              Mint a served hook script and inject the answer as a{' '}
+              <code>{'<script src>'}</code> tag on the vulnerable page. Each hooked browser
+              enrolls as a Browser-class implant over the sealed envelope carrier — the fetch
+              URL's unguessable id is the only credential a victim's browser ever presents.
+            </HelpHint>
+          </h3>
         {hookFronts.length === 0 ? (
           <div className="empty">
             <Icon name="globe" />
@@ -315,13 +329,6 @@ export function LaunchersView({
           </div>
         ) : (
           <>
-            <p className="muted">
-              Mint a served hook script and inject the answer as a{' '}
-              <code>{'<script src>'}</code> tag on the vulnerable page. Each hooked
-              browser enrolls as a Browser-class implant over the sealed envelope
-              carrier — the fetch URL's unguessable id is the only credential a
-              victim's browser ever presents.
-            </p>
             <div className="inline-form">
               <select
                 value={hookListenerId}
@@ -445,7 +452,14 @@ export function LaunchersView({
           so cutting a launcher and coming back to it reads as one place
           instead of two boxed steps. */}
       <div className="card">
-        <h3>Deliver a beacon</h3>
+        <h3>
+          Deliver a beacon
+          <HelpHint>
+            A one-liner that fetches the payload over the engagement's web front and runs it.
+            Each served fetch spends one use of a freshly minted credential; the enrollment that
+            follows rides the credential baked into the fetched artifact.
+          </HelpHint>
+        </h3>
         {payloads.length === 0 || webListeners.length === 0 ? (
           <div className="empty">
             <Icon name="copy" />
@@ -457,11 +471,6 @@ export function LaunchersView({
           </div>
         ) : (
           <>
-            <p className="muted">
-              A one-liner that fetches the payload over the engagement's web front and runs
-              it. Each served fetch spends one use of a freshly minted credential; the enrollment
-              that follows rides the credential baked into the fetched artifact.
-            </p>
             <div className="inline-form">
               <select
                 value={payloadId}

@@ -404,10 +404,6 @@ a.topbar-link.active {
   letter-spacing: -0.01em;
 }
 
-.page-head .muted {
-  font-size: 12.5px;
-}
-
 h4 {
   margin: 22px 0 8px;
   font-size: 11.5px;
@@ -676,6 +672,62 @@ input[type='file']::file-selector-button {
   margin: 0 0 14px;
   font-size: 12.5px;
   max-width: 76ch;
+}
+
+/* --- Standfirst help hints -------------------------------------------------- */
+
+/* The question mark beside a panel headline (components/HelpHint): the
+   standfirst lives behind it and rides out on hover or keyboard focus, so
+   the headline row stays one line tall. */
+.help-hint {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  vertical-align: middle;
+  color: var(--muted);
+  cursor: help;
+}
+
+.help-hint:hover {
+  color: var(--text);
+}
+
+.help-hint:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 50%;
+}
+
+.help-hint-icon {
+  width: 14px;
+  height: 14px;
+  flex: none;
+}
+
+.help-hint-body {
+  position: absolute;
+  top: calc(100% + 7px);
+  left: 0;
+  z-index: 40;
+  display: none;
+  width: max-content;
+  max-width: min(52ch, calc(100vw - 64px));
+  padding: 10px 12px;
+  font-size: 12.5px;
+  font-weight: 400;
+  line-height: 1.55;
+  text-align: left;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+.help-hint:hover .help-hint-body,
+.help-hint:focus-visible .help-hint-body,
+.help-hint:focus .help-hint-body {
+  display: block;
 }
 
 /* --- Tables ----------------------------------------------------------------- */

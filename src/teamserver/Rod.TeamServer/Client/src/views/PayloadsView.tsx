@@ -10,6 +10,7 @@ import {
   revokeDeployToken,
 } from '../api'
 import { frontFor, hostPortOf } from '../fronts'
+import { HelpHint } from '../components/HelpHint'
 import { Icon } from '../components/Icons'
 import { CopyButton } from '../components/CopyButton'
 import { fmtBytes } from '../format'
@@ -107,11 +108,15 @@ export function PayloadsView({ engagementId }: { engagementId: string }) {
 
   return (
     <div className="card">
-      <h3>Payloads</h3>
-      <p className="muted">
-        Every payload this engagement built — durable, restart-safe, filterable. The credential
-        column reads the baked token's use budget live; the chevron unfolds the build's parameters.
-      </p>
+      <h3>
+        Payloads
+        <HelpHint>
+          Every payload this engagement built — durable, restart-safe, filterable. The credential
+          column reads the baked token's use budget live; the chevron unfolds the build's
+          parameters. Mint credential, beside the filter, mints a standalone delivery credential
+          for hand delivery — no payload attached.
+        </HelpHint>
+      </h3>
       <div className="inline-form">
         <input
           className="filter-text"

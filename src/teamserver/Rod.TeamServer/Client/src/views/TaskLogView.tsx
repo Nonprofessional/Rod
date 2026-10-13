@@ -12,6 +12,7 @@ import {
   listImplants,
   summarizeTask,
 } from '../api'
+import { HelpHint } from '../components/HelpHint'
 import { Icon } from '../components/Icons'
 import { InteractPane } from '../components/InteractPane'
 import { StatusBadge } from '../components/StatusBadge'
@@ -154,11 +155,13 @@ export function TaskLogView({
 
   return (
     <div className="card">
-      <h3>Task log</h3>
-      <p className="muted">
-        Every task this engagement issued, newest first, live as operators work -- read-only;
-        cancel queued tasking from the implant's session console.
-      </p>
+      <h3>
+        Task log
+        <HelpHint>
+          Every task this engagement issued, newest first, live as operators work -- read-only;
+          cancel queued tasking from the implant's session console.
+        </HelpHint>
+      </h3>
       <div className="inline-form">
         <select
           value={implantFilter}

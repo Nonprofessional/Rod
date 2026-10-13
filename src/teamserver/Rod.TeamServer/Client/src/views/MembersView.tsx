@@ -7,6 +7,7 @@ import {
   removeMember,
   setMemberRole,
 } from '../api'
+import { HelpHint } from '../components/HelpHint'
 import { Icon } from '../components/Icons'
 
 // The engagement's crew (architecture.md Sec 3, the membership model): the
@@ -112,11 +113,11 @@ export function MembersView({
       <h3>
         <Icon name="users" />
         Members
+        <HelpHint>
+          The crew that decides reach: a reader watches, a writer acts, the owner manages this
+          roster. Every grant, re-tier, and removal lands in the engagement's audit trail.
+        </HelpHint>
       </h3>
-      <p className="muted">
-        The crew that decides reach: a reader watches, a writer acts, the owner manages this roster.
-        Every grant, re-tier, and removal lands in the engagement's audit trail.
-      </p>
 
       {isOwner ? (
         <form className="build-form" onSubmit={onInvite}>

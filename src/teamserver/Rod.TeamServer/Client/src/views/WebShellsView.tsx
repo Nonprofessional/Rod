@@ -12,6 +12,7 @@ import {
   removeWebShell,
 } from '../api'
 import { CopyButton } from '../components/CopyButton'
+import { HelpHint } from '../components/HelpHint'
 import { StatusBadge } from '../components/StatusBadge'
 import { Icon } from '../components/Icons'
 
@@ -121,12 +122,14 @@ export function WebShellsView({
 
   return (
     <section className="view">
-      <h2>Web shells</h2>
-      <p className="muted">
-        Scripts placed in targets' web roots, bound to this engagement by registration. A
-        web-shell never enrolls; execution is synchronous and lands on the task log like any
-        other tasking. Generate the script under Build; register it here once placed.
-      </p>
+      <h2>
+        Web shells
+        <HelpHint>
+          Scripts placed in targets' web roots, bound to this engagement by registration. A
+          web-shell never enrolls; execution is synchronous and lands on the task log like any
+          other tasking. Generate the script under Build; register it here once placed.
+        </HelpHint>
+      </h2>
       {error && <p className="error">{error}</p>}
 
       <form className="task-form" onSubmit={onRegister}>

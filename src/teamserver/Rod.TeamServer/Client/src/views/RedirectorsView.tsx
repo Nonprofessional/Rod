@@ -9,6 +9,7 @@ import {
   retireRedirectorNode,
   revokeRedirectorCredential,
 } from '../api'
+import { HelpHint } from '../components/HelpHint'
 import { Icon } from '../components/Icons'
 import { CopyButton } from '../components/CopyButton'
 import { usePollIntervalMs } from '../clientPrefs'
@@ -125,14 +126,17 @@ export function RedirectorsView() {
 
   return (
     <div className="card">
-      <h3>Redirectors</h3>
-      <p className="muted">
-        The deployment's forwarding fleet. Mint a credential below and the console renders the full
-        redirector invocation to paste on the machine — it enrolls once, then receives and serves
-        the fronts this teamserver's listeners attach to it. The control URL it bakes follows this
-        console's own address and TLS posture (wss behind HTTPS, ws otherwise). Presence is the
-        control connection itself; retirement refuses the next reconnect by name.
-      </p>
+      <h3>
+        Redirectors
+        <HelpHint>
+          The deployment's forwarding fleet. Mint a credential below and the console renders the
+          full redirector invocation to paste on the machine — it enrolls once, then receives and
+          serves the fronts this teamserver's listeners attach to it. The control URL it bakes
+          follows this console's own address and TLS posture (wss behind HTTPS, ws otherwise).
+          Presence is the control connection itself; retirement refuses the next reconnect by
+          name.
+        </HelpHint>
+      </h3>
       <div className="inline-form">
         <button className="ghost" onClick={() => void refresh()} disabled={busy}>
           <Icon name="refresh" />

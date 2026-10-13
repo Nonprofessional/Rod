@@ -9,6 +9,7 @@ import {
   registerWebhookSubscription,
   testWebhookSubscription,
 } from '../api'
+import { HelpHint } from '../components/HelpHint'
 import { Icon } from '../components/Icons'
 import { StatusBadge } from '../components/StatusBadge'
 import { useArmedDelete } from '../useArmedDelete'
@@ -152,14 +153,16 @@ export function NotificationsView({
 
   return (
     <section className="view">
-      <h2>Notifications</h2>
-      <p className="muted">
-        Channels that reach the operator off-console -- each pushes the live events it
-        names to one webhook URL, the frame a connected console sees. Delivery is
-        single-attempt and best-effort; every attempt lands in the audit trail, the
-        URL is the channel's bearer secret and never does, and three failures in a
-        row park the channel with the cause in the trail.
-      </p>
+      <h2>
+        Notifications
+        <HelpHint>
+          Channels that reach the operator off-console -- each pushes the live events it names
+          to one webhook URL, the frame a connected console sees. Delivery is single-attempt and
+          best-effort; every attempt lands in the audit trail, the URL is the channel's bearer
+          secret and never does, and three failures in a row park the channel with the cause in
+          the trail.
+        </HelpHint>
+      </h2>
 
       {error && <p className="error">{error}</p>}
       {notice && <p className="notice">{notice}</p>}

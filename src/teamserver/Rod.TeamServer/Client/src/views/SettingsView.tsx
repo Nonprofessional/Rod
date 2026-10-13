@@ -18,6 +18,7 @@ import {
   revokeOperatorToken,
   setOperatorPassword,
 } from '../api'
+import { HelpHint } from '../components/HelpHint'
 import { Icon } from '../components/Icons'
 import { useArmedDelete } from '../useArmedDelete'
 
@@ -120,10 +121,13 @@ export function SettingsView({ operator }: { operator: SessionOperator }) {
   return (
     <>
       <div className="card">
-        <h3>Settings</h3>
-        <p className="muted">
-          Teamserver runtime settings -- server-wide, live on save, remembered across restarts.
-        </p>
+        <h3>
+          Settings
+          <HelpHint>
+            Teamserver runtime settings -- server-wide, live on save, remembered across
+            restarts.
+          </HelpHint>
+        </h3>
 
         <form className="build-form" onSubmit={onSave}>
           <fieldset>
@@ -214,11 +218,13 @@ function ConsoleCard() {
 
   return (
     <div className="card">
-      <h3>Console behavior</h3>
-      <p className="muted">
-        This browser's own preferences -- saved locally, applied on the spot, never sent to the
-        teamserver.
-      </p>
+      <h3>
+        Console behavior
+        <HelpHint>
+          This browser's own preferences -- saved locally, applied on the spot, never sent to the
+          teamserver.
+        </HelpHint>
+      </h3>
       <form className="build-form" onSubmit={onSavePoll}>
         <fieldset>
           <legend>Refresh cadence</legend>
@@ -423,12 +429,12 @@ function OperatorsCard({ operator }: { operator: SessionOperator }) {
       <h3>
         <Icon name="users" />
         Operators
+        <HelpHint>
+          The accounts that can log in. The configured initial account is the bootstrap; every
+          account after it is provisioned here -- handle and initial password in one step. Reach
+          is granted per engagement, from each engagement's Members panel.
+        </HelpHint>
       </h3>
-      <p className="muted">
-        The accounts that can log in. The configured initial account is the bootstrap; every account
-        after it is provisioned here -- handle and initial password in one step. Reach is granted
-        per engagement, from each engagement's Members panel.
-      </p>
 
       <form className="build-form" onSubmit={onCreate}>
           <fieldset>

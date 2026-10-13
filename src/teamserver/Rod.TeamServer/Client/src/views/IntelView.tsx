@@ -13,6 +13,7 @@ import {
   listLoot,
   setHostLabel,
 } from '../api'
+import { HelpHint } from '../components/HelpHint'
 import { saveBlob } from '../download'
 
 // The target-intel view (architecture.md Sec 11.2): what the engagement
@@ -33,12 +34,14 @@ export function IntelView({ engagementId, onlineTick }: { engagementId: string; 
   const [section, setSection] = useState<Section>('hosts')
   return (
     <div className="card">
-      <h3>Intel</h3>
-      <p className="muted">
-        What the engagement learned: hosts grouped by the name they reported at enroll, loot typed by
-        what gathered it, and the network picture with its pivot links. Labels and notes are
-        attributed trail facts; opening loot records the pull.
-      </p>
+      <h3>
+        Intel
+        <HelpHint>
+          What the engagement learned: hosts grouped by the name they reported at enroll, loot
+          typed by what gathered it, and the network picture with its pivot links. Labels and
+          notes are attributed trail facts; opening loot records the pull.
+        </HelpHint>
+      </h3>
       <div className="table-toolbar">
         {(['hosts', 'loot', 'topology'] as const).map((s) => (
           <button

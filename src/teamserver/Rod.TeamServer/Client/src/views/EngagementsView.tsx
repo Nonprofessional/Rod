@@ -9,6 +9,7 @@ import {
   retireEngagement,
   unfreezeEngagement,
 } from '../api'
+import { HelpHint } from '../components/HelpHint'
 import { Icon } from '../components/Icons'
 import { saveBlob } from '../download'
 
@@ -143,7 +144,11 @@ export function EngagementsView() {
     <section>
       <div className="page-head">
         <h2>Engagements</h2>
-        <span className="muted">Scoped workspaces; everything else lives inside one.</span>
+        <HelpHint>
+          Scoped workspaces; everything else lives inside one. Create and edit the records here,
+          drive the close-out arc (freeze, export evidence, retire) from the row, and drill in for
+          the full capability surface.
+        </HelpHint>
       </div>
       {error && <p className="error">{error}</p>}
       <form className="card create-form" onSubmit={onCreate}>

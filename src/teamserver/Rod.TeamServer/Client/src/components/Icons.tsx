@@ -205,6 +205,13 @@ const ICONS = {
       <circle cx="7.5" cy="17" r="2.2" />
     </>
   ),
+  help: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M9.2 9.2a2.9 2.9 0 0 1 5.6 1c0 1.9-2.8 2.4-2.8 4" />
+      <line x1="12" y1="17.2" x2="12.01" y2="17.2" />
+    </>
+  ),
 } as const
 
 export type IconName = keyof typeof ICONS

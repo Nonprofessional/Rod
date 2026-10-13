@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { type ListenerSummary, type ShellSession, listListeners, listShells } from '../api'
 import { usePollIntervalMs } from '../clientPrefs'
+import { HelpHint } from '../components/HelpHint'
 import { Icon } from '../components/Icons'
 import { ShellConsole } from '../components/ShellConsole'
 import { StatusBadge } from '../components/StatusBadge'
@@ -77,12 +78,14 @@ export function ShellsView({
 
   return (
     <section className="view">
-      <h2>Shells</h2>
-      <p className="muted">
-        Reverse shells caught on this engagement's shellcatch listeners. A caught shell speaks no
-        protocol and carries no identity — it is scoped by the listener it landed on — and grows
-        into a real implant through the console's Upgrade launchers.
-      </p>
+      <h2>
+        Shells
+        <HelpHint>
+          Reverse shells caught on this engagement's shellcatch listeners. A caught shell speaks
+          no protocol and carries no identity — it is scoped by the listener it landed on — and
+          grows into a real implant through the console's Upgrade launchers.
+        </HelpHint>
+      </h2>
       {error && <p className="error">{error}</p>}
 
       {catchers.length > 0 && (
