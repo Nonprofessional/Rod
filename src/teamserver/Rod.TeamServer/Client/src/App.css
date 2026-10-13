@@ -1711,6 +1711,43 @@ textarea:focus-visible {
 
 /* --- Listener fronts (the enrolled redirector fleet) --------------------------------- */
 
+/* The listener roster carries two address columns of wildly different
+   content lengths (an IP:port bind against a URL-shaped public endpoint),
+   so auto layout gave the name column dead space and squeezed state into a
+   sliver. Fixed proportions instead: identity columns stay narrow, the
+   public endpoint takes the flex, and long values truncate with their full
+   text in hover -- the front sub-rows inherit the same columns, so they
+   keep aligning with the headers. */
+.listeners-table {
+  table-layout: fixed;
+}
+
+.listeners-table th:nth-child(1),
+.listeners-table th:nth-child(2) {
+  width: 10%;
+}
+
+.listeners-table th:nth-child(3) {
+  width: 13%;
+}
+
+.listeners-table th:nth-child(5) {
+  width: 10%;
+}
+
+.listeners-table th.col-actions {
+  width: 8.5rem;
+}
+
+.listeners-table td code {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+}
+
 /* A front renders as a sub-row aligned to its listener's own columns: the
    redirector's bind sits under the listener's bind, the dial address under
    the public endpoint, promote/detach under the row actions. The raised

@@ -577,6 +577,107 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
         </div>
       </form>
 
+      {/* The enrolled-fleet half (architecture.md Sec 8): attach a front to
+          one of the listeners below, fronted by a redirector from the
+          roster. The dns family waits on the redirector's datagram relay;
+          the form's listener list names the frontable transports only. It
+          sits with the create form above the roster: both are actions on
+          the table, and the table is the result. */}
+      <h4>Attach a front</h4>
+      <p className="muted">
+        Stand an enrolled redirector in front of a listener: the redirector binds the endpoint
+        you name, splices every byte to the listener's own bind, and implants dial the
+        redirector's public address — never the teamserver. <strong>Redirector listens on</strong>{' '}
+        is the socket on the redirector itself (wildcard or its IP); <strong>Public
+        endpoint</strong> is what builds bake as the address implants dial — leave it empty and
+        the listen port completes a bare host (a dns/doh listener wants the resolver implants
+        query, the zone stays the listener's); <strong>Primary</strong> makes this front the
+        endpoint new builds bake — the attach form of rotation, unchecked it serves beside the
+        current fronts.
+      </p>
+      <form className="listener-form" onSubmit={onAttachFront}>
+        <div className="listener-row">
+          <label>
+            Listener
+            <select
+              value={frontListener}
+              onChange={(e) => onPickFrontListener(e.target.value)}
+              title="The listener this front serves -- the redirector splices to its bind. Picking one drafts the form: standard listen port, Primary pre-checked for a first front."
+              required
+            >
+              <option value="">Pick a listener…</option>
+              {frontable.map((l) => (
+                <option key={l.id} value={l.id}>
+                  {l.name} ({l.transport})
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Redirector
+            {nodes.length > 0 ? (
+              <select
+                value={frontNode}
+                onChange={(e) => setFrontNode(e.target.value)}
+                title="An enrolled redirector (the Redirectors page mints credentials)."
+                required
+              >
+                <option value="">Pick a redirector…</option>
+                {nodes.map((n) => (
+                  <option key={n.id} value={n.id}>
+                    {n.name} {n.online ? '(online)' : '(offline)'}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <input
+                placeholder="redirector id"
+                value={frontNode}
+                onChange={(e) => setFrontNode(e.target.value)}
+                title="No roster loaded -- type the enrolled redirector's id."
+                required
+              />
+            )}
+          </label>
+        </div>
+        <div className="listener-row">
+          <label>
+            Redirector listens on
+            <input
+              placeholder="0.0.0.0:443"
+              value={frontListen}
+              onChange={(e) => setFrontListen(e.target.value)}
+              title="The endpoint the redirector binds -- host:port on the redirector itself (a wildcard or its own IP), not the public address. Pre-filled with the transport's standard port when the listener is picked."
+              required
+            />
+            </label>
+          <label>
+            Public endpoint
+            <input
+              placeholder="c2.example.test — empty completes from the listen port"
+              value={frontPublic}
+              onChange={(e) => setFrontPublic(e.target.value)}
+              title="What implants dial through this front. The web family completes a bare host with the scheme and the node's listen port; the socket family wants host:port; the DNS family (dns/doh) wants the RESOLVER implants dial -- a bare host or host:port, the zone stays the listener's own."
+            />
+          </label>
+          <label className="checkbox-label" title="Insert at the head of the front list and repoint the listener to this front -- the attach form of rotation. Without it, the front serves beside the current one.">
+            Primary
+            <span className="checkbox-row">
+              <input
+                type="checkbox"
+                checked={frontPrimary}
+                onChange={(e) => setFrontPrimary(e.target.checked)}
+              />
+            </span>
+          </label>
+        </div>
+        <div className="listener-form-actions">
+          <button className="primary" type="submit" disabled={busy}>
+            Attach
+          </button>
+        </div>
+      </form>
+
       <div className="inline-form">
         <button className="ghost" onClick={() => void refresh()} disabled={busy}>
           <Icon name="refresh" />
@@ -585,14 +686,13 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
       </div>
       {error && <p className="error">{error}</p>}
       <div className="table-wrap">
-        <table>
+        <table className="listeners-table">
           <thead>
             <tr>
               <th>Name</th>
               <th>Transport</th>
               <th>Bind</th>
               <th>Public endpoint</th>
-              <th>Fronts</th>
               <th>State</th>
               <th className="col-actions"></th>
             </tr>
@@ -600,7 +700,7 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
           <tbody>
             {listeners.length === 0 && (
               <tr>
-                <td colSpan={7}>
+                <td colSpan={6}>
                   <div className="empty">
                     <Icon name="radio" />
                     No listeners for this engagement yet -- create the ingress its implants will
@@ -714,7 +814,6 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
                         )}
                       </td>
                       <td></td>
-                      <td></td>
                       <td>
                         {!f.isPrimary && (
                           <button
@@ -749,100 +848,6 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
           one of the listeners above, fronted by a node from the roster. The
           dns family waits on the node's datagram relay; the form's listener
           list names the frontable transports only. */}
-      <h4>Attach a front</h4>
-      <p className="muted">
-        Stand an enrolled redirector in front of a listener: the redirector binds the endpoint
-        you name, splices every byte to the listener's own bind, and implants dial the
-        redirector's public address — never the teamserver. <strong>Redirector listens on</strong>{' '}
-        is the socket on the redirector itself (wildcard or its IP); <strong>Public
-        endpoint</strong> is what builds bake as the address implants dial — leave it empty and
-        the listen port completes a bare host (a dns/doh listener wants the resolver implants
-        query, the zone stays the listener's); <strong>Primary</strong> makes this front the
-        endpoint new builds bake — the attach form of rotation, unchecked it serves beside the
-        current fronts.
-      </p>
-      <form className="listener-form" onSubmit={onAttachFront}>
-        <div className="listener-row">
-          <label>
-            Listener
-            <select
-              value={frontListener}
-              onChange={(e) => onPickFrontListener(e.target.value)}
-              title="The listener this front serves -- the redirector splices to its bind. Picking one drafts the form: standard listen port, Primary pre-checked for a first front."
-              required
-            >
-              <option value="">Pick a listener…</option>
-              {frontable.map((l) => (
-                <option key={l.id} value={l.id}>
-                  {l.name} ({l.transport})
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Redirector
-            {nodes.length > 0 ? (
-              <select
-                value={frontNode}
-                onChange={(e) => setFrontNode(e.target.value)}
-                title="An enrolled redirector (the Redirectors page mints credentials)."
-                required
-              >
-                <option value="">Pick a redirector…</option>
-                {nodes.map((n) => (
-                  <option key={n.id} value={n.id}>
-                    {n.name} {n.online ? '(online)' : '(offline)'}
-                  </option>
-                ))}
-              </select>
-            ) : (
-              <input
-                placeholder="redirector id"
-                value={frontNode}
-                onChange={(e) => setFrontNode(e.target.value)}
-                title="No roster loaded -- type the enrolled redirector's id."
-                required
-              />
-            )}
-          </label>
-        </div>
-        <div className="listener-row">
-          <label>
-            Redirector listens on
-            <input
-              placeholder="0.0.0.0:443"
-              value={frontListen}
-              onChange={(e) => setFrontListen(e.target.value)}
-              title="The endpoint the redirector binds -- host:port on the redirector itself (a wildcard or its own IP), not the public address. Pre-filled with the transport's standard port when the listener is picked."
-              required
-            />
-            </label>
-          <label>
-            Public endpoint
-            <input
-              placeholder="c2.example.test — empty completes from the listen port"
-              value={frontPublic}
-              onChange={(e) => setFrontPublic(e.target.value)}
-              title="What implants dial through this front. The web family completes a bare host with the scheme and the node's listen port; the socket family wants host:port; the DNS family (dns/doh) wants the RESOLVER implants dial -- a bare host or host:port, the zone stays the listener's own."
-            />
-          </label>
-          <label className="checkbox-label" title="Insert at the head of the front list and repoint the listener to this front -- the attach form of rotation. Without it, the front serves beside the current one.">
-            Primary
-            <span className="checkbox-row">
-              <input
-                type="checkbox"
-                checked={frontPrimary}
-                onChange={(e) => setFrontPrimary(e.target.checked)}
-              />
-            </span>
-          </label>
-        </div>
-        <div className="listener-form-actions">
-          <button className="primary" type="submit" disabled={busy}>
-            Attach
-          </button>
-        </div>
-      </form>
     </div>
   )
 }
