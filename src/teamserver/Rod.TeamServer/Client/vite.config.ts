@@ -4,10 +4,10 @@ import react from '@vitejs/plugin-react'
 // The operator UI is built by Vite (dev: `npm run dev`) and served, in
 // production, as static files from the teamserver host's wwwroot. So:
 //  - dev: Vite serves the SPA and proxies the API back to the teamserver
-//    (http://localhost:5080, see launchSettings.json) -- same origin from the
+//    (http://localhost:59443, see launchSettings.json) -- same origin from the
 //    browser's view, no CORS.
 //  - build: emit into ../wwwroot so `dotnet run` serves the built bundle at /.
-const apiTarget = process.env.ROD_API_TARGET ?? 'http://localhost:5080'
+const apiTarget = process.env.ROD_API_TARGET ?? 'http://localhost:59443'
 
 // https://vite.dev/config/
 export default defineConfig({

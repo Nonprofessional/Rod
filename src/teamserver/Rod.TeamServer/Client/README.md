@@ -8,10 +8,10 @@ server proxies API calls to the teamserver in development.
 ## Develop
 
 1. Start the teamserver (`dotnet run` from `src/teamserver/Rod.TeamServer`);
-   the default dev listener is `http://localhost:5080`.
+   the default dev listener is `http://localhost:59443`.
 2. Run `npm ci` once, then `npm run dev` in this directory.
 3. Open the Vite URL (default `http://localhost:5173`). API calls proxy to
-   `http://localhost:5080`; override with `ROD_API_TARGET` when the
+   `http://localhost:59443`; override with `ROD_API_TARGET` when the
    teamserver runs elsewhere.
 
 ## Build

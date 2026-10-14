@@ -42,7 +42,7 @@ The flow:
 2. **Run the node** pointed at the teamserver's shared tier:
 
    ```
-   rod-redirector -control wss://teamserver.example:5080/redirectors/control \
+   rod-redirector -control wss://teamserver.example:59443/redirectors/control \
                   -credential <secret> \
                   -state /var/lib/rod/redirector.state.json
    ```

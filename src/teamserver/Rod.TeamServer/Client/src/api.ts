@@ -1,7 +1,7 @@
 // Thin typed wrappers over the teamserver operator HTTP API
 // (Rod.Transport/Endpoints). The browser UI talks to the same JSON endpoints
 // the implant and operator layers do; the host serves this bundle from wwwroot
-// so the calls are same-origin in production and proxied to :5080 in dev.
+// so the calls are same-origin in production and proxied to :59443 in dev.
 
 export interface RoeProfile {
   permittedVerbs: string[]

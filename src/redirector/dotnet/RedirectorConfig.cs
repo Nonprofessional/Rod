@@ -252,7 +252,7 @@ internal sealed class RedirectorConfig
         architecture.md Sec 8):
 
           -control string   control channel URL (ws:// or wss://) on the teamserver's
-                            shared tier, e.g. wss://teamserver:5080/redirectors/control
+                            shared tier, e.g. wss://teamserver:59443/redirectors/control
           -credential string  enrollment credential, presented once; the minted node
                             identity persists in the state file and reconnects after
           -state string     where the node identity lives (default rod-redirector.state.json)

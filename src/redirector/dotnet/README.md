@@ -60,7 +60,7 @@ Enrolled mode (rules arrive from the teamserver's control plane,
 architecture.md Sec 8; the runbook's Sec 0 walks the whole flow):
 
 ```
-rod-redirector -control wss://teamserver:5080/redirectors/control \
+rod-redirector -control wss://teamserver:59443/redirectors/control \
                -credential <enrollment secret> \
                -state /var/lib/rod/redirector.state.json
 ```
