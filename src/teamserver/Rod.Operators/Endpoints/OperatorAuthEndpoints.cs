@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using Rod.CoreState;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
@@ -16,17 +17,13 @@ namespace Rod.Operators.Endpoints;
 /// Sec 9): <c>POST /operators/login</c> establishes a cookie session from a
 /// handle and password, <c>POST /operators/logout</c> clears it, and
 /// <c>GET /operators/me</c> returns the authenticated operator. The account
-/// half provisions and administers the roster the bootstrap seed used to be
-/// the only source of: <c>GET /operators</c> lists it,
-/// <c>POST /operators</c> creates an account,
-/// <c>PUT /operators/{id}/credentials</c> re-provisions a password, and
-/// <c>POST /operators/{id}:disable</c> / <c>:enable</c> are the account's
-/// off and back on. An account carries no permission -- what an operator may
-/// reach lives per engagement, as the memberships its owners granted -- so
-/// the account machinery is trusted-operator throughout (the stance the
-/// token routes always kept): any authenticated operator may provision,
-/// administer, and disable, held to the audit-free global account surface
-/// they already answer for.
+/// half splits along the deployment roles (Sec 4.5): the bootstrap-seeded
+/// admin provisions (<c>POST /operators</c>), re-provisions passwords
+/// (<c>PUT /operators/{id}/credentials</c>), holds the disable pair
+/// (<c>POST /operators/{id}:disable</c> / <c>:enable</c>), and manages API
+/// tokens on any account, while every operator keeps self-service over its
+/// own password and tokens. The roster read stays open to all: engagement
+/// members are invited by handle, so every operator must see them.
 /// </summary>
 public static class OperatorAuthEndpoints
 {
@@ -38,11 +35,13 @@ public static class OperatorAuthEndpoints
     public static IEndpointRouteBuilder Map(this IEndpointRouteBuilder endpoints)
     {
         // Login is anonymous (it is how a session is established); everything
-        // else requires an existing session, and nothing more -- accounts are
-        // identity, not permission.
+        // else requires an existing session. Provisioning carries the admin
+        // claim requirement directly; the account routes that take an
+        // operator id gate in the handler, where "self or admin" is
+        // expressible (a claim requirement cannot say "self").
         endpoints.MapPost("/login", LoginAsync).AllowAnonymous();
         endpoints.MapGet("/", ListAsync).RequireAuthorization();
-        endpoints.MapPost("/", CreateAsync).RequireAuthorization();
+        endpoints.MapPost("/", CreateAsync).RequireAuthorization(DeploymentAdmin());
         endpoints.MapGet("/me", MeAsync).RequireAuthorization();
         endpoints.MapPost("/logout", LogoutAsync).RequireAuthorization();
         endpoints.MapPost("/{operatorId}/credentials:revoke", RevokeCredentialAsync).RequireAuthorization();
@@ -55,13 +54,29 @@ public static class OperatorAuthEndpoints
         return endpoints;
     }
 
+    // The authorization requirement the admin-only account route carries:
+    // the deployment-role claim (Sec 4.5). It composes with the group's plain
+    // requirement -- a member is authenticated and still forbidden (403), an
+    // anonymous request is challenged (401).
+    private static Action<AuthorizationPolicyBuilder> DeploymentAdmin()
+        => policy => policy.RequireClaim(
+            OperatorClaims.DeploymentRoleClaimType, DeploymentRoles.AdminName);
+
+    // The self-or-admin gate the account routes share: an account's password
+    // and tokens are its own to manage, and acting on another operator's
+    // account is the admin's alone. The roster is public, so refusing by
+    // role rather than existence discloses nothing.
+    private static bool MayActOn(ClaimsPrincipal user, OperatorId target)
+        => user.TryGetOperatorId() == target || user.IsDeploymentAdmin();
+
     // Provisioning (architecture.md Sec 3 and Sec 9): the management path the
-    // bootstrap seed stood in for. Creating an operator registers the
-    // aggregate and stores the hash of its initial password in one step --
-    // the same two calls the seed performs -- so the account is loginable
-    // the moment the response returns. The account carries no permission:
-    // what it may reach arrives later, as engagement memberships its owners
-    // grant. No audit event: account changes are global state and land in no
+    // bootstrap seed stood in for, and the admin's alone -- every account it
+    // creates is a member, the role fixed at registration. Creating an
+    // operator registers the aggregate and stores the hash of its initial
+    // password in one step -- the same two calls the seed performs -- so the
+    // account is loginable the moment the response returns. What it may
+    // reach arrives later, as engagement memberships its owners grant. No
+    // audit event: account changes are global state and land in no
     // engagement trail.
     private static async Task<IResult> CreateAsync(
         CreateOperatorRequest? body,
@@ -95,8 +110,9 @@ public static class OperatorAuthEndpoints
 
     // The roster: every account, ordered by handle, with whether a password
     // stands behind it (a revoked credential reads as absent). Any
-    // authenticated operator may read it -- the trusted-operators stance the
-    // token routes keep; the roster is account machinery like /me.
+    // authenticated operator may read it: engagement members are invited by
+    // handle, so every operator must see the handles there are. Each row
+    // carries its deployment role -- the one privilege an account holds.
     private static async Task<IResult> ListAsync(
         IOperatorRepository operators,
         IOperatorCredentialStore credentials,
@@ -115,12 +131,15 @@ public static class OperatorAuthEndpoints
 
     // Re-provisions an operator's password (architecture.md Sec 9): the
     // restore twin of credential revocation, for the account whose verifier
-    // was revoked or whose password must change. A new password is a new
-    // credential generation -- the target's live cookie sessions fail their
-    // stamp check at each one's next request, so the reset ends them without
-    // touching anyone else's.
+    // was revoked or whose password must change. Self-service on the
+    // caller's own account, the admin's alone on anyone else's -- a password
+    // reset on another operator is account takeover, which is management.
+    // A new password is a new credential generation -- the target's live
+    // cookie sessions fail their stamp check at each one's next request, so
+    // the reset ends them without touching anyone else's.
     private static async Task<IResult> SetCredentialAsync(
         string operatorId,
+        ClaimsPrincipal user,
         CredentialSetRequest? body,
         IOperatorRepository operators,
         IOperatorCredentialStore credentials,
@@ -129,6 +148,8 @@ public static class OperatorAuthEndpoints
     {
         if (!Guid.TryParse(operatorId, out var operatorValue))
             return Results.BadRequest(new Problem("Operator id is not a valid identifier."));
+        if (!MayActOn(user, new OperatorId(operatorValue)))
+            return Results.Forbid();
         if (string.IsNullOrWhiteSpace(body?.Password) || body.Password.Length < MinimumPasswordLength)
             return Results.BadRequest(new Problem(
                 $"Password must be at least {MinimumPasswordLength} characters."));
@@ -147,31 +168,44 @@ public static class OperatorAuthEndpoints
     // The engagements a disabled operator could reach are unaffected as
     // records (their memberships wait), so an enable restores exactly the
     // reach the account had. This is the honest "retire a colleague" shape:
-    // the row stays, anchoring every attribution it ever collected.
-    // Idempotent, and guarded only against the lockout -- disabling the last
-    // enabled account would leave nobody able to enable it back.
+    // the row stays, anchoring every attribution it ever collected. The
+    // pair is the admin's alone, even on the admin's own account --
+    // self-service covers password and tokens, not the off switch.
+    // Idempotent, and guarded against the two lockouts: disabling the last
+    // enabled account would leave nobody able to enable it back, and
+    // disabling the last enabled admin would leave the deployment with no
+    // management path (there is no promote surface to grow a new one --
+    // only the bootstrap seed can, at boot).
     private static async Task<IResult> DisableAsync(
         string operatorId,
+        ClaimsPrincipal user,
         IOperatorRepository operators,
         CancellationToken cancellationToken)
     {
         if (!Guid.TryParse(operatorId, out var operatorValue))
             return Results.BadRequest(new Problem("Operator id is not a valid identifier."));
+        if (!user.IsDeploymentAdmin())
+            return Results.Forbid();
 
         var target = await operators.FindAsync(new OperatorId(operatorValue), cancellationToken);
         if (target is null)
             return Results.NotFound(new Problem($"Operator {operatorId} does not exist."));
 
-        // The lockout guard: some other enabled account must remain standing.
-        // The automation row holds no credential and never counts.
         if (!target.Disabled)
         {
-            var others = (await operators.ListAsync(cancellationToken))
-                .Any(o => o.Id != target.Id && !o.Disabled
-                    && o.Id != Automation.AutomationOperatorIdentity.OperatorId);
-            if (!others)
+            // The automation row holds no credential and never counts: it
+            // can neither enable anyone back nor stand in as an admin.
+            var roster = await operators.ListAsync(cancellationToken);
+            if (!roster.Any(o => o.Id != target.Id && !o.Disabled
+                    && o.Id != Automation.AutomationOperatorIdentity.OperatorId))
                 return Results.Conflict(new Problem(
                     "Refusing to disable the last enabled operator: another account must remain able to enable it back."));
+            if (target.DeploymentRole == DeploymentRole.Admin
+                && !roster.Any(o => o.Id != target.Id && !o.Disabled
+                    && o.DeploymentRole == DeploymentRole.Admin
+                    && o.Id != Automation.AutomationOperatorIdentity.OperatorId))
+                return Results.Conflict(new Problem(
+                    "Refusing to disable the last enabled admin: another admin must remain able to manage the deployment."));
         }
 
         if (target.Disabled)
@@ -183,16 +217,20 @@ public static class OperatorAuthEndpoints
     }
 
     // The restore twin: enabling re-opens every authentication path for the
-    // account with the memberships it kept through the disable. No guard
-    // applies -- enabling widens nothing an account did not already hold,
-    // and nobody locks themselves out by enabling someone.
+    // account with the memberships it kept through the disable. The admin's
+    // alone, like the disable. No guard applies -- enabling widens nothing
+    // an account did not already hold, and nobody locks themselves out by
+    // enabling someone.
     private static async Task<IResult> EnableAsync(
         string operatorId,
+        ClaimsPrincipal user,
         IOperatorRepository operators,
         CancellationToken cancellationToken)
     {
         if (!Guid.TryParse(operatorId, out var operatorValue))
             return Results.BadRequest(new Problem("Operator id is not a valid identifier."));
+        if (!user.IsDeploymentAdmin())
+            return Results.Forbid();
 
         var target = await operators.FindAsync(new OperatorId(operatorValue), cancellationToken);
         if (target is null)
@@ -210,12 +248,14 @@ public static class OperatorAuthEndpoints
     // tokens): a bearer credential minted per operator, honored by the
     // operator API alongside cookie sessions, and revocable like credentials.
     // The plaintext secret is shown exactly once, at mint; only its digest is
-    // stored. Any authenticated operator may manage tokens (the
-    // trusted-operators model); revocation is idempotent. A token is
-    // independent of the password credential -- each revokes through its own
-    // route -- so rotating one never silently invalidates the other.
+    // stored. Self-service on the caller's own account, the admin's alone on
+    // anyone else's -- a token minted for another operator hands over their
+    // identity. A token is independent of the password credential -- each
+    // revokes through its own route -- so rotating one never silently
+    // invalidates the other.
     private static async Task<IResult> MintTokenAsync(
         string operatorId,
+        ClaimsPrincipal user,
         IOperatorRepository operators,
         IOperatorApiTokenStore tokens,
         TimeProvider clock,
@@ -223,6 +263,8 @@ public static class OperatorAuthEndpoints
     {
         if (!Guid.TryParse(operatorId, out var operatorValue))
             return Results.BadRequest(new Problem("Operator id is not a valid identifier."));
+        if (!MayActOn(user, new OperatorId(operatorValue)))
+            return Results.Forbid();
 
         var target = await operators.FindAsync(new OperatorId(operatorValue), cancellationToken);
         if (target is null)
@@ -237,12 +279,15 @@ public static class OperatorAuthEndpoints
 
     private static async Task<IResult> ListTokensAsync(
         string operatorId,
+        ClaimsPrincipal user,
         IOperatorRepository operators,
         IOperatorApiTokenStore tokens,
         CancellationToken cancellationToken)
     {
         if (!Guid.TryParse(operatorId, out var operatorValue))
             return Results.BadRequest(new Problem("Operator id is not a valid identifier."));
+        if (!MayActOn(user, new OperatorId(operatorValue)))
+            return Results.Forbid();
 
         var target = await operators.FindAsync(new OperatorId(operatorValue), cancellationToken);
         if (target is null)
@@ -255,12 +300,15 @@ public static class OperatorAuthEndpoints
     private static async Task<IResult> RevokeTokenAsync(
         string operatorId,
         string tokenId,
+        ClaimsPrincipal user,
         IOperatorRepository operators,
         IOperatorApiTokenStore tokens,
         CancellationToken cancellationToken)
     {
         if (!Guid.TryParse(operatorId, out var operatorValue))
             return Results.BadRequest(new Problem("Operator id is not a valid identifier."));
+        if (!MayActOn(user, new OperatorId(operatorValue)))
+            return Results.Forbid();
         if (!Guid.TryParse(tokenId, out var tokenValue))
             return Results.BadRequest(new Problem("Token id is not a valid identifier."));
 
@@ -281,17 +329,20 @@ public static class OperatorAuthEndpoints
     // involved. It ends the credential's live cookie sessions too: each
     // authenticated request revalidates the session stamp the login baked
     // into the cookie, and with the verifier gone the stamp no longer
-    // matches, so the next request on that cookie is refused. Any
-    // authenticated operator may revoke (the trusted-operators model); the
+    // matches, so the next request on that cookie is refused. Self-service
+    // on the caller's own account, the admin's alone on anyone else's; the
     // action is idempotent.
     private static async Task<IResult> RevokeCredentialAsync(
         string operatorId,
+        ClaimsPrincipal user,
         IOperatorRepository operators,
         IOperatorCredentialStore credentials,
         CancellationToken cancellationToken)
     {
         if (!Guid.TryParse(operatorId, out var operatorValue))
             return Results.BadRequest(new Problem("Operator id is not a valid identifier."));
+        if (!MayActOn(user, new OperatorId(operatorValue)))
+            return Results.Forbid();
 
         var target = await operators.FindAsync(new OperatorId(operatorValue), cancellationToken);
         if (target is null)
@@ -365,10 +416,11 @@ public static class OperatorAuthEndpoints
     }
 
     private static OperatorAuthSummary ToSummary(Operator op)
-        => new(op.Id.Value, op.Handle, op.DisplayName);
+        => new(op.Id.Value, op.Handle, op.DisplayName, DeploymentRoles.ToName(op.DeploymentRole));
 
     private static OperatorAccountResponse ToAccount(Operator op, bool hasCredential)
-        => new(op.Id.Value, op.Handle, op.DisplayName, op.CreatedAt, hasCredential, op.Disabled);
+        => new(op.Id.Value, op.Handle, op.DisplayName, op.CreatedAt, hasCredential, op.Disabled,
+            DeploymentRoles.ToName(op.DeploymentRole));
 }
 
 /// <summary>Login credentials submitted to <c>POST /operators/login</c>.</summary>
@@ -377,8 +429,8 @@ public sealed record LoginRequest(string Handle, string Password);
 /// <summary>
 /// A new account submitted to <c>POST /operators</c>: handle and initial
 /// password are required; the display name defaults to the handle. The
-/// account carries no permission -- reach arrives per engagement, as
-/// memberships its owners grant.
+/// account comes up as a deployment member -- reach arrives per engagement,
+/// as memberships its owners grant.
 /// </summary>
 public sealed record CreateOperatorRequest(string? Handle, string? DisplayName, string? Password);
 
@@ -387,9 +439,10 @@ public sealed record CredentialSetRequest(string? Password);
 
 /// <summary>
 /// The authenticated operator returned by login and <c>GET /operators/me</c>:
-/// identity only -- what the operator may reach resolves per engagement.
+/// identity and deployment role -- the role is the one privilege the account
+/// holds; everything else the operator may reach resolves per engagement.
 /// </summary>
-public sealed record OperatorAuthSummary(Guid Id, string Handle, string DisplayName);
+public sealed record OperatorAuthSummary(Guid Id, string Handle, string DisplayName, string Role);
 
 /// <summary>
 /// A freshly minted API token: the secret is shown exactly once, here -- only
@@ -404,8 +457,9 @@ public sealed record TokenResponse(string TokenId, DateTimeOffset CreatedAt);
 /// A roster row as <c>GET /operators</c> returns it: the account's identity,
 /// creation time, whether a password currently stands behind it (false after
 /// credential revocation -- the account exists but cannot log in until
-/// re-provisioned), and whether the account is disabled (no authentication
-/// path accepts it until enabled).
+/// re-provisioned), whether the account is disabled (no authentication
+/// path accepts it until enabled), and its deployment role ("admin" or
+/// "member", the one privilege the account holds).
 /// </summary>
 public sealed record OperatorAccountResponse(
     Guid Id,
@@ -413,4 +467,5 @@ public sealed record OperatorAccountResponse(
     string DisplayName,
     DateTimeOffset CreatedAt,
     bool HasCredential,
-    bool Disabled);
+    bool Disabled,
+    string Role);

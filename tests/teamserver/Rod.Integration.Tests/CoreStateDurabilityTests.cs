@@ -1,4 +1,5 @@
 using System.Net.Http.Json;
+using System.Text.Json;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -60,6 +61,7 @@ public sealed class CoreStateDurabilityTests : IClassFixture<PostgresFixture>
         //     land in Postgres. ---
         OperatorId operatorId;
         EngagementId engagementId;
+        OperatorId memberId;
 
         await using (var envA = await TestEnv.StartAsync(_postgres))
         {
@@ -71,6 +73,14 @@ public sealed class CoreStateDurabilityTests : IClassFixture<PostgresFixture>
             created.EnsureSuccessStatusCode();
             var engagement = await created.Content.ReadFromJsonAsync<EngagementEndpoints.EngagementResponse>();
             Assert.True(EngagementId.TryParse(engagement!.EngagementId, out engagementId));
+
+            // A console-created member beside the bootstrap admin, so the
+            // restart reads both roles back.
+            var provisioned = await envA.Http.PostAsJsonAsync("/operators",
+                new { handle = "durable-member", password = "durable-p@ss" });
+            provisioned.EnsureSuccessStatusCode();
+            var memberBody = await provisioned.Content.ReadFromJsonAsync<JsonElement>();
+            memberId = new OperatorId(Guid.Parse(memberBody.GetProperty("id").GetString()!));
         }
         // Host A is disposed: the durable adapters' DbContexts are gone, but the
         // rows they wrote remain in Postgres.
@@ -83,11 +93,17 @@ public sealed class CoreStateDurabilityTests : IClassFixture<PostgresFixture>
         var engagements = envB.Host.Services.GetRequiredService<IEngagementRepository>();
 
         // The operator created on host A is present on host B -- the typed id
-        // round-trips through the uuid column.
+        // round-trips through the uuid column, and the deployment role
+        // through its int column: the seed stayed admin and the
+        // console-created account stayed member.
         var operatorRow = await operators.FindAsync(operatorId);
         Assert.NotNull(operatorRow);
         Assert.Equal(AuthenticatedHost.Handle, operatorRow!.Handle);
         Assert.Equal(AuthenticatedHost.DisplayName, operatorRow.DisplayName);
+        Assert.Equal(DeploymentRole.Admin, operatorRow.DeploymentRole);
+        var memberRow = await operators.FindAsync(memberId);
+        Assert.NotNull(memberRow);
+        Assert.Equal(DeploymentRole.Member, memberRow!.DeploymentRole);
 
         // The engagement is present with its owner intact.
         var engagementRow = await engagements.FindAsync(engagementId);

@@ -9,14 +9,13 @@ namespace Rod.Integration.Tests;
 
 /// <summary>
 /// Operator provisioning over the API (architecture.md Sec 3 and Sec 9):
-/// the management path the bootstrap seed stood in for. <c>POST /operators</c>
-/// registers an account with its initial password in one step (the new handle
-/// can log in the moment the response returns), <c>GET /operators</c> lists
-/// the roster, and <c>PUT /operators/{id}/credentials</c> re-provisions a
-/// password -- a new credential generation that ends the target's live cookie
-/// sessions at their next request. An account carries no permission: reach
-/// arrives per engagement, as memberships owners grant, so provisioning is
-/// trusted-operator like the rest of the account machinery.
+/// the management path the bootstrap seed stood in for, and the deployment
+/// admin's alone (Sec 4.5). <c>POST /operators</c> registers a member
+/// account with its initial password in one step (the new handle can log in
+/// the moment the response returns), <c>GET /operators</c> lists the roster,
+/// and <c>PUT /operators/{id}/credentials</c> re-provisions a password -- a
+/// new credential generation that ends the target's live cookie sessions at
+/// their next request.
 /// </summary>
 public class OperatorProvisioningTests
 {
@@ -29,7 +28,8 @@ public class OperatorProvisioningTests
         string DisplayName,
         DateTimeOffset CreatedAt,
         bool HasCredential,
-        bool Disabled);
+        bool Disabled,
+        string Role);
 
     private sealed record CreateBody(string Handle, string? DisplayName, string Password);
 
@@ -124,14 +124,15 @@ public class OperatorProvisioningTests
     }
 
     [Fact]
-    public async Task Provisioning_IsTrustedOperator_WhileAnonymousReadsRefuse()
+    public async Task Provisioning_IsAdminOnly_WhileAnonymousReadsRefuse()
     {
         await using var env = await TestEnv.StartAsync();
         await AuthenticatedHost.RegisterOperatorAsync(env.Host, "colleague", "Colleague", Password);
         await AuthenticatedHost.LoginAsync(env.Http);
 
-        // Anonymous requests refuse at the session; any authenticated
-        // operator may provision -- accounts are identity, not permission.
+        // Anonymous requests refuse at the session; a member is
+        // authenticated and still forbidden -- provisioning hands out
+        // accounts, which is the deployment admin's alone (Sec 4.5).
         using var anonymous = env.NewClient();
         Assert.Equal(HttpStatusCode.Unauthorized, (await anonymous.GetAsync("/operators")).StatusCode);
         Assert.Equal(HttpStatusCode.Unauthorized,
@@ -139,7 +140,12 @@ public class OperatorProvisioningTests
 
         using var colleague = env.NewClient();
         await AuthenticatedHost.LoginAsync(colleague, "colleague", Password);
-        var provision = await colleague.PostAsJsonAsync("/operators",
+        var refused = await colleague.PostAsJsonAsync("/operators",
+            new CreateBody("eve", null, Password));
+        Assert.Equal(HttpStatusCode.Forbidden, refused.StatusCode);
+
+        // The admin creates the same account without friction.
+        var provision = await env.Http.PostAsJsonAsync("/operators",
             new CreateBody("eve", null, Password));
         Assert.Equal(HttpStatusCode.Created, provision.StatusCode);
     }

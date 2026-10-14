@@ -73,11 +73,13 @@ public sealed class OperatorAuthService
     /// display name under their claims (so transport can resolve the full
     /// operator identity off the principal without referencing this layer), the
     /// handle as the name, and the authentication scheme as the identity label.
-    /// The principal carries no permission: what the operator may reach
-    /// resolves fresh from the engagement memberships on every
-    /// engagement-scoped request (architecture.md Sec 3). With
-    /// <paramref name="verifierHash"/> it also carries the session stamp
-    /// that binds the session to that credential generation.
+    /// The principal carries exactly one privilege, the deployment role claim:
+    /// the management surfaces the admin gate answers to. Everything else --
+    /// what the operator may reach inside an engagement -- resolves fresh from
+    /// the engagement memberships on every engagement-scoped request
+    /// (architecture.md Sec 3). With <paramref name="verifierHash"/> it also
+    /// carries the session stamp that binds the session to that credential
+    /// generation.
     /// </summary>
     public static ClaimsPrincipal CreatePrincipal(Operator op, string? verifierHash = null)
     {
@@ -88,6 +90,8 @@ public sealed class OperatorAuthService
         identity.AddClaim(new Claim(OperatorClaims.OperatorIdClaimType, op.Id.Value.ToString()));
         identity.AddClaim(new Claim(OperatorClaims.OperatorHandleClaimType, op.Handle));
         identity.AddClaim(new Claim(OperatorClaims.OperatorDisplayNameClaimType, op.DisplayName));
+        identity.AddClaim(new Claim(
+            OperatorClaims.DeploymentRoleClaimType, DeploymentRoles.ToName(op.DeploymentRole)));
         identity.AddClaim(new Claim(ClaimTypes.Name, op.Handle));
         if (verifierHash is not null)
             identity.AddClaim(SessionStamp.Claim(verifierHash));

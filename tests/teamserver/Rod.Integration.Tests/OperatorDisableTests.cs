@@ -4,6 +4,7 @@ using System.Net.Http.Json;
 using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.Hosting;
+using Rod.CoreState.Operators;
 using Rod.Transport;
 
 namespace Rod.Integration.Tests;
@@ -13,9 +14,11 @@ namespace Rod.Integration.Tests;
 /// disabled operator authenticates nowhere -- login fails indistinguishably
 /// from an unknown handle, live cookie sessions reject at their next request,
 /// and API tokens refuse -- until enabled again, whereupon the account picks
-/// up exactly the memberships it kept through the disable. The one guard is
-/// the lockout: disabling the last enabled account would leave nobody able
-/// to enable it back.
+/// up exactly the memberships it kept through the disable. The pair is the
+/// deployment admin's alone, and two guards hold the line: disabling the
+/// last enabled account would leave nobody able to enable it back, and
+/// disabling the last enabled admin would leave the deployment with no
+/// management path.
 /// </summary>
 public class OperatorDisableTests
 {
@@ -28,7 +31,8 @@ public class OperatorDisableTests
         string DisplayName,
         DateTimeOffset CreatedAt,
         bool HasCredential,
-        bool Disabled);
+        bool Disabled,
+        string Role);
 
     private sealed record MintedTokenBody(string TokenId, string Token, DateTimeOffset CreatedAt);
 
@@ -87,25 +91,22 @@ public class OperatorDisableTests
     }
 
     [Fact]
-    public async Task Disable_RefusesTheLastEnabledAccount_AndIsIdempotent()
+    public async Task Disable_RefusesTheLastEnabledAccountOrAdmin_AndIsIdempotent()
     {
         await using var env = await TestEnv.StartAsync();
         var seeded = AuthenticatedHost.GetOperatorId(env.Host);
         await AuthenticatedHost.LoginAsync(env.Http);
 
-        // The seeded operator is the only enabled account besides the
+        // The seeded admin is the only enabled account besides the
         // credential-less automation row: disabling it is the lockout.
         var refused = await env.Http.PostAsync($"/operators/{seeded}:disable", content: null);
         Assert.Equal(HttpStatusCode.Conflict, refused.StatusCode);
 
-        // A second account stands: Alice disables the seed from her own
-        // session (the seeded session dies with the disable, at its very
-        // next request), and both directions are idempotent on repeat.
-        var second = await env.Http.PostAsJsonAsync("/operators",
-            new { handle = Handle, password = Password });
-        Assert.Equal(HttpStatusCode.Created, second.StatusCode);
-        var secondId = (await second.Content.ReadFromJsonAsync<AccountBody>())!.Id;
-
+        // A second admin stands (registered through the store -- the console
+        // only grows members): from her own session she disables the seed,
+        // and both directions are idempotent on repeat.
+        var aliceId = await AuthenticatedHost.RegisterOperatorAsync(
+            env.Host, Handle, "Alice Aaron", Password, DeploymentRole.Admin);
         using var alice = env.NewClient();
         await AuthenticatedHost.LoginAsync(alice, Handle, Password);
         var disabled = await alice.PostAsync($"/operators/{seeded}:disable", content: null);
@@ -113,35 +114,44 @@ public class OperatorDisableTests
         var again = await alice.PostAsync($"/operators/{seeded}:disable", content: null);
         Assert.Equal(HttpStatusCode.OK, again.StatusCode);
 
-        // Alice is the last enabled account now: same refusal, other side --
-        // her own disable included. Enabling a not-disabled account is the
-        // idempotent no-op.
-        var lastRefusal = await alice.PostAsync($"/operators/{secondId}:disable", content: null);
+        // Alice is the last enabled admin now: her own disable refuses, even
+        // though member accounts remain standing. Enabling a not-disabled
+        // account is the idempotent no-op.
+        await AuthenticatedHost.RegisterOperatorAsync(env.Host, "colleague", "Colleague", Password);
+        var lastRefusal = await alice.PostAsync($"/operators/{aliceId}:disable", content: null);
         Assert.Equal(HttpStatusCode.Conflict, lastRefusal.StatusCode);
-        var enableNoop = await alice.PostAsync($"/operators/{secondId}:enable", content: null);
+        var enableNoop = await alice.PostAsync($"/operators/{aliceId}:enable", content: null);
         Assert.Equal(HttpStatusCode.OK, enableNoop.StatusCode);
     }
 
     [Fact]
-    public async Task Disable_IsTrustedOperator_AndRefusesUnknownAccounts()
+    public async Task Disable_IsAdminOnly_WhileAnonymousReadsRefuse()
     {
         await using var env = await TestEnv.StartAsync();
         var targetId = await AuthenticatedHost.RegisterOperatorAsync(env.Host, Handle, "Alice Aaron", Password);
         await AuthenticatedHost.RegisterOperatorAsync(env.Host, "colleague", "Colleague", Password);
         await AuthenticatedHost.LoginAsync(env.Http);
 
-        // Anonymous requests refuse at the session; any authenticated
-        // operator may flip the switch -- accounts are identity, not
-        // permission, and the lockout guard is the last-account line.
+        // Anonymous requests refuse at the session; a member is
+        // authenticated and still forbidden -- the switch is the admin's
+        // alone, even on the member's own account.
         using var anonymous = env.NewClient();
         Assert.Equal(HttpStatusCode.Unauthorized,
             (await anonymous.PostAsync($"/operators/{targetId}:disable", content: null)).StatusCode);
 
         using var colleague = env.NewClient();
         await AuthenticatedHost.LoginAsync(colleague, "colleague", Password);
-        var disabled = await colleague.PostAsync($"/operators/{targetId}:disable", content: null);
-        Assert.Equal(HttpStatusCode.OK, disabled.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden,
+            (await colleague.PostAsync($"/operators/{targetId}:disable", content: null)).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden,
+            (await colleague.PostAsync("/operators/00000000-0000-0000-0000-000000000000:disable", content: null))
+            .StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden,
+            (await colleague.PostAsync($"/operators/{targetId}:enable", content: null)).StatusCode);
 
+        // The admin flips the switch, and an unknown account is a 404.
+        var disabled = await env.Http.PostAsync($"/operators/{targetId}:disable", content: null);
+        Assert.Equal(HttpStatusCode.OK, disabled.StatusCode);
         Assert.Equal(HttpStatusCode.NotFound,
             (await env.Http.PostAsync("/operators/00000000-0000-0000-0000-000000000000:disable", content: null))
             .StatusCode);

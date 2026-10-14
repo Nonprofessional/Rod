@@ -157,19 +157,23 @@ internal static class AuthenticatedHost
     }
 
     /// <summary>
-    /// Registers an additional operator on a running host -- the same provisioning
-    /// steps the bootstrap seed performs, available to tests that need a second
-    /// account (for example the two-operator live SSE scenario). Creates the
-    /// aggregate, stores the password hash, and returns the new operator's id.
+    /// Registers an additional operator on a running host -- the same
+    /// provisioning steps the bootstrap seed performs, available to tests that
+    /// need a second account (for example the two-operator live SSE scenario).
+    /// Creates the aggregate, stores the password hash, and returns the new
+    /// operator's id. The role defaults to member, the console's account
+    /// shape; a test that needs a second admin (the last-admin guard's
+    /// standing) states it.
     /// </summary>
     public static async Task<OperatorId> RegisterOperatorAsync(
-        IHost host, string handle, string displayName, string password)
+        IHost host, string handle, string displayName, string password,
+        DeploymentRole role = DeploymentRole.Member)
     {
         var operators = host.Services.GetRequiredService<IOperatorRepository>();
         var credentials = host.Services.GetRequiredService<IOperatorCredentialStore>();
         var hasher = host.Services.GetRequiredService<IPasswordHasher<Operator>>();
 
-        var op = Operator.Register(OperatorId.New(), handle, displayName, DateTimeOffset.UtcNow, DeploymentRole.Member);
+        var op = Operator.Register(OperatorId.New(), handle, displayName, DateTimeOffset.UtcNow, role);
         await operators.SaveAsync(op);
         var hash = hasher.HashPassword(op, password);
         await credentials.SetHashAsync(op.Id, hash);

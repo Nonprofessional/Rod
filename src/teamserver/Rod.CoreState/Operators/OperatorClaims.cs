@@ -33,6 +33,23 @@ public static class OperatorClaims
     public const string OperatorDisplayNameClaimType = "rod:operator-display-name";
 
     /// <summary>
+    /// The claim that carries the authenticated operator's deployment role,
+    /// as its wire name ("admin" / "member", <see cref="DeploymentRoles"/>).
+    /// Stamped at login and token resolution from the account row; the role
+    /// is fixed at registration, so the claim cannot go stale.
+    /// </summary>
+    public const string DeploymentRoleClaimType = "rod:deployment-role";
+
+    /// <summary>
+    /// Whether the principal carries the admin deployment role -- the role
+    /// the deployment's management surfaces (other operators' accounts, the
+    /// redirector fleet, the runtime settings) gate on. False for members
+    /// and anonymous principals.
+    /// </summary>
+    public static bool IsDeploymentAdmin(this ClaimsPrincipal principal)
+        => principal.HasClaim(DeploymentRoleClaimType, DeploymentRoles.AdminName);
+
+    /// <summary>
     /// Reads the authenticated operator's id from a principal, or null when the
     /// principal has no operator-id claim (the caller is anonymous or the claim
     /// is malformed).
