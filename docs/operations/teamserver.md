@@ -45,7 +45,7 @@ nobody else should be able to reach either. During UI development,
 
 ## First login
 
-The initial operator is provisioned at startup from the `Operators:Initial`
+The initial admin is provisioned at startup from the `Operators:Initial`
 section and is idempotent (an existing account with a password is never
 touched):
 
@@ -54,31 +54,40 @@ touched):
   "Operators": {
     "Initial": {
       "Handle": "lead",
-      "DisplayName": "Engagement Lead",
       "Password": "set-via-environment-in-production"
     }
   }
 }
 ```
 
-In Development a built-in account (`operator` / `operator`) applies when
-configuration supplies none. In Production there is **no fallback**: a server
-configured without an initial operator starts with no loginable account, and
-operators must be provisioned by configuration. Bind the password via
-environment (`Operators__Initial__Password`) or a secret store, never inline.
+A deployment sets an account name and a password, nothing else -- the
+display name derives from the handle, and the two fields resolve
+independently (a configured password with a blank handle seeds the
+default handle `admin`). Unset, both environments seed `admin`: in
+Development with password `admin`, in Production with a generated
+password that is logged exactly once, at the moment its hash is stored
+-- later boots find the hash standing and log nothing. There is no
+lockout: an unconfigured server boots with a loginable account. Bind a
+real password via environment (`Operators__Initial__Password`) or a
+secret store, never inline.
 
-The initial account is the bootstrap, not the limit: `POST /operators`
-provisions further accounts (handle and initial password of at least 8
-characters) and `GET /operators` lists the roster -- the UI's Settings
-panel drives both. An account carries no permission: any authenticated
-operator may provision, and reach arrives per engagement, as memberships
-engagement owners grant (`POST /engagements/{id}/members`). `PUT
-/operators/{id}/credentials` re-provisions a password (the previous
-generation's sessions end at their next request), and
-`POST /operators/{id}:disable` / `:enable` are the account's off and back
-on -- a disabled account authenticates nowhere (login, cookie session, API
-token) but keeps its memberships, so enabling restores exactly what it
-had.
+The seeded account is the deployment admin: the one role that provisions
+accounts, holds the disable switch, and writes the redirector fleet and
+the runtime settings (architecture.md Sec 4.5). Every account it
+provisions through `POST /operators` comes up a **member** --
+permanently, since there is no promote or demote path; the bootstrap at
+boot is the only way a deployment grows an admin. Members keep
+self-service over their own password and API tokens; reach inside
+engagements arrives per engagement, as memberships engagement owners
+grant (`POST /engagements/{id}/members`). `GET /operators` lists the
+roster with each account's role. `PUT /operators/{id}/credentials`
+re-provisions a password (the previous generation's sessions end at
+their next request; the caller's own account or the admin's), and
+`POST /operators/{id}:disable` / `:enable` are the account's off and
+back on -- a disabled account authenticates nowhere (login, cookie
+session, API token) but keeps its memberships, so enabling restores
+exactly what it had. Disabling the last enabled account, or the last
+enabled admin, is refused (409) so a deployment never strands itself.
 
 ## The dev loop
 
@@ -175,7 +184,7 @@ standard `Section__Key` mapping):
 
 | Section | What it selects | Default when absent |
 |---------|-----------------|---------------------|
-| `Operators:Initial` | The first loginable account, provisioned idempotently at startup (`Handle`, `DisplayName`, `Password`). Bind the password through the environment (`Operators__Initial__Password`), never inline. | Development: the built-in `operator`/`operator` account. Production: **no account** -- a server configured without one has no login. |
+| `Operators:Initial` | The initial admin account, provisioned idempotently at startup (`Handle`, `Password` -- the display name derives from the handle, and each field falls back on its own). Bind the password through the environment (`Operators__Initial__Password`), never inline. | Handle `admin`; password `admin` in Development, or in Production a generated password logged exactly once at first boot. |
 | `Listeners` | The **shared tier** only: the operator front, plus any deliberately shared ingress (e.g. the certificate-less enroll edge). One entry per socket -- `Name`, `Transport` (`Http`, `Https`, `Dns`, `Doh`, or `Tcp`; `Https` is the one-port shape -- TLS with no client certificate requested anywhere, enrollment on the token and contacts on the sealed envelope under the per-artifact key, both halves on one socket; `Doh` carries the DNS grammar over RFC 8484 HTTPS bodies and, like `Dns`, takes the zone as its public endpoint), `BindAddress` (what the host opens), `PublicEndpoint` (what implants dial; typically a redirector; for a `Dns` entry it is the zone the TXT contacts live under). Https entries terminate TLS against the implant CA; DNS entries bind a UDP socket; `Tcp` entries bind a raw socket under the certificate-less identity posture. Implant-facing listeners are engagement-scoped and created through the operator API, not configuration (architecture.md Sec 8). Keep `Http` entries on loopback: the operator API and the certificate-less beacon ride them in the clear, and a non-loopback bind logs a startup warning (architecture.md Sec 8). | One loopback HTTP listener on `127.0.0.1:5080`. |
 | `Audit:DataDirectory` | File-backed audit trail, artifacts, and built payloads that survive a restart. Each append writes and flushes one hash-chained record; recovery verifies each engagement's chain and refuses a tampered trail. | In-memory (lost on restart). |
 | `ConnectionStrings:Postgres` | The durable PostgreSQL pair replaces the in-memory core-state and audit adapters (EF Core over Npgsql). Apply the schema with `dotnet ef database update -p src/teamserver/Rod.Persistence -s src/teamserver/Rod.TeamServer`. | In-memory. |
@@ -336,16 +345,16 @@ unit injects (`/etc/rod/teamserver.env`, mode 0600):
 
 ```
 Operators__Initial__Handle=lead
-Operators__Initial__DisplayName=Engagement Lead
 Operators__Initial__Password=<from the secret store>
 ConnectionStrings__Postgres=<rod connection string>
 ```
 
-The **whole** `Operators__Initial` section must be present: outside
-Development there is no fallback account, and an incomplete section
-provisions no operator -- the first symptom is a 401 on login. The
-section is read once at first boot and never re-read; rotate credentials
-through the operator API, not by editing the file.
+The fields resolve independently: an unset handle seeds `admin`, and an
+unset password -- outside Development -- is generated and logged exactly
+once at first boot, so an incomplete section still leaves a loginable
+account rather than a 401. The section is read once at first boot and
+never re-read; rotate credentials through the operator API, not by
+editing the file.
 
 ### Upgrade
 

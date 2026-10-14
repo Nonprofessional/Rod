@@ -922,13 +922,9 @@ cadence -- how often presence-style surfaces (the redirector roster, the
 engagement view's fallback refresh, the shell roster) re-read while
 their tab is visible; build progress keeps its own faster cadence because
 it is task progress, not presence. Saves re-arm running timers on the
-spot. **Build cache** is the
-shared cargo target dir payload builds compile against: a persistent
-directory turns a cold cross-compile into a one-time cost (dependency
-artifacts are reused; concurrent builds queue on cargo's own lock),
-empty keeps builds hermetic, and the boot default is the
-`ROD_RUST_TARGET_DIR` variable. Applies to the next build, remembered
-across restarts. **Session presence**
+spot. The runtime cards -- **Session presence** and **Build cache** --
+are the deployment admin's to write: a member reads the values and sees
+the read-only note instead of the save actions. Session presence
 explains the fleet's offline behavior and adjusts it live: *Offline
 after* is how long a silent session holds its Online dot before the
 staleness sweep closes it (1 minute..24 hours; keep it above your
@@ -938,30 +934,36 @@ on the next sweep pass -- no restart -- and the server persists the pair
 (`RuntimeSettings:FilePath`, default `runtime-settings.json` beside the
 server) so a restart remembers them; the `Sessions:Staleness` config
 section remains the boot default. Bounds violations refuse with the
-reason rather than clamping.
+reason rather than clamping. The build cache is the
+shared cargo target dir payload builds compile against: a persistent
+directory turns a cold cross-compile into a one-time cost (dependency
+artifacts are reused; concurrent builds queue on cargo's own lock),
+empty keeps builds hermetic, and the boot default is the
+`ROD_RUST_TARGET_DIR` variable. Applies to the next build, remembered
+across restarts.
 
 The page's second card is **Operators** -- the account roster and its
 management sheet (the management path the `Operators:Initial` seed stood
 in for; see [teamserver.md](teamserver.md)). The table lists every
-account: handle (yours marked *you*; a switched-off account reads
-*disabled*; a revoked credential reads *no password*), display name, and
-creation date. An account carries no permission -- reach arrives per
-engagement, from each engagement's Members panel -- so *New operator*
-takes just handle, display name (optional; defaults to the handle), and
-an initial password (8 characters minimum, handed over out of band).
-*Reset password* re-provisions an account's password; a reset is a new
-credential generation, so that account's live sessions end at their next
-request (resetting your own signs this session out too). *Disable* is
-the account off switch (two clicks): every authentication path -- login,
-live cookie session, API token -- refuses at its next use, while the
-memberships wait as they were, so *Enable* restores exactly the reach
-the account had; the last enabled account cannot be disabled (the 409
-names the rule), and disabling yourself ends your own session with no
-way back alone. *Manage* opens the row's sheet: **API tokens** mints,
-lists, and revokes the account's bearer credentials -- a minted secret
-is shown exactly once beside a copy button, because only its digest is
-stored. Any authenticated operator may write here: accounts are
-identity, not permission (architecture.md Sec 4.5).
+account: handle (yours marked *you*; admins marked *admin*; a
+switched-off account reads *disabled*; a revoked credential reads *no
+password*), display name, and creation date. Reach arrives per
+engagement, from each engagement's Members panel, and every account
+comes up a deployment member: the bootstrap-seeded admin alone sees *New
+operator* (handle, optional display name, and an initial password of at
+least 8 characters, handed over out of band) and the *Disable* / *Enable*
+pair -- the account off switch (two clicks): every authentication path
+-- login, live cookie session, API token -- refuses at its next use,
+while the memberships wait as they were, so *Enable* restores exactly
+the reach the account had; the last enabled account, or the last enabled
+admin, cannot be disabled (the 409 names the rule), and disabling
+yourself ends your own session with no way back alone. *Reset password*
+and *Manage* (the row's **API tokens** shelf -- mint with the one-time
+secret beside a copy button, list, revoke) render on your own row for
+every operator -- password and tokens are self-service -- and on every
+row for the admin. The server draws the same lines (a member's writes
+refuse with 403); the console only mirrors them
+(architecture.md Sec 4.5).
 
 ## Members
 
@@ -991,7 +993,10 @@ each enrolled node with its live status (the control connection itself --
 its self-reported build (the same version/commit pair the binary prints,
 so fleet provenance reads off the node), its address and enrollment age.
 *Retire* (two clicks) takes a node out of the deployment: the live control
-session closes and the next reconnect is refused by name. **Enrollment
+session closes and the next reconnect is refused by name. The roster and
+the ledger read for every operator; the writes -- retire, mint, revoke --
+are the deployment admin's, and a member sees the read-only note instead
+of the forms. **Enrollment
 credentials** pre-provision new nodes: *Mint* takes the node's roster name
 and an optional lifetime (default a day) and shows the secret exactly
 once, rendered inside the complete node invocation -- the control URL
@@ -1003,7 +1008,8 @@ whole enrollment. The ledger names each credential's state (unused, enrolled --
 with the node it minted, expired, revoked); *Revoke* (two clicks) makes an
 unused credential permanently unusable. The attach/detach/promote half --
 where nodes meet engagements -- lives in each engagement's
-[Listeners](#listeners) tab; the runbook walks the whole flow
+[Listeners](#listeners) tab (a membership question, not a deployment
+one); the runbook walks the whole flow
 ([redirectors.md](redirectors.md), Sec 0).
 
 ## System
