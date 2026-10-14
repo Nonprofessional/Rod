@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Text.Json;
 using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.Hosting;
@@ -188,6 +189,54 @@ public class OperatorDeploymentRoleTests
         Assert.Equal(HttpStatusCode.Unauthorized,
             (await stale.PostAsJsonAsync("/operators/login",
                 new { handle = MemberHandle, password = rotated })).StatusCode);
+    }
+
+    [Fact]
+    public async Task Members_Draw403OnFleetAndSettingsWrites_WhileReadsStayOpen()
+    {
+        await using var env = await TestEnv.StartAsync();
+        await AuthenticatedHost.LoginAsync(env.Http);
+
+        var created = await env.Http.PostAsJsonAsync("/operators",
+            new { handle = MemberHandle, password = MemberPassword });
+        Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+
+        using var member = env.NewClient();
+        await AuthenticatedHost.LoginAsync(member, MemberHandle, MemberPassword);
+
+        // The reads are deployment state every operator may see: the fleet
+        // roster, the credential ledger, both settings.
+        Assert.Equal(HttpStatusCode.OK, (await member.GetAsync("/redirectors")).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await member.GetAsync("/redirectors/credentials")).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await member.GetAsync("/settings/sessions")).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await member.GetAsync("/settings/build")).StatusCode);
+
+        // The writes are the admin's alone. The claim gate answers before
+        // any handler runs, so even an unknown id or a blank body draws 403.
+        Assert.Equal(HttpStatusCode.Forbidden,
+            (await member.PostAsJsonAsync("/redirectors/credentials", new { name = "edge" })).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden,
+            (await member.PostAsync($"/redirectors/credentials/{Guid.NewGuid()}:revoke", content: null)).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden,
+            (await member.PostAsync($"/redirectors/{Guid.NewGuid()}:retire", content: null)).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden,
+            (await member.PutAsJsonAsync("/settings/sessions",
+                new { thresholdMinutes = 10, sweepIntervalMinutes = 5 })).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden,
+            (await member.PutAsJsonAsync("/settings/build", new { rustTargetDir = "" })).StatusCode);
+
+        // The admin performs the same writes: a minted credential, its
+        // revocation, and both settings applied live.
+        var minted = await env.Http.PostAsJsonAsync("/redirectors/credentials", new { name = "edge" });
+        Assert.Equal(HttpStatusCode.Created, minted.StatusCode);
+        var credentialId = (await minted.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetString();
+        Assert.Equal(HttpStatusCode.NoContent,
+            (await env.Http.PostAsync($"/redirectors/credentials/{credentialId}:revoke", content: null)).StatusCode);
+        Assert.Equal(HttpStatusCode.OK,
+            (await env.Http.PutAsJsonAsync("/settings/sessions",
+                new { thresholdMinutes = 10, sweepIntervalMinutes = 5 })).StatusCode);
+        Assert.Equal(HttpStatusCode.OK,
+            (await env.Http.PutAsJsonAsync("/settings/build", new { rustTargetDir = "" })).StatusCode);
     }
 
     /// <summary>

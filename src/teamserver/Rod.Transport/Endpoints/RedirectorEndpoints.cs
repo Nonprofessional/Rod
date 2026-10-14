@@ -1,4 +1,5 @@
 using System.Net;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
@@ -13,11 +14,12 @@ namespace Rod.Transport.Endpoints;
 /// The redirector fleet's operator surface (architecture.md Sec 8):
 /// deployment-scoped, like the fleet it manages -- no engagement in the
 /// route, because a node is machine capacity and engagement scope arrives
-/// per front at the listener it attaches to. Authentication is the trusted-
-/// operator model every non-engagement route uses (the credential-revocation
-/// shape): any authenticated operator mints and retires, and the actions are
-/// audited where they touch an engagement (front changes) or not at all
-/// (fleet plumbing, matching the operator-identity family's posture).
+/// per front at the listener it attaches to. The reads (the roster, the
+/// credential ledger) stay open to every operator; the writes are the
+/// deployment admin's alone (the deployment-role gate of Sec 4.5): minting
+/// a credential or retiring a node is deployment management, not engagement
+/// work. The actions stay out of the audit trail as before -- fleet
+/// plumbing touches no engagement.
 /// </summary>
 public static class RedirectorEndpoints
 {
@@ -27,12 +29,26 @@ public static class RedirectorEndpoints
 
         group.MapGet("/", ListNodesAsync).WithName(nameof(ListNodesAsync));
         group.MapGet("/credentials", ListCredentialsAsync).WithName(nameof(ListCredentialsAsync));
-        group.MapPost("/credentials", MintCredentialAsync).WithName(nameof(MintCredentialAsync));
-        group.MapPost("/credentials/{id}:revoke", RevokeCredentialAsync).WithName(nameof(RevokeCredentialAsync));
-        group.MapPost("/{id}:retire", RetireNodeAsync).WithName(nameof(RetireNodeAsync));
+        group.MapPost("/credentials", MintCredentialAsync)
+            .WithName(nameof(MintCredentialAsync))
+            .RequireAuthorization(DeploymentAdmin());
+        group.MapPost("/credentials/{id}:revoke", RevokeCredentialAsync)
+            .WithName(nameof(RevokeCredentialAsync))
+            .RequireAuthorization(DeploymentAdmin());
+        group.MapPost("/{id}:retire", RetireNodeAsync)
+            .WithName(nameof(RetireNodeAsync))
+            .RequireAuthorization(DeploymentAdmin());
 
         return endpoints;
     }
+
+    // The authorization requirement the fleet writes carry: the
+    // deployment-role claim the login stamps (Sec 4.5). It composes with the
+    // group's plain requirement -- a member is authenticated and still
+    // forbidden (403), an anonymous request is challenged (401).
+    private static Action<AuthorizationPolicyBuilder> DeploymentAdmin()
+        => policy => policy.RequireClaim(
+            OperatorClaims.DeploymentRoleClaimType, DeploymentRoles.AdminName);
 
     private static async Task<IResult> ListNodesAsync(
         IRedirectorFleet fleet,

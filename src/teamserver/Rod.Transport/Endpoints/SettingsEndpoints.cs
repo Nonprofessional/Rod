@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
@@ -8,9 +9,12 @@ namespace Rod.Transport.Endpoints;
 /// <summary>
 /// The operator-facing runtime settings endpoints: the live session-presence
 /// knobs (the staleness sweep's threshold and interval), readable and writable
-/// over the API so the settings page adjusts them without a restart. The PUT
-/// applies immediately -- the sweeper reads the live values on every pass --
-/// and persists behind the scenes so a restart keeps the operator's values.
+/// over the API so the settings page adjusts them without a restart. The PUTs
+/// apply immediately -- the sweeper reads the live values on every pass --
+/// and persist behind the scenes so a restart keeps the operator's values.
+/// Both reads are open to every operator and both writes are the deployment
+/// admin's alone (the deployment-role gate of Sec 4.5): runtime settings are
+/// deployment state, not engagement work.
 /// </summary>
 public static class SettingsEndpoints
 {
@@ -22,13 +26,23 @@ public static class SettingsEndpoints
 
         group.MapGet("/sessions", GetSessionsAsync).WithName(nameof(GetSessionsAsync));
         group.MapPut("/sessions", PutSessionsAsync)
-            .WithName(nameof(PutSessionsAsync));
+            .WithName(nameof(PutSessionsAsync))
+            .RequireAuthorization(DeploymentAdmin());
         group.MapGet("/build", GetBuildAsync).WithName(nameof(GetBuildAsync));
         group.MapPut("/build", PutBuildAsync)
-            .WithName(nameof(PutBuildAsync));
+            .WithName(nameof(PutBuildAsync))
+            .RequireAuthorization(DeploymentAdmin());
 
         return endpoints;
     }
+
+    // The authorization requirement the settings writes carry: the
+    // deployment-role claim the login stamps (Sec 4.5). It composes with the
+    // group's plain requirement -- a member is authenticated and still
+    // forbidden (403), an anonymous request is challenged (401).
+    private static Action<AuthorizationPolicyBuilder> DeploymentAdmin()
+        => policy => policy.RequireClaim(
+            OperatorClaims.DeploymentRoleClaimType, DeploymentRoles.AdminName);
 
     private static IResult GetSessionsAsync(SessionRuntimeSettings settings)
     {
