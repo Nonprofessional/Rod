@@ -28,6 +28,7 @@ jobs:
             echo "tag ${GITHUB_REF_NAME} does not match RodVersion ${version} in Directory.Build.props" >&2
             exit 1
           fi
+          echo "version=$version" >> "$GITHUB_ENV"
       - name: Setup .NET
         uses: actions/setup-dotnet@v5
         # Version comes from global.json (pinned to 10.0.110).
@@ -73,11 +74,16 @@ jobs:
             src/implant/rust src/teamserver/Rod.Protocol/protos
       - name: Create the release
         # gh is first-party and preinstalled on the runner; the token is the
-        # job's own, scoped by the permissions block above.
+        # job's own, scoped by the permissions block above. A suffixed
+        # RodVersion (dev, rc) marks the release a prerelease, so GitHub's
+        # "latest" -- and install.sh's latest/download redirect -- stay
+        # reserved for the bare-version release.
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          flags=()
+          case "$version" in *-*) flags+=(--prerelease) ;; esac
           gh release create "$GITHUB_REF_NAME" \
             --title "Rod ${GITHUB_REF_NAME#v}" \
-            --generate-notes \
+            --generate-notes "${flags[@]}" \
             dist/rod-teamserver-linux-x64.tar.gz dist/rod-src.tar.gz scripts/install.sh
