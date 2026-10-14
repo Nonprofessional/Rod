@@ -272,6 +272,34 @@ rod-teamserver`, then accept: `systemctl is-active` reports active and
 debugging a crash-looping start, clear the rate limit with `systemctl
 reset-failed rod-teamserver` before starting again.
 
+### One-command install
+
+The install path above, executed by a script: a release carries the
+self-contained teamserver tarball, the payload build source (implant crate,
+wire protos, crates.io dependencies vendored beside them), and
+`scripts/install.sh`. CI builds the assets on a clean runner
+(`.github/workflows/release.yml`), so no developer host's paths or state
+ever touch what ships, and the release tag is verified against RodVersion
+before the build -- the binary's BuildStamp names the same tag the assets
+were cut from. The repository is public, so the deploy host needs no
+authentication:
+
+```
+curl -fsSL https://github.com/Nonprofessional/Rod/releases/latest/download/install.sh \
+  | sudo bash
+```
+
+Pin a version with `sudo bash -s v1.0.0` in place of the trailing `bash`.
+The script lays out `/opt/rod`, generates `appsettings.Production.json`
+(non-secret shape only), the commented secret env template, and the unit,
+then starts the service in the ephemeral posture; rerunning with a newer
+version upgrades in place, carrying every operator-written file across.
+What it cannot invent stays manual and unchanged from above: the database
+and its schema, the engagement CA, and the Rust toolchain (the next
+section). The script's rehearsal knobs (`ROD_REHEARSAL`, `ROD_ASSET_BASE`,
+`ROD_PREFIX`) exercise the install path without root or systemd against a
+local asset directory.
+
 ### Build sources and the operator UI
 
 Two more install-shape facts, both walked end to end on the supervised

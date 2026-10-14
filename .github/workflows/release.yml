@@ -1,0 +1,83 @@
+name: release
+
+on:
+  push:
+    tags: ['v*']
+
+# The release job creates the GitHub release and attaches its assets.
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build and publish the release
+    # Pinned for the same reason ci.yml pins: an unpinned label lets a runner
+    # image change the toolchain under us.
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - name: Verify the tag matches RodVersion
+        # Directory.Build.props is the single source of truth for the version:
+        # a release tag is v<RodVersion> cut from the tree that carries the
+        # bare version (the -dev suffix drops in the same change that cuts
+        # the tag). A mismatched tag ships a binary whose BuildStamp claims a
+        # version the tag does not name.
+        run: |
+          version="$(sed -n 's/.*<RodVersion>\(.*\)<\/RodVersion>.*/\1/p' Directory.Build.props | head -1)"
+          if [ "v${version}" != "${GITHUB_REF_NAME}" ]; then
+            echo "tag ${GITHUB_REF_NAME} does not match RodVersion ${version} in Directory.Build.props" >&2
+            exit 1
+          fi
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5
+        # Version comes from global.json (pinned to 10.0.110).
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: src/teamserver/Rod.TeamServer/Client/package-lock.json
+      - name: Build operator UI
+        working-directory: src/teamserver/Rod.TeamServer/Client
+        run: |
+          npm ci
+          npm run build
+      - name: Publish the self-contained teamserver
+        # The install shape teamserver.md documents: a self-contained publish
+        # carrying its own runtime, so the deploy host installs neither SDK
+        # nor runtime. The runner is the only machine the artifact ever
+        # touches -- no developer host's paths, toolchains, or state reach
+        # the release (the repo's gitleaks gate covers the source side).
+        run: |
+          dotnet publish src/teamserver/Rod.TeamServer/Rod.TeamServer.csproj \
+            -c Release -r linux-x64 --self-contained true -o dist/teamserver
+          tar -czf dist/rod-teamserver-linux-x64.tar.gz -C dist/teamserver .
+      - name: Pack the payload build source
+        # The minimal deployed tree teamserver.md names -- the implant crate
+        # and the wire protos, with crates.io dependencies vendored beside
+        # them (RustBuildUnit compiles the crate only; plugin-sdk and modules
+        # are not part of the deployed build). The tar's version is tied to
+        # the binary's by the release tag both were cut from, and the vendor
+        # dir means the deploy host needs no registry egress for payload
+        # builds.
+        run: |
+          (cd src/implant/rust && cargo vendor vendor > /tmp/vendor-config.toml)
+          mkdir -p src/implant/rust/.cargo
+          {
+            echo '# Written by the release workflow: pin the build to the vendored'
+            echo '# crates so payload builds need no registry egress.'
+            cat /tmp/vendor-config.toml
+          } > src/implant/rust/.cargo/config.toml
+          tar -czf dist/rod-src.tar.gz \
+            --exclude 'target' \
+            src/implant/rust src/teamserver/Rod.Protocol/protos
+      - name: Create the release
+        # gh is first-party and preinstalled on the runner; the token is the
+        # job's own, scoped by the permissions block above.
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            --title "Rod ${GITHUB_REF_NAME#v}" \
+            --generate-notes \
+            dist/rod-teamserver-linux-x64.tar.gz dist/rod-src.tar.gz scripts/install.sh
