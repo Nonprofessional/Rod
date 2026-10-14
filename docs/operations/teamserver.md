@@ -364,6 +364,29 @@ deployed redirector reports the same pair via `rod-redirector -version`
 unstamped: a captured artifact must not carry the teamserver's source
 provenance.
 
+### Cutting a release
+
+RodVersion carries the `-dev` suffix for as long as work continues toward
+the release; a release is claimed the moment the suffix drops (the
+convention `Directory.Build.props` documents). The procedure, end to end:
+
+1. Drop the suffix in `Directory.Build.props` and commit -- the same
+   change the tag is cut from. A suffixed version (`-rc1`, or `-dev`
+   itself) works identically for rehearsal: the release workflow accepts
+   any `v<RodVersion>` tag and marks a suffixed one a prerelease, so
+   `latest` (and install.sh's `latest/download` redirect) only ever
+   names a bare-version release.
+2. Push `main`, then cut the tag from that change and push it. Pushed
+   commits are signed; the workflow's tag guard fails any tag that does
+   not match RodVersion, so a mismatched or stale tag cannot ship.
+3. The tag triggers `.github/workflows/release.yml`: it builds the
+   assets on a clean runner (no developer host touches what ships) and
+   publishes the release with the teamserver tarball, the vendored
+   payload build source, and install.sh.
+4. Accept: the release page lists the three assets, the startup stamp
+   names the tag's version and commit, and the one-command install
+   against `latest` resolves to the new tag.
+
 ### Secrets
 
 `Operators__Initial__Password` and `Pki__CaPrivateKeyPassphrase`
