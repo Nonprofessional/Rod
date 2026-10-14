@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk.Web">
+﻿<Project Sdk="Microsoft.NET.Sdk.Web">
 
   <!--
     Rod.TeamServer is the runnable teamserver process (architecture.md Sec 4) and
@@ -38,6 +38,7 @@
          The implant and stager are deliberately NOT stamped: a captured
          artifact must not carry the teamserver's source provenance. -->
     <RodStampBuildInfo>true</RodStampBuildInfo>
+    <UserSecretsId>5ef3e4e6-6b79-462c-8526-0bb87de43317</UserSecretsId>
   </PropertyGroup>
 
   <!-- The built operator UI is gitignored, so this project's build produces
