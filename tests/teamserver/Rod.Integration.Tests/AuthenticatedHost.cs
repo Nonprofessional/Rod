@@ -169,7 +169,7 @@ internal static class AuthenticatedHost
         var credentials = host.Services.GetRequiredService<IOperatorCredentialStore>();
         var hasher = host.Services.GetRequiredService<IPasswordHasher<Operator>>();
 
-        var op = Operator.Register(OperatorId.New(), handle, displayName, DateTimeOffset.UtcNow);
+        var op = Operator.Register(OperatorId.New(), handle, displayName, DateTimeOffset.UtcNow, DeploymentRole.Member);
         await operators.SaveAsync(op);
         var hash = hasher.HashPassword(op, password);
         await credentials.SetHashAsync(op.Id, hash);

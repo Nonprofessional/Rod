@@ -167,7 +167,8 @@ public sealed class ConformanceRig : IAsyncDisposable
         {
             var operators = host.Services.GetRequiredService<IOperatorRepository>();
             await operators.SaveAsync(Operator.Register(
-                OperatorId.New(), "conformance", "Conformance Harness", DateTimeOffset.UtcNow));
+                OperatorId.New(), "conformance", "Conformance Harness", DateTimeOffset.UtcNow,
+                DeploymentRole.Member));
         }
         await host.StartAsync();
 

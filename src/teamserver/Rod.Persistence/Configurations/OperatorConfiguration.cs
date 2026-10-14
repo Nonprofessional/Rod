@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using Rod.CoreState.Operators;
 
 namespace Rod.Persistence.Configurations;
 
@@ -26,8 +27,15 @@ internal sealed class OperatorConfiguration : IEntityTypeConfiguration<global::R
         builder.Property(o => o.DisplayName).HasColumnName("display_name").HasMaxLength(512).IsRequired();
         builder.Property(o => o.CreatedAt).HasColumnName("created_at");
         // The administrative off switch (architecture.md Sec 4.5): a disabled
-        // account authenticates nowhere but keeps its scopes. Rows that
-        // predate the flag were loginable, so the default is enabled.
+        // account authenticates nowhere until enabled again.
         builder.Property(o => o.Disabled).HasColumnName("disabled").HasDefaultValue(false);
+        // The deployment role (architecture.md Sec 4.5): the bootstrap seed
+        // is admin, console-created accounts are members. Rows that predate
+        // the role were fully trusted operators, so the column default keeps
+        // their standing on upgrade; every write path states the role
+        // explicitly (the entity rejects unknown values).
+        builder.Property(o => o.DeploymentRole)
+            .HasColumnName("deployment_role")
+            .HasDefaultValue(DeploymentRole.Admin);
     }
 }

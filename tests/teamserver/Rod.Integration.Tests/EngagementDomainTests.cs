@@ -37,6 +37,6 @@ public class EngagementDomainTests
     public void Operator_Register_RejectsBlankHandle()
     {
         Assert.Throws<ArgumentException>(
-            () => Operator.Register(OperatorId.New(), "", "Display", Now));
+            () => Operator.Register(OperatorId.New(), "", "Display", Now, DeploymentRole.Member));
     }
 }

@@ -421,12 +421,15 @@ public sealed class AutomationEngine : BackgroundService
         // operator never logs in, and its engagements' work rides the engine's
         // direct core-state calls (no HTTP, no authorization) -- but the
         // last-enabled-account guard reads the whole roster, so the disable
-        // path must not count an engine among the humans it can strand.
+        // path must not count an engine among the humans it can strand. It
+        // holds no deployment role's authority either: a member row that
+        // never authenticates.
         var automation = new Operator(
             AutomationOperatorIdentity.OperatorId,
             AutomationOperatorIdentity.Handle,
             AutomationOperatorIdentity.DisplayName,
-            _clock.GetUtcNow());
+            _clock.GetUtcNow(),
+            deploymentRole: DeploymentRole.Member);
         await _operators.SaveAsync(automation, cancellationToken);
         _logger.LogInformation("Seeded the synthetic automation operator '{Handle}'.", AutomationOperatorIdentity.Handle);
     }

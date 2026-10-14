@@ -65,7 +65,8 @@ public sealed class OperatorAuthBootstrap : IHostedService
         var existing = await _operators.FindByHandleAsync(seed.Handle, cancellationToken);
         if (existing is null)
         {
-            existing = Operator.Register(OperatorId.New(), seed.Handle, seed.DisplayName, _time.GetUtcNow());
+            existing = Operator.Register(
+                OperatorId.New(), seed.Handle, seed.DisplayName, _time.GetUtcNow(), DeploymentRole.Admin);
             await _operators.SaveAsync(existing, cancellationToken);
         }
 

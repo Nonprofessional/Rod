@@ -369,6 +369,12 @@ namespace Rod.Persistence.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
 
+                    b.Property<int>("DeploymentRole")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(1)
+                        .HasColumnName("deployment_role");
+
                     b.Property<bool>("Disabled")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("boolean")

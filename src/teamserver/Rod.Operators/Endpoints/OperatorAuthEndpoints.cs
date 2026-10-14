@@ -84,7 +84,9 @@ public static class OperatorAuthEndpoints
             return Results.Conflict(new Problem($"Handle '{handle}' is already taken."));
 
         var displayName = string.IsNullOrWhiteSpace(body.DisplayName) ? handle : body.DisplayName.Trim();
-        var created = new Operator(OperatorId.New(), handle, displayName, clock.GetUtcNow());
+        var created = new Operator(
+            OperatorId.New(), handle, displayName, clock.GetUtcNow(),
+            deploymentRole: DeploymentRole.Member);
         await operators.SaveAsync(created, cancellationToken);
         await credentials.SetHashAsync(
             created.Id, hasher.HashPassword(created, body.Password), cancellationToken);
