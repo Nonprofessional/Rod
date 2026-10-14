@@ -36,6 +36,9 @@ import { useArmedDelete } from '../useArmedDelete'
 // the help text says so.
 
 export function SettingsView({ operator }: { operator: SessionOperator }) {
+  // The runtime settings are deployment state: every operator reads them,
+  // the deployment admin writes them (the server enforces the same line).
+  const isAdmin = operator.role === 'admin'
   const [threshold, setThreshold] = useState('')
   const [interval, setIntervalValue] = useState('')
   const [saved, setSaved] = useState<string | null>(null)
@@ -143,6 +146,7 @@ export function SettingsView({ operator }: { operator: SessionOperator }) {
               <input
                 value={threshold}
                 onChange={(e) => setThreshold(e.target.value)}
+                readOnly={!isAdmin}
                 title="How long a session may go silent before the sweep closes it and the implant shows offline. A stream that closes cleanly drops immediately; this is the wait for one that dies silently. Keep it above your implants' contact interval (a shorter threshold flaps every quiet period). 1..1440; default 15."
               />
             </label>
@@ -151,6 +155,7 @@ export function SettingsView({ operator }: { operator: SessionOperator }) {
               <input
                 value={interval}
                 onChange={(e) => setIntervalValue(e.target.value)}
+                readOnly={!isAdmin}
                 title="How often the staleness check runs. A shorter interval drops vanished implants sooner at the cost of more frequent passes. 0.17..60; default 1."
               />
             </label>
@@ -161,9 +166,15 @@ export function SettingsView({ operator }: { operator: SessionOperator }) {
               meantime.
             </p>
           </fieldset>
-          <button className="primary" type="submit" disabled={busy}>
-            Save
-          </button>
+          {isAdmin ? (
+            <button className="primary" type="submit" disabled={busy}>
+              Save
+            </button>
+          ) : (
+            <p className="muted" style={{ margin: 0 }}>
+              Read-only for members — the deployment admin adjusts the runtime settings.
+            </p>
+          )}
         </form>
         {saved && <p className="muted">{saved}</p>}
         {error && <p className="error">{error}</p>}
@@ -176,6 +187,7 @@ export function SettingsView({ operator }: { operator: SessionOperator }) {
               <input
                 value={cacheDir}
                 onChange={(e) => setCacheDir(e.target.value)}
+                readOnly={!isAdmin}
                 placeholder="/var/lib/rod/cargo-target"
                 title="The persistent directory payload builds share as their cargo target dir -- the warm compile cache. Dependency artifacts are reused across builds (only the implant crate recompiles), turning a cold cross-compile into a one-time cost; concurrent builds queue on cargo's own lock. Empty = hermetic: a fresh disposable target dir per build, every cold compile pays in full. Must be an absolute path. The boot default is the ROD_RUST_TARGET_DIR environment variable; this setting outranks it and survives restarts."
               />
@@ -186,9 +198,15 @@ export function SettingsView({ operator }: { operator: SessionOperator }) {
               first build after a change pays the cold compile into the new directory.
             </p>
           </fieldset>
-          <button className="primary" type="submit" disabled={cacheBusy}>
-            Save
-          </button>
+          {isAdmin ? (
+            <button className="primary" type="submit" disabled={cacheBusy}>
+              Save
+            </button>
+          ) : (
+            <p className="muted" style={{ margin: 0 }}>
+              Read-only for members.
+            </p>
+          )}
         </form>
         {cacheSaved && <p className="muted">{cacheSaved}</p>}
       </div>
@@ -255,16 +273,18 @@ function ConsoleCard() {
 }
 
 // The account roster, the provisioning form, and the per-account management
-// row. The bootstrap account (Operators:Initial) is the first operator;
-// every account after it arrives here -- POST /operators registers the
-// handle and its initial password in one step, so the account works the
-// moment the row appears. An account carries no permission: what it may
-// reach arrives per engagement, as the memberships its owners grant (the
-// engagement's Members panel). Each row opens into its management sheet --
-// the API-token shelf (mint with its one-time secret, list, revoke) and the
-// disable/enable switch, the account off switch that ends every
-// authentication path while the memberships wait as they were.
+// row. The bootstrap account (Operators:Initial) is the first operator and
+// the deployment admin; every account after it arrives here and comes up a
+// member -- POST /operators registers the handle and its initial password
+// in one step, so the account works the moment the row appears. What an
+// account may reach inside engagements arrives separately, as memberships
+// its owners grant (the engagement's Members panel). Management splits on
+// the roles the server enforces: provisioning and the disable switch are
+// the admin's alone, while password and API tokens are self-service -- each
+// operator's own row always opens its management sheet, whoever else's
+// never does for a member.
 function OperatorsCard({ operator }: { operator: SessionOperator }) {
+  const isAdmin = operator.role === 'admin'
   const [accounts, setAccounts] = useState<OperatorAccount[]>([])
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -436,13 +456,15 @@ function OperatorsCard({ operator }: { operator: SessionOperator }) {
         <Icon name="users" />
         Operators
         <HelpHint>
-          The accounts that can log in. The configured initial account is the bootstrap; every
-          account after it is provisioned here -- handle and initial password in one step. Reach
-          is granted per engagement, from each engagement's Members panel.
+          The accounts that can log in. The bootstrap seed is the deployment admin (the '· admin'
+          mark); every account after it is provisioned here and comes up a member. Reach is granted
+          per engagement, from each engagement's Members panel. Your own row keeps password and
+          token self-service; the rest of the management is the admin's.
         </HelpHint>
       </h3>
 
-      <form className="build-form" onSubmit={onCreate}>
+      {isAdmin ? (
+        <form className="build-form" onSubmit={onCreate}>
           <fieldset>
             <legend>New operator</legend>
             <label>
@@ -475,14 +497,20 @@ function OperatorsCard({ operator }: { operator: SessionOperator }) {
               />
             </label>
             <p className="muted" style={{ gridColumn: '1 / -1', margin: 0 }}>
-              An account holds no permission on its own -- after it logs in, grant its reach per
+              Accounts come up as deployment members -- after one logs in, grant its reach per
               engagement from that engagement's Members panel.
             </p>
           </fieldset>
-        <button className="primary" type="submit" disabled={busy}>
-          Provision
-        </button>
-      </form>
+          <button className="primary" type="submit" disabled={busy}>
+            Provision
+          </button>
+        </form>
+      ) : (
+        <p className="muted">
+          Accounts are provisioned by the deployment admin; reach is granted per engagement, from
+          each engagement's Members panel.
+        </p>
+      )}
       {note && <p className="muted">{note}</p>}
       {error && <p className="error">{error}</p>}
 
@@ -513,13 +541,25 @@ function OperatorsCard({ operator }: { operator: SessionOperator }) {
                 </td>
               </tr>
             )}
-            {accounts.map((account) => (
+            {accounts.map((account) => {
+              const own = account.id === operator.operatorId
+              const mayManage = isAdmin || own
+              return (
               <Fragment key={account.id}>
                 <tr className={account.disabled ? 'roster-row-disabled' : undefined}>
                   <td>
                     <span className="endpoint-cell">
                       <code>{account.handle}</code>
-                      {account.id === operator.operatorId && <span className="muted"> (you)</span>}
+                      {own && <span className="muted"> (you)</span>}
+                      {account.role === 'admin' && (
+                        <span
+                          className="muted"
+                          title="The deployment admin: provisions accounts, holds the disable switch, writes the fleet and runtime settings. Seeded at bootstrap; the console only grows members."
+                        >
+                          {' '}
+                          · admin
+                        </span>
+                      )}
                       {account.disabled && (
                         <span
                           className="muted"
@@ -546,44 +586,49 @@ function OperatorsCard({ operator }: { operator: SessionOperator }) {
                   </td>
                   <td>
                     <span className="row-actions">
-                        <button
-                          className="ghost sm"
-                          onClick={() => void onManage(account)}
-                          title="Open this account's management sheet: the API-token shelf and the disable switch."
-                        >
-                          <Icon name="edit" />
-                          {openId === account.id ? 'Close' : 'Manage'}
-                        </button>
-                        <button
-                          className="ghost sm"
-                          onClick={() => void onResetPassword(account)}
-                          title="Set a new password for this account. A reset is a new credential generation: the account's live sessions end at their next request -- resetting your own signs this session out too."
-                        >
-                          Reset password
-                        </button>
-                        {account.disabled ? (
+                        {mayManage && (
                           <button
-                            className="sm"
-                            onClick={() => void onEnable(account)}
-                            title="Re-open every authentication path for this account, with the memberships it kept through the disable."
+                            className="ghost sm"
+                            onClick={() => void onManage(account)}
+                            title="Open this account's management sheet: the API-token shelf and the disable switch."
                           >
-                            Enable
-                          </button>
-                        ) : (
-                          <button
-                            className={`sm danger${armed === account.id ? ' armed' : ''}`}
-                            onClick={() => armDisable(account.id, () => void onDisable(account))}
-                            title={
-                              account.id === operator.operatorId
-                                ? 'Switch this account off (two clicks). Disabling yourself ends this session at its next request -- you will need a colleague to enable you, so this is usually a mistake.'
-                                : armed === account.id
-                                  ? 'Click again to disable — the button reverts on its own after a few seconds'
-                                  : "Switch this account off (two clicks: the first arms, the second disables). Every authentication path refuses at its next use; enabling restores exactly what it had. The last enabled account can't be disabled."
-                            }
-                          >
-                            {armed === account.id ? 'Confirm' : 'Disable'}
+                            <Icon name="edit" />
+                            {openId === account.id ? 'Close' : 'Manage'}
                           </button>
                         )}
+                        {mayManage && (
+                          <button
+                            className="ghost sm"
+                            onClick={() => void onResetPassword(account)}
+                            title="Set a new password for this account. A reset is a new credential generation: the account's live sessions end at their next request -- resetting your own signs this session out too."
+                          >
+                            Reset password
+                          </button>
+                        )}
+                        {isAdmin &&
+                          (account.disabled ? (
+                            <button
+                              className="sm"
+                              onClick={() => void onEnable(account)}
+                              title="Re-open every authentication path for this account, with the memberships it kept through the disable."
+                            >
+                              Enable
+                            </button>
+                          ) : (
+                            <button
+                              className={`sm danger${armed === account.id ? ' armed' : ''}`}
+                              onClick={() => armDisable(account.id, () => void onDisable(account))}
+                              title={
+                                own
+                                  ? 'Switch this account off (two clicks). Disabling yourself ends this session at its next request -- you will need another admin to enable you, so this is usually a mistake.'
+                                  : armed === account.id
+                                    ? 'Click again to disable — the button reverts on its own after a few seconds'
+                                    : "Switch this account off (two clicks: the first arms, the second disables). Every authentication path refuses at its next use; enabling restores exactly what it had. The last enabled account or admin can't be disabled."
+                              }
+                            >
+                              {armed === account.id ? 'Confirm' : 'Disable'}
+                            </button>
+                          ))}
                       </span>
                   </td>
                 </tr>
@@ -644,7 +689,8 @@ function OperatorsCard({ operator }: { operator: SessionOperator }) {
                   </tr>
                 )}
               </Fragment>
-            ))}
+              )
+            })}
           </tbody>
         </table>
       </div>

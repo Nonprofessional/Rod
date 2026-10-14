@@ -156,6 +156,12 @@ export interface SessionOperator {
   operatorId: string
   handle: string
   displayName: string
+  // The deployment role the account holds: 'admin' (the bootstrap seed --
+  // deployment management) or 'member' (console-created -- self-service
+  // over its own password and tokens). The console gates its management
+  // surfaces on it; what the operator may reach inside an engagement is
+  // decided there by memberships, not here.
+  role: 'admin' | 'member'
 }
 
 export interface LoginInput {
@@ -189,11 +195,13 @@ export async function getSessionOperator(): Promise<SessionOperator> {
     id: string
     handle: string
     displayName: string
+    role: 'admin' | 'member'
   }
   return {
     operatorId: body.id,
     handle: body.handle,
     displayName: body.displayName,
+    role: body.role,
   }
 }
 
@@ -201,17 +209,20 @@ export async function getSessionOperator(): Promise<SessionOperator> {
 //
 // The provisioned accounts beside the session's own: GET /operators lists the
 // roster (every account, whether a password stands behind it), POST
-// /operators provisions a new one with its initial password, and
-// PUT /operators/{id}/credentials re-provisions a password. Both writes
-// require the task scope server-side -- they hand the recipient scopes -- so
-// any authenticated operator may drive them (the trusted-operators stance:
-// accounts are identity, reach arrives per engagement).
+// /operators provisions a new one with its initial password (the deployment
+// admin's alone; the account comes up as a member), and
+// PUT /operators/{id}/credentials re-provisions a password (self-service on
+// the caller's own account, admin-only on anyone else's -- the server
+// enforces both, drawing 403 where the session's role does not reach).
 
 export interface OperatorAccount {
   id: string
   handle: string
   displayName: string
   createdAt: string
+  // 'admin' (the bootstrap seed) or 'member' (console-created): the one
+  // deployment-level privilege the account holds.
+  role: 'admin' | 'member'
   // False after credential revocation: the account exists but no password
   // verifies, so it cannot log in until re-provisioned.
   hasCredential: boolean
@@ -265,10 +276,11 @@ export interface MintedOperatorToken {
   createdAt: string
 }
 
-// The account off switch and its restore. Disabling ends every
-// authentication path for the account at its next use; enabling reopens
-// them with the scopes the account kept. Disabling the last task holder
-// refuses with a 409.
+// The account off switch and its restore (the deployment admin's alone).
+// Disabling ends every authentication path for the account at its next use;
+// enabling reopens them with the memberships the account kept. Disabling
+// the last enabled account -- or the last enabled admin -- refuses with a
+// 409.
 export async function disableOperator(operatorId: string): Promise<void> {
   jsonOrThrow(await fetch(`operators/${operatorId}:disable`, { method: 'POST' }))
 }

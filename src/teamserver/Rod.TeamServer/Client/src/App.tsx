@@ -335,8 +335,15 @@ function Identity({
         <div className="identity-menu">
           <div className="identity-menu-head">
             <strong>{operator.handle}</strong>
-            <span className="muted" title={operator.operatorId}>
-              {operator.operatorId.slice(0, 8)}
+            <span
+              className="muted"
+              title={
+                operator.role === 'admin'
+                  ? 'Deployment admin: provisions accounts, holds the disable switch, writes the fleet and runtime settings.'
+                  : 'Deployment member: self-service over your own password and tokens; deployment management belongs to the admin.'
+              }
+            >
+              {operator.role === 'admin' ? 'admin' : 'member'} · {operator.operatorId.slice(0, 8)}
             </span>
           </div>
           <button className="link" onClick={onLogout}>
@@ -467,7 +474,7 @@ function App() {
           ) : route.kind === 'system' ? (
             <SystemView />
           ) : route.kind === 'redirectors' ? (
-            <RedirectorsView />
+            <RedirectorsView operator={operator} />
           ) : (
             <EngagementView
               engagementId={route.engagementId}

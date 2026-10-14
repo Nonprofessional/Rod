@@ -3,6 +3,7 @@ import {
   type MintedRedirectorCredential,
   type RedirectorCredentialSummary,
   type RedirectorNodeSummary,
+  type SessionOperator,
   listRedirectorCredentials,
   listRedirectorNodes,
   mintRedirectorCredential,
@@ -22,7 +23,9 @@ import { useArmedDelete } from '../useArmedDelete'
 // listener attaches a front to them (that half lives in each engagement's
 // Listeners tab); this page is the roster, the enrollment credentials that
 // pre-provision new nodes, and retirement -- a retired node's reconnect is
-// refused by name and its live session closed.
+// refused by name and its live session closed. The roster and the ledger
+// are readable by every operator; minting, revocation, and retirement are
+// the deployment admin's alone (the server draws the same line).
 
 // The control URL a new node should dial, derived from the address this
 // console is being viewed at: the operator front is the shared tier the
@@ -43,7 +46,10 @@ function nodeCommand(secret: string): string {
   return `rod-redirector -control ${controlUrl()} -credential ${secret} -state /var/lib/rod/redirector.state.json`
 }
 
-export function RedirectorsView() {
+export function RedirectorsView({ operator }: { operator: SessionOperator }) {
+  // Fleet writes are deployment management: the admin's alone, with the
+  // roster and the ledger staying readable for everyone.
+  const isAdmin = operator.role === 'admin'
   const [nodes, setNodes] = useState<RedirectorNodeSummary[]>([])
   const [credentials, setCredentials] = useState<RedirectorCredentialSummary[]>([])
   const [error, setError] = useState<string | null>(null)
@@ -204,7 +210,7 @@ export function RedirectorsView() {
                   </td>
                   <td title={new Date(n.enrolledAt).toLocaleString()}>{ago(n.enrolledAt)}</td>
                   <td>
-                    {!n.retiredAt && (
+                    {isAdmin && !n.retiredAt && (
                       <button
                         className={`sm danger${armed === n.id ? ' armed' : ''}`}
                         onClick={() => void onRetire(n)}
@@ -228,31 +234,38 @@ export function RedirectorsView() {
 
       <div className="card">
         <h3>Enrollment credentials</h3>
-        <form className="inline-form" onSubmit={onMint}>
-          <label>
-            Node name
-            <input
-              placeholder="edge-fra-1"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              title="The credential's name becomes the enrolled redirector's roster name."
-              required
-            />
-          </label>
-          <label>
-            Expires in (hours)
-            <input
-              className="bind-port"
-              placeholder="24"
-              value={ttl}
-              onChange={(e) => setTtl(e.target.value)}
-              title="Hard lifetime of the credential (default 24h — one use, then spent)."
-            />
-          </label>
-          <button className="primary" type="submit" disabled={busy}>
-            Mint credential
-          </button>
-        </form>
+        {isAdmin ? (
+          <form className="inline-form" onSubmit={onMint}>
+            <label>
+              Node name
+              <input
+                placeholder="edge-fra-1"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                title="The credential's name becomes the enrolled redirector's roster name."
+                required
+              />
+            </label>
+            <label>
+              Expires in (hours)
+              <input
+                className="bind-port"
+                placeholder="24"
+                value={ttl}
+                onChange={(e) => setTtl(e.target.value)}
+                title="Hard lifetime of the credential (default 24h — one use, then spent)."
+              />
+            </label>
+            <button className="primary" type="submit" disabled={busy}>
+              Mint credential
+            </button>
+          </form>
+        ) : (
+          <p className="muted">
+            The fleet is read-only for members — enrollment credentials are minted by the
+            deployment admin.
+          </p>
+        )}
 
         {minted && (
           <div className="minted-secret" title="The secret is shown once, here, and never again.">
@@ -310,7 +323,7 @@ export function RedirectorsView() {
                   <td title={new Date(c.issuedAt).toLocaleString()}>{ago(c.issuedAt)}</td>
                   <td title={new Date(c.expiresAt).toLocaleString()}>{ago(c.expiresAt)}</td>
                   <td>
-                    {!c.revokedAt && !c.enrolledNodeId && (
+                    {isAdmin && !c.revokedAt && !c.enrolledNodeId && (
                       <button
                         className={`sm danger${armed === c.id ? ' armed' : ''}`}
                         onClick={() => void onRevoke(c)}
