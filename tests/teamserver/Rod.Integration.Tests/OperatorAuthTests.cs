@@ -25,7 +25,6 @@ namespace Rod.Integration.Tests;
 public class OperatorAuthTests
 {
     private const string Handle = "auth";
-    private const string DisplayName = "Auth Operator";
     private const string Password = "p@ssw0rd!";
 
     private static (HttpClient Client, IHost Host) CreateClient()
@@ -34,7 +33,6 @@ public class OperatorAuthTests
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["Operators:Initial:Handle"] = Handle,
-                ["Operators:Initial:DisplayName"] = DisplayName,
                 ["Operators:Initial:Password"] = Password,
             })
             .Build();
@@ -79,7 +77,9 @@ public class OperatorAuthTests
             var summary = await response.Content.ReadFromJsonAsync<OperatorAuthSummary>();
             Assert.NotNull(summary);
             Assert.Equal(Handle, summary!.Handle);
-            Assert.Equal(DisplayName, summary.DisplayName);
+            // The seed's display name is derived from its handle.
+            Assert.Equal(Handle, summary.DisplayName);
+            Assert.Equal("admin", summary.Role);
             Assert.NotEqual(Guid.Empty, summary.Id);
         }
     }
@@ -132,7 +132,7 @@ public class OperatorAuthTests
             var summary = await response.Content.ReadFromJsonAsync<OperatorAuthSummary>();
             Assert.NotNull(summary);
             Assert.Equal(Handle, summary!.Handle);
-            Assert.Equal(DisplayName, summary.DisplayName);
+            Assert.Equal(Handle, summary.DisplayName);
         }
     }
 

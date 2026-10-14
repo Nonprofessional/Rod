@@ -95,11 +95,12 @@ public sealed class CoreStateDurabilityTests : IClassFixture<PostgresFixture>
         // The operator created on host A is present on host B -- the typed id
         // round-trips through the uuid column, and the deployment role
         // through its int column: the seed stayed admin and the
-        // console-created account stayed member.
+        // console-created account stayed member. The seed's display name is
+        // derived from its handle.
         var operatorRow = await operators.FindAsync(operatorId);
         Assert.NotNull(operatorRow);
         Assert.Equal(AuthenticatedHost.Handle, operatorRow!.Handle);
-        Assert.Equal(AuthenticatedHost.DisplayName, operatorRow.DisplayName);
+        Assert.Equal(AuthenticatedHost.Handle, operatorRow.DisplayName);
         Assert.Equal(DeploymentRole.Admin, operatorRow.DeploymentRole);
         var memberRow = await operators.FindAsync(memberId);
         Assert.NotNull(memberRow);

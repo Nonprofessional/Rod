@@ -38,7 +38,6 @@ namespace Rod.Integration.Tests;
 internal static class AuthenticatedHost
 {
     public const string Handle = "operator";
-    public const string DisplayName = "Test Operator";
     public const string Password = "p@ssw0rd!";
 
     /// <summary>
@@ -53,7 +52,6 @@ internal static class AuthenticatedHost
         var settings = new Dictionary<string, string?>
         {
             ["Operators:Initial:Handle"] = Handle,
-            ["Operators:Initial:DisplayName"] = DisplayName,
             ["Operators:Initial:Password"] = Password,
         };
         extend?.Invoke(settings);

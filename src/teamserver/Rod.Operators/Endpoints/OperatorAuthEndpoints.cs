@@ -27,9 +27,10 @@ namespace Rod.Operators.Endpoints;
 /// </summary>
 public static class OperatorAuthEndpoints
 {
-    // The floor a provisioned password must clear. The login throttle blunts
-    // online guessing but cannot replace a defensible minimum, and the dev
-    // fallback account ("operator") already meets it.
+    // The floor a console-set password must clear. The login throttle
+    // blunts online guessing but cannot replace a defensible minimum. The
+    // bootstrap seed stands outside it: configuration is the deployment's
+    // own act, not console input.
     private const int MinimumPasswordLength = 8;
 
     public static IEndpointRouteBuilder Map(this IEndpointRouteBuilder endpoints)
