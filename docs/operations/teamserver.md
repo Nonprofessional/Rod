@@ -84,7 +84,9 @@ roster with each account's role -- the deployment admin's read; a
 member's account surface is `GET /operators/me`.
 `PUT /operators/{id}/credentials`
 re-provisions a password (the previous generation's sessions end at
-their next request; the caller's own account or the admin's), and
+their next request; the caller's own account -- proving the current
+password, so a stolen session cannot quietly own the account -- or the
+admin's), and
 `POST /operators/{id}:disable` / `:enable` are the account's off and
 back on -- a disabled account authenticates nowhere (login, cookie
 session, API token) but keeps its memberships, so enabling restores

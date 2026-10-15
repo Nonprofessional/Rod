@@ -254,12 +254,18 @@ export async function createOperator(input: CreateOperatorInput): Promise<Operat
 
 // A reset is a new credential generation: the target's live sessions end at
 // their next request. Resetting your own password signs this session out too.
-export async function setOperatorPassword(operatorId: string, password: string): Promise<void> {
+// Self-service proves possession: the current password is required when the
+// caller acts on its own account; an admin resetting another account omits it.
+export async function setOperatorPassword(
+  operatorId: string,
+  password: string,
+  currentPassword?: string,
+): Promise<void> {
   jsonOrThrow(
     await fetch(`operators/${operatorId}/credentials`, {
       method: 'PUT',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ password }),
+      body: JSON.stringify({ password, ...(currentPassword !== undefined && { currentPassword }) }),
     }),
   )
 }

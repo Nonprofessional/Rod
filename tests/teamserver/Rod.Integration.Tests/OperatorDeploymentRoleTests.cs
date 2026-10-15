@@ -166,13 +166,24 @@ public class OperatorDeploymentRoleTests
         using var member = env.NewClient();
         await AuthenticatedHost.LoginAsync(member, MemberHandle, MemberPassword);
 
-        // Password self-service: the reset ends the caller's own session at
-        // its next request (a new credential generation), and the new
-        // password logs straight back in.
+        // Password self-service proves possession: neither a bare session nor
+        // a wrong guess may rotate the credential behind it, and a refused
+        // attempt leaves the session standing.
         const string rotated = "rotated-p@ss";
-        Assert.Equal(HttpStatusCode.OK,
+        Assert.Equal(HttpStatusCode.Forbidden,
             (await member.PutAsJsonAsync($"/operators/{memberId}/credentials",
                 new { password = rotated })).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden,
+            (await member.PutAsJsonAsync($"/operators/{memberId}/credentials",
+                new { password = rotated, currentPassword = "wrong-p@ss" })).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await member.GetAsync("/operators/me")).StatusCode);
+
+        // With the current password stated, the change lands: it ends the
+        // caller's own session at its next request (a new credential
+        // generation), and the new password logs straight back in.
+        Assert.Equal(HttpStatusCode.OK,
+            (await member.PutAsJsonAsync($"/operators/{memberId}/credentials",
+                new { password = rotated, currentPassword = MemberPassword })).StatusCode);
         Assert.Equal(HttpStatusCode.Unauthorized, (await member.GetAsync("/operators/me")).StatusCode);
         await AuthenticatedHost.LoginAsync(member, MemberHandle, rotated);
 

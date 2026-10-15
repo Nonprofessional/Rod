@@ -174,9 +174,14 @@ public static class OperatorAuthEndpoints
     // was revoked or whose password must change. Self-service on the
     // caller's own account, the admin's alone on anyone else's -- a password
     // reset on another operator is account takeover, which is management.
-    // A new password is a new credential generation -- the target's live
-    // cookie sessions fail their stamp check at each one's next request, so
-    // the reset ends them without touching anyone else's.
+    // Acting on your own account proves the current password: a session
+    // alone must not rotate the credential behind it, or a stolen cookie
+    // would quietly own the account forever. An admin acting on another
+    // account states no proof -- takeover is the management path's
+    // prerogative, not this route's concern. A new password is a new
+    // credential generation -- the target's live cookie sessions fail their
+    // stamp check at each one's next request, so the reset ends them
+    // without touching anyone else's.
     private static async Task<IResult> SetCredentialAsync(
         string operatorId,
         ClaimsPrincipal user,
@@ -200,9 +205,25 @@ public static class OperatorAuthEndpoints
         if (target is null)
             return Results.NotFound(new Problem($"Operator {operatorId} does not exist."));
 
+        var self = user.TryGetOperatorId() == target.Id;
+        if (self)
+        {
+            var hash = await credentials.FindHashAsync(target.Id, cancellationToken);
+            var verification = hash is null
+                ? PasswordVerificationResult.Failed
+                : hasher.VerifyHashedPassword(target, hash, body.CurrentPassword ?? string.Empty);
+            if (verification == PasswordVerificationResult.Failed)
+                return Results.Json(new Problem("The current password does not verify."),
+                    statusCode: StatusCodes.Status403Forbidden);
+        }
+
         await credentials.SetHashAsync(target.Id, hasher.HashPassword(target, body.Password), cancellationToken);
         await RecordAccountChangeAsync(audit, user.TryGetOperatorId()!.Value, target.Id,
-            "operator.credential-set", $"password set on '{target.Handle}' (a new credential generation: its live sessions end)", clock, cancellationToken);
+            "operator.credential-set",
+            self
+                ? $"password changed on '{target.Handle}' (self-service; a new credential generation: its live sessions end)"
+                : $"password set on '{target.Handle}' by the admin (a new credential generation: its live sessions end)",
+            clock, cancellationToken);
         return Results.Ok(new { operatorId = target.Id.ToString() });
     }
 
@@ -498,8 +519,13 @@ public sealed record LoginRequest(string Handle, string Password);
 /// </summary>
 public sealed record CreateOperatorRequest(string? Handle, string? DisplayName, string? Password);
 
-/// <summary>The replacement password submitted to <c>PUT /operators/{id}/credentials</c>.</summary>
-public sealed record CredentialSetRequest(string? Password);
+/// <summary>
+/// The replacement password submitted to <c>PUT /operators/{id}/credentials</c>.
+/// The current password is required and must verify when the caller acts on
+/// its own account (self-service proves possession); an admin acting on
+/// another account omits it.
+/// </summary>
+public sealed record CredentialSetRequest(string? Password, string? CurrentPassword);
 
 /// <summary>
 /// The authenticated operator returned by login and <c>GET /operators/me</c>:
