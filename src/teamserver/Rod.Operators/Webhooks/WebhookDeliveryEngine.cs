@@ -143,25 +143,49 @@ public sealed class WebhookDeliveryEngine : BackgroundService
 
     private async Task PumpAsync(EngagementId engagement, CancellationTokenSource subscription)
     {
-        try
+        // A transient store failure must not end the pump: the reconcile
+        // diff only adds engagements it has not seen, so a dead pump stays
+        // dead until process restart. Resubscribe after a pause instead --
+        // the bus is a transient drop-oldest projection, so a gap costs no
+        // more than a stalled subscriber already does; the audit trail
+        // remains the durable record.
+        var resubscribePause = TimeSpan.FromSeconds(Math.Max(1, _options.EngineTickSeconds));
+        while (!subscription.IsCancellationRequested)
         {
-            await foreach (var @event in _bus.SubscribeAsync(engagement, subscription.Token))
+            Exception? failure = null;
+            try
             {
-                await HandleEventAsync(engagement, @event, subscription.Token);
+                await foreach (var @event in _bus.SubscribeAsync(engagement, subscription.Token))
+                {
+                    await HandleEventAsync(engagement, @event, subscription.Token);
+                }
+            }
+            catch (OperationCanceledException) when (subscription.IsCancellationRequested)
+            {
+                // The subscription was retired; nothing left to drain.
+                break;
+            }
+            catch (Exception ex)
+            {
+                failure = ex;
+            }
+
+            if (failure is not null)
+                _logger.LogError(failure,
+                    "Webhook pump for engagement {Engagement} failed; resubscribing in {Pause}.",
+                    engagement, resubscribePause);
+
+            try
+            {
+                await Task.Delay(resubscribePause, subscription.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                break;
             }
         }
-        catch (OperationCanceledException)
-        {
-            // The subscription was retired; nothing left to drain.
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Webhook pump for engagement {Engagement} ended; the next tick re-subscribes.", engagement);
-        }
-        finally
-        {
-            subscription.Dispose();
-        }
+
+        subscription.Dispose();
     }
 
     private async Task HandleEventAsync(EngagementId engagement, LiveEvent @event, CancellationToken cancellationToken)

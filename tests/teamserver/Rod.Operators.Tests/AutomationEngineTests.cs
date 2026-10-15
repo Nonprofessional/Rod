@@ -69,9 +69,9 @@ public class AutomationEngineTests
             Implants.SaveAsync(Implant).GetAwaiter().GetResult();
         }
 
-        public AutomationEngine NewEngine()
+        public AutomationEngine NewEngine(IAutomationRuleStore? rules = null, int tickSeconds = 5)
             => new(
-                Rules,
+                rules ?? Rules,
                 TaskService,
                 Tasks,
                 Audit,
@@ -79,7 +79,7 @@ public class AutomationEngineTests
                 Bus,
                 Service,
                 Clock,
-                Options.Create(new AutomationOptions()),
+                Options.Create(new AutomationOptions { EngineTickSeconds = tickSeconds }),
                 NullLogger<AutomationEngine>.Instance);
 
         public Task<AutomationRule> AddIntervalRuleAsync(
@@ -238,6 +238,77 @@ public class AutomationEngineTests
 
         var queued = await rig.Tasks.ListByImplantAsync(rig.Implant.Id);
         Assert.Single(queued);
+    }
+
+    [Fact]
+    public async Task EventPump_RevivesAfterATransientStoreFailure()
+    {
+        // A pump that ended on a transient store error stayed dead: the
+        // reconcile diff only adds engagements it has not seen, so one
+        // failed read muted the engagement's event rules until restart.
+        // The pump must resubscribe itself; the failure costs at most the
+        // event in flight, the same as a stalled subscriber already loses.
+        var rig = new Rig();
+        await rig.AddEventRuleAsync(LiveEventKind.SessionOpened);
+        var flaky = new FlakyRuleStore(rig.Rules, failAtRead: 2);
+        var engine = rig.NewEngine(flaky, tickSeconds: 1);
+
+        await engine.TickOnceAsync(); // read 1: subscribes the engagement
+
+        // This event lands on read 2, the injected failure; wait for it
+        // to hit before asking the pump to be alive again.
+        await rig.Bus.PublishAsync(LiveEvent.SessionOpened(
+            rig.Scope, rig.Owner, rig.Implant.Id, "1.0", rig.Clock.GetUtcNow()));
+        await rig.UntilAsync(async () => flaky.Reads >= 2);
+
+        // An event published after the resubscribe fires the rule; the
+        // republish loop covers the pause window before the pump is back.
+        await rig.UntilAsync(async () =>
+        {
+            await rig.Bus.PublishAsync(LiveEvent.SessionOpened(
+                rig.Scope, rig.Owner, rig.Implant.Id, "1.0", rig.Clock.GetUtcNow()));
+            return (await rig.Rules.ListByEngagementAsync(rig.Scope)).Any(r => r.FireCount >= 1);
+        });
+    }
+
+    /// <summary>
+    /// Wraps the in-memory rule store and fails one chosen
+    /// <see cref="IAutomationRuleStore.ListEnabledAsync"/> read, standing in
+    /// for a transient store failure on the pump's hot path.
+    /// </summary>
+    private sealed class FlakyRuleStore : IAutomationRuleStore
+    {
+        private readonly IAutomationRuleStore _inner;
+        private readonly int _failAtRead;
+
+        public FlakyRuleStore(IAutomationRuleStore inner, int failAtRead)
+        {
+            _inner = inner;
+            _failAtRead = failAtRead;
+        }
+
+        public int Reads { get; private set; }
+
+        public Task SaveAsync(AutomationRule rule, CancellationToken cancellationToken = default)
+            => _inner.SaveAsync(rule, cancellationToken);
+
+        public Task<AutomationRule?> FindAsync(AutomationRuleId id, CancellationToken cancellationToken = default)
+            => _inner.FindAsync(id, cancellationToken);
+
+        public Task<IReadOnlyList<AutomationRule>> ListByEngagementAsync(
+            EngagementId engagementId, CancellationToken cancellationToken = default)
+            => _inner.ListByEngagementAsync(engagementId, cancellationToken);
+
+        public async Task<IReadOnlyList<AutomationRule>> ListEnabledAsync(CancellationToken cancellationToken = default)
+        {
+            var read = ++Reads;
+            if (read == _failAtRead)
+                throw new InvalidOperationException("injected transient store failure");
+            return await _inner.ListEnabledAsync(cancellationToken);
+        }
+
+        public Task<bool> RemoveAsync(AutomationRuleId id, CancellationToken cancellationToken = default)
+            => _inner.RemoveAsync(id, cancellationToken);
     }
 
     [Fact]
