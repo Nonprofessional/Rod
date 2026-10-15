@@ -19,9 +19,12 @@ namespace Rod.Operators.Auth;
 /// operator missing a password is re-provisioned with one.
 /// The handle defaults to <c>admin</c>, and the password to <c>admin</c> in
 /// Development. Outside Development an unset password is generated, and the
-/// generated password is logged exactly once -- at the moment its hash is
-/// stored -- so an unconfigured server boots with a loginable account
-/// instead of the lockout, and later boots stay silent.
+/// generated password is revealed exactly once -- at the moment its hash is
+/// stored -- into a read-owner-only file beside the server binary, never
+/// into the log stream (journals and log shippers outlive the moment, and
+/// this is the deployment's root-of-trust credential). The log names the
+/// file's path and nothing else; later boots find the hash standing and
+/// write nothing.
 /// </summary>
 public sealed class OperatorAuthBootstrap : IHostedService
 {
@@ -85,17 +88,30 @@ public sealed class OperatorAuthBootstrap : IHostedService
         }
 
         // The one-time reveal: this is the only place and moment the
-        // generated password exists in clear, and it is never stored. A
-        // later boot finds the hash standing and says nothing; a revoked
-        // credential re-arms with a fresh password logged the same way.
+        // generated password exists in clear, and it is never stored. It
+        // lands in a read-owner-only file beside the server binary, not in
+        // the log stream -- the deployment's root-of-trust credential must
+        // not survive in journals and log shippers. A later boot finds the
+        // hash standing and writes nothing; a revoked credential re-arms
+        // with a fresh password revealed the same way.
+        var revealPath = WritePasswordReveal(seed.Handle, password);
         _logger.LogWarning(
-            "Seeded initial admin '{Handle}' with generated password '{Password}'. "
-            + "It is shown only here and never stored; pin your own with Operators:Initial:Password.",
+            "Seeded initial admin '{Handle}' with a generated password; it is written to {RevealPath} "
+            + "(read it, delete the file, then pin your own with Operators:Initial:Password).",
             seed.Handle,
-            password);
+            revealPath);
     }
 
     public Task StopAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+    private static string WritePasswordReveal(string handle, string password)
+    {
+        var path = Path.Combine(AppContext.BaseDirectory, $"initial-{handle}-password.txt");
+        File.WriteAllText(path, password + Environment.NewLine);
+        if (!OperatingSystem.IsWindows())
+            File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+        return path;
+    }
 
     /// <summary>
     /// Resolves the seed account from configuration, one field at a time: a

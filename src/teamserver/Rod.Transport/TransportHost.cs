@@ -118,7 +118,14 @@ public static class TransportHost
         }
         else
         {
+            // Absence keeps the dev default, but loudly: a production
+            // deployment that forgets the Pki section would otherwise run
+            // the ephemeral posture this branch names -- a fresh signing
+            // identity on every restart -- with no startup trace of the
+            // substitution. The broken-Pki half above already fails loudly;
+            // this is the missing-Pki half's answer.
             services.AddSingleton<IImplantCertificateAuthority, DevCertificateAuthority>();
+            services.AddHostedService<DevCertificateAuthorityPostureWarning>();
         }
         // The session registry wears its last-seen decorator (architecture.md
         // Sec 10.3): every open, touch, and sweep-close also advances the
@@ -816,4 +823,27 @@ public static class TransportHost
             .UseWebSockets()
             .UseAuthentication()
             .UseAuthorization();
+}
+
+/// <summary>
+/// The startup trace for the dev CA substitution (architecture.md Sec 9's
+/// fail-loudly PKI posture): a host with no <c>Pki</c> section runs an
+/// ephemeral in-process root whose signing identity changes on every
+/// restart, and the log names that posture once at boot instead of
+/// discovering it from the first enrollment's refused handshake.
+/// </summary>
+internal sealed class DevCertificateAuthorityPostureWarning(
+    ILogger<DevCertificateAuthorityPostureWarning> logger) : IHostedService
+{
+    public System.Threading.Tasks.Task StartAsync(CancellationToken cancellationToken)
+    {
+        logger.LogWarning(
+            "No Pki section configured: running the development certificate authority -- an ephemeral "
+            + "in-process root whose signing identity changes on every restart. Configure "
+            + "Pki:CaCertificatePath and Pki:CaPrivateKeyPath for a production engagement CA.");
+        return System.Threading.Tasks.Task.CompletedTask;
+    }
+
+    public System.Threading.Tasks.Task StopAsync(CancellationToken cancellationToken)
+        => System.Threading.Tasks.Task.CompletedTask;
 }

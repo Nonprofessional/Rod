@@ -1,4 +1,4 @@
-using System.Text.RegularExpressions;
+
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
@@ -14,9 +14,10 @@ namespace Rod.Integration.Tests;
 /// admin the teamserver boots with. The seed is always an admin (the console
 /// only grows members) and its display name derives from its handle. An
 /// unset password resolves per environment -- <c>admin</c>/<c>admin</c> in
-/// Development, a generated password logged exactly once in Production --
-/// so an unconfigured server boots with a loginable account instead of the
-/// lockout, and later boots stay silent.
+/// Development, a generated password revealed exactly once in Production
+/// into a read-owner-only file beside the server binary, never the log
+/// stream -- so an unconfigured server boots with a loginable account
+/// instead of the lockout, and later boots stay silent.
 /// </summary>
 public partial class OperatorBootstrapTests
 {
@@ -34,18 +35,23 @@ public partial class OperatorBootstrapTests
         Assert.Equal(DeploymentRole.Admin, seeded!.DeploymentRole);
         Assert.Equal("admin", seeded.DisplayName);
 
-        // The generated password was revealed in exactly one log line, and
-        // the hash it produced verifies against that password.
+        // The generated password was revealed exactly once -- into the
+        // reveal file, never a log line -- and the hash it produced
+        // verifies against that password.
         var hash = await harness.Credentials.FindHashAsync(seeded.Id);
         Assert.NotNull(hash);
         var reveal = Assert.Single(
             harness.Logger.Entries, e => e.Message.Contains("generated password"));
         Assert.Equal(LogLevel.Warning, reveal.Level);
-        var password = GeneratedPasswordRegex().Match(reveal.Message).Groups[1].Value;
+        Assert.Contains("initial-admin-password.txt", reveal.Message);
+        var password = ReadRevealFile("admin");
         Assert.False(string.IsNullOrEmpty(password));
         Assert.Equal(
             PasswordVerificationResult.Success,
             harness.Hasher.VerifyHashedPassword(seeded, hash!, password));
+
+        // The log stream carries no password material anywhere.
+        Assert.DoesNotContain(harness.Logger.Entries, e => e.Message.Contains(password));
 
         // The second boot over the same stores is silent and keeps the hash:
         // the account already has a password, so nothing is re-seeded.
@@ -62,14 +68,14 @@ public partial class OperatorBootstrapTests
 
         await bootstrap.StartAsync();
         var seeded = await harness.Operators.FindByHandleAsync("admin");
-        var first = GeneratedPasswordOf(harness);
+        var first = ReadRevealFile("admin");
 
         // A revoked credential is a first-boot moment again: the re-arm
         // generates a new password and reveals it the same one-time way.
         await harness.Credentials.RevokeAsync(seeded!.Id);
         await bootstrap.StartAsync();
 
-        var second = GeneratedPasswordOf(harness);
+        var second = ReadRevealFile("admin");
         Assert.Equal(2, harness.Logger.Entries.Count(e => e.Message.Contains("generated password")));
         Assert.NotEqual(first, second);
         var hash = await harness.Credentials.FindHashAsync(seeded.Id);
@@ -148,16 +154,11 @@ public partial class OperatorBootstrapTests
             harness.Hasher.VerifyHashedPassword(seeded, hash!, "half-configured-p@ss"));
     }
 
-    private static string GeneratedPasswordOf(Harness harness)
-    {
-        // The latest reveal: one per password-setting moment, so a re-arm
-        // reads the second while a first boot reads the first.
-        var reveals = harness.Logger.Entries.Where(e => e.Message.Contains("generated password")).ToArray();
-        return GeneratedPasswordRegex().Match(reveals[^1].Message).Groups[1].Value;
-    }
-
-    [GeneratedRegex(@"generated password '([^']+)'")]
-    private static partial Regex GeneratedPasswordRegex();
+    // The reveal file lands beside the test assembly (AppContext.BaseDirectory
+    // of the harness) exactly where the server binary writes it; read whole
+    // and trimmed, the way an operator reads it.
+    private static string ReadRevealFile(string handle)
+        => File.ReadAllText(Path.Combine(AppContext.BaseDirectory, $"initial-{handle}-password.txt")).Trim();
 
     private sealed class Harness
     {
