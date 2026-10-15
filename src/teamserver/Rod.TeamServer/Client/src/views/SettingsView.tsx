@@ -22,14 +22,16 @@ import { HelpHint } from '../components/HelpHint'
 import { Icon } from '../components/Icons'
 import { useArmedDelete } from '../useArmedDelete'
 
-// The settings page, split by who may write what. The account card and the
-// console-behavior card are everyone's: password and API tokens are
+// The settings page, split by who may write what and laid out as tabs --
+// the same toggle shape the build page's implant/webshell pick uses -- so a
+// long member roster can never push the other sections off-screen. The
+// Account and Console tabs are everyone's: password and API tokens are
 // self-service over the signed-in operator's own account, and the console
-// knobs are this browser's. The two management cards render for the
-// deployment admin alone: the member roster (provisioning, resets, the
-// disable switch) first, then the server-wide runtime settings -- a member's
-// settings page is purely personal, and the server draws the same line the
-// page draws (a member's roster read refuses with 403).
+// knobs are this browser's. The two management tabs -- the member roster
+// (provisioning, resets, the disable switch) and the server-wide runtime
+// settings -- render for the deployment admin alone: a member's settings
+// page is purely personal, and the server draws the same line the page
+// draws (a member's roster read refuses with 403).
 
 // Up to two leading characters of a handle, for the avatar tile -- the same
 // rule the topbar's identity chip uses.
@@ -37,21 +39,65 @@ function initials(handle: string): string {
   return handle.replace(/[^a-zA-Z0-9]/g, '').slice(0, 2).toUpperCase() || '?'
 }
 
+type SettingsTab = 'account' | 'members' | 'runtime' | 'console'
+
+// The tab strip's entries, in strip order. adminOnly drives both the strip
+// (the tab does not render for a member) and the section guard below.
+const SETTINGS_TABS: { id: SettingsTab; label: string; help: string; adminOnly: boolean }[] = [
+  {
+    id: 'account',
+    label: 'Account',
+    help: 'The signed-in operator\'s own surface: identity, the password change, and this account\'s API tokens.',
+    adminOnly: false,
+  },
+  {
+    id: 'members',
+    label: 'Members',
+    help: "The deployment's account roster: provisioning, password resets, the API-token shelves, and the disable switch.",
+    adminOnly: true,
+  },
+  {
+    id: 'runtime',
+    label: 'Runtime',
+    help: 'Server-wide runtime settings: session presence and the shared build cache. Live on save, remembered across restarts.',
+    adminOnly: true,
+  },
+  {
+    id: 'console',
+    label: 'Console',
+    help: "This browser's own preferences, kept in localStorage and never sent to the teamserver.",
+    adminOnly: false,
+  },
+]
+
 export function SettingsView({ operator }: { operator: SessionOperator }) {
   const isAdmin = operator.role === 'admin'
+  const [tab, setTab] = useState<SettingsTab>('account')
   return (
     <section className="view">
       <h2>
         Settings
         <HelpHint>
-          Your account (password, API tokens), this browser's console behavior, and -- for the
-          deployment admin -- the member roster and the server-wide runtime settings.
+          Your account and this browser's console behavior -- and, for the deployment admin,
+          the member roster and the server-wide runtime settings as their own tabs.
         </HelpHint>
       </h2>
-      {isAdmin && <MembersCard operator={operator} />}
-      {isAdmin && <RuntimeCard />}
-      <AccountCard operator={operator} />
-      <ConsoleCard />
+      <div className="inline-form">
+        {SETTINGS_TABS.filter((t) => !t.adminOnly || isAdmin).map((t) => (
+          <button
+            key={t.id}
+            className={tab === t.id ? 'primary sm' : 'ghost sm'}
+            onClick={() => setTab(t.id)}
+            title={t.help}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+      {tab === 'members' && isAdmin && <MembersCard operator={operator} />}
+      {tab === 'runtime' && isAdmin && <RuntimeCard />}
+      {tab === 'account' && <AccountCard operator={operator} />}
+      {tab === 'console' && <ConsoleCard />}
     </section>
   )
 }

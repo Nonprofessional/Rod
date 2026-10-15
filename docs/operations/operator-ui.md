@@ -915,17 +915,19 @@ evidence stays readable while the record stops serving.
 ## Settings
 
 `#/settings`, from the topbar's settings entry or the identity
-menu's *Account settings* item. The page splits by who may write what:
-the **Account** and **Console behavior** cards are every operator's own
-surface, while the **Members** and **Runtime settings** cards render for
-the deployment admin alone -- a member's settings page is purely
-personal, and the server draws the same line (a member's roster read
-refuses with 403).
+menu's *Account settings* item. The page is a tab strip (the same toggle
+shape the engagement build page's implant/webshell pick uses), so a long
+member roster can never push the other sections off-screen. The
+**Account** and **Console** tabs are every operator's own surface, while
+the **Members** and **Runtime** tabs render for the deployment admin
+alone -- a member's settings page is purely personal, and the server
+draws the same line (a member's roster read refuses with 403). The page
+opens on **Account** for everyone.
 
-For the deployment admin the page opens on **Members** -- the account
+The admin's **Members** tab is the account
 roster and its management sheet (the management path the
-`Operators:Initial` seed stood in for; see [teamserver.md](teamserver.md))
--- so the admin's most-used card sits first, not last. The table lists
+`Operators:Initial` seed stood in for; see [teamserver.md](teamserver.md)).
+The table lists
 every account: handle (yours marked *you*; admins marked *admin*; a
 switched-off account reads *disabled*; a revoked credential reads *no
 password*) and creation date. Reach arrives per engagement, from each
@@ -944,7 +946,7 @@ first, because a change on your own account is self-service and proves
 possession. *Manage* opens the row's **API tokens** shelf (mint with the
 one-time secret beside a copy button, list, revoke).
 
-Next comes **Runtime settings** -- server-wide, live on save, remembered
+Next comes the admin's **Runtime** tab -- server-wide, live on save, remembered
 across restarts. Session presence explains the fleet's offline behavior
 and adjusts it live: *Offline after* is how long a silent session holds
 its Online dot before the staleness sweep closes it (1 minute..24 hours;
@@ -962,13 +964,14 @@ lock), empty keeps builds hermetic, and the boot default is the
 `ROD_RUST_TARGET_DIR` variable. Applies to the next build, remembered
 across restarts.
 
-**Account** is the signed-in operator's own surface, the same card for
+**Account** is the signed-in operator's own surface, the page's default
+tab and the same card for
 admin and member: identity at a glance (avatar, handle, role, creation
 date), *Change password* (current password, new, confirm -- the current
 one is verified server-side, and the change ends this session at its
 next request, so the console walks back to the login view), and this
 account's **API tokens** shelf -- password and tokens are self-service;
-the admin never needs to stand in. **Console behavior** is this
+the admin never needs to stand in. The **Console** tab is this
 browser's own preferences, kept in localStorage and never sent to the
 server. Its one knob is the refresh cadence -- how often presence-style
 surfaces (the redirector roster, the engagement view's fallback refresh,
