@@ -28,4 +28,35 @@ public sealed class AuditPersistenceOptions
 
     /// <summary>True when <see cref="DataDirectory"/> has been configured.</summary>
     public bool IsEnabled => !string.IsNullOrWhiteSpace(DataDirectory);
+
+    /// <summary>
+    /// The optional chain key (from <c>Audit:ChainKey</c>, base64): when held,
+    /// audit links are HMAC-SHA256 instead of bare SHA-256, so an attacker
+    /// with write access to the storage alone cannot rewrite a trail
+    /// consistently (see <see cref="AuditChain"/> for the boundary this
+    /// draws and where it honestly stops). Null keeps the unkeyed chain
+    /// every existing trail already carries.
+    /// </summary>
+    public byte[]? ChainKey { get; set; }
+
+    /// <summary>
+    /// Parses the configured chain key: null or blank stays null (unkeyed),
+    /// anything else must be base64 -- a malformed key fails loudly rather
+    /// than silently disabling the keyed mode an operator believes they
+    /// configured.
+    /// </summary>
+    public static byte[]? ParseChainKey(string? configured)
+    {
+        if (string.IsNullOrWhiteSpace(configured))
+            return null;
+        try
+        {
+            return Convert.FromBase64String(configured.Trim());
+        }
+        catch (FormatException)
+        {
+            throw new InvalidOperationException(
+                "Audit:ChainKey must be base64-encoded key material (32 bytes is the expected size).");
+        }
+    }
 }

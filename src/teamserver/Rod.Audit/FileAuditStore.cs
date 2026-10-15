@@ -40,6 +40,7 @@ public sealed class FileAuditStore : IAuditStore
 
     private readonly string _dataDirectory;
     private readonly string _auditPath;
+    private readonly byte[]? _chainKey;
     private readonly Lock _appendLock = new();
 
     // The last hash per engagement, mirroring InMemoryAuditStore._heads. Lazily
@@ -61,6 +62,7 @@ public sealed class FileAuditStore : IAuditStore
 
         _dataDirectory = options.DataDirectory;
         _auditPath = Path.Combine(_dataDirectory, "audit.jsonl");
+        _chainKey = options.ChainKey;
     }
 
     public Task AppendAsync(AuditEvent @event, CancellationToken cancellationToken = default)
@@ -80,7 +82,7 @@ public sealed class FileAuditStore : IAuditStore
                     $"Audit event {@event.EventId} is already appended; the audit trail is append-only.");
 
             var previousHash = _heads.GetValueOrDefault(@event.EngagementId, AuditChain.GenesisHash);
-            var chained = AuditChain.Chain(@event, previousHash);
+            var chained = AuditChain.Chain(@event, previousHash, _chainKey);
 
             Directory.CreateDirectory(_dataDirectory);
 
@@ -265,7 +267,7 @@ public sealed class FileAuditStore : IAuditStore
 
                 foreach (var (engagementId, trail) in byEngagement)
                 {
-                    if (AuditChain.VerifyTrail(trail) is { } breakAt)
+                    if (AuditChain.VerifyTrail(trail, _chainKey) is { } breakAt)
                         _brokenEngagements.Add(engagementId);
                 }
             }

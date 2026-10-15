@@ -133,6 +133,10 @@ public class DispatchPushTests
         public System.Threading.Tasks.Task<ulong> NextNonceAsync(
             ImplantId implant, CancellationToken cancellationToken = default)
             => _inner.NextNonceAsync(implant, cancellationToken);
+
+        public System.Threading.Tasks.Task<IReadOnlyList<Rod.CoreState.Tasks.Task>> ListDispatchedBeforeAsync(
+            DateTimeOffset cutoff, CancellationToken cancellationToken = default)
+            => _inner.ListDispatchedBeforeAsync(cutoff, cancellationToken);
     }
 
     /// <summary>

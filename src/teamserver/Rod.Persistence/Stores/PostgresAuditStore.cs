@@ -44,8 +44,15 @@ internal sealed class PostgresAuditStore : IAuditStore
     // advisory lock and cannot break what already verified.
     private readonly ConcurrentDictionary<Guid, bool> _chainVerified = new();
 
-    public PostgresAuditStore(IDbContextFactory<RodPersistenceDbContext> factory)
-        => _factory = factory;
+    public PostgresAuditStore(
+        IDbContextFactory<RodPersistenceDbContext> factory,
+        byte[]? chainKey = null)
+    {
+        _factory = factory;
+        _chainKey = chainKey;
+    }
+
+    private readonly byte[]? _chainKey;
 
     public async Task AppendAsync(AuditEvent @event, CancellationToken cancellationToken = default)
     {
@@ -87,7 +94,7 @@ internal sealed class PostgresAuditStore : IAuditStore
             .Select(e => (long?)EF.Property<long>(e, AppendSequenceShadow))
             .MaxAsync(cancellationToken) ?? 0;
 
-        var chained = AuditChain.Chain(@event, previousHash);
+        var chained = AuditChain.Chain(@event, previousHash, _chainKey);
 
         var entry = db.AuditEvents.Add(chained);
         entry.Property(AppendSequenceShadow).CurrentValue = maxSeq + 1;
@@ -131,7 +138,7 @@ internal sealed class PostgresAuditStore : IAuditStore
         // chain on the way out: the evidence deliverable must never
         // silently present tampered records as intact, the same refusal
         // the file store makes on recovery.
-        var verified = AuditChain.VerifyTrail(trail) is null;
+        var verified = AuditChain.VerifyTrail(trail, _chainKey) is null;
         _chainVerified[engagementId] = verified;
         if (!verified)
             throw new InvalidOperationException(
@@ -206,7 +213,7 @@ internal sealed class PostgresAuditStore : IAuditStore
             .OrderBy(e => EF.Property<long>(e, AppendSequenceShadow))
             .ToArrayAsync(cancellationToken);
 
-        verified = AuditChain.VerifyTrail(trail) is null;
+        verified = AuditChain.VerifyTrail(trail, _chainKey) is null;
         _chainVerified[engagementId] = verified;
         if (!verified)
             throw new InvalidOperationException(

@@ -13,9 +13,13 @@ using Rod.Transport.Listeners;
 // <package.zip>` checks a closed engagement's exported package on a host with
 // no Rod infrastructure running. Handled before the host is built -- the
 // verifier needs no listeners, no stores, and no configuration.
-if (args is ["--verify-evidence", var packagePath])
+if (args is ["--verify-evidence", var packagePath, "--chain-key", var chainKey])
 {
-    return await EvidenceVerifier.RunAsync(packagePath);
+    return await EvidenceVerifier.RunAsync(packagePath, chainKey);
+}
+if (args is ["--verify-evidence", { } barePath])
+{
+    return await EvidenceVerifier.RunAsync(barePath);
 }
 
 // The teamserver composition root (architecture.md Sec 4). This is

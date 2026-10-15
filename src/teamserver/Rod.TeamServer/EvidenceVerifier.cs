@@ -5,15 +5,18 @@ namespace Rod.TeamServer;
 /// <summary>
 /// The offline evidence verifier (architecture.md Sec 11, Sec 2 step 10): the
 /// close-out's acceptance step, run as
-/// <c>Rod.TeamServer --verify-evidence &lt;package.zip&gt;</c> on a host with no
-/// Rod infrastructure running -- no listeners, no stores, just the binary and
-/// the exported package. Exits 0 when the package re-verifies byte-exact
-/// (manifest digests, the audit hash chain, the artifact records) and 1 naming
-/// the first failure otherwise.
+/// <c>Rod.TeamServer --verify-evidence &lt;package.zip&gt; [--chain-key &lt;base64&gt;]</c>
+/// on a host with no Rod infrastructure running -- no listeners, no stores,
+/// just the binary and the exported package. Exits 0 when the package
+/// re-verifies byte-exact (manifest digests, the audit hash chain, the
+/// artifact records) and 1 naming the first failure otherwise. A package
+/// from a deployment that keys its audit chain verifies only with the same
+/// key supplied here -- kept apart from the storage the package came from,
+/// which is the whole point of keying.
 /// </summary>
 internal static class EvidenceVerifier
 {
-    public static async Task<int> RunAsync(string path)
+    public static async Task<int> RunAsync(string path, string? chainKeyBase64 = null)
     {
         if (!File.Exists(path))
         {
@@ -21,8 +24,19 @@ internal static class EvidenceVerifier
             return 1;
         }
 
+        byte[]? chainKey;
+        try
+        {
+            chainKey = AuditPersistenceOptions.ParseChainKey(chainKeyBase64);
+        }
+        catch (InvalidOperationException ex)
+        {
+            Console.Error.WriteLine($"rod-teamserver: {ex.Message}");
+            return 1;
+        }
+
         await using var stream = File.OpenRead(path);
-        var verification = await EvidencePackage.VerifyAsync(stream);
+        var verification = await EvidencePackage.VerifyAsync(stream, chainKey);
         if (verification.Verified && verification.Manifest is { } manifest)
         {
             Console.WriteLine(

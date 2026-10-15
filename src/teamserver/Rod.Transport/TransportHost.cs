@@ -277,9 +277,13 @@ public static class TransportHost
         // Postgres stand-in by default., behind the same
         // ports.
         var dataDirectory = configuration?["Audit:DataDirectory"];
+        // The optional chain key (Audit:ChainKey, base64): keyed when held,
+        // bare SHA when not -- the same choice for whichever adapter the
+        // data directory selects, parsed once and loudly.
+        var chainKey = AuditPersistenceOptions.ParseChainKey(configuration?["Audit:ChainKey"]);
         if (!string.IsNullOrWhiteSpace(dataDirectory))
         {
-            var persistence = new AuditPersistenceOptions { DataDirectory = dataDirectory };
+            var persistence = new AuditPersistenceOptions { DataDirectory = dataDirectory, ChainKey = chainKey };
             services.AddSingleton(persistence);
             services.AddSingleton<IAuditStore, FileAuditStore>();
             services.AddSingleton<IArtifactStore, FileArtifactStore>();
@@ -290,7 +294,7 @@ public static class TransportHost
             // Audit port -> default in-memory adapter. The store is
             // hash-chained per engagement: tampering with a stored
             // event breaks the chain at the next link.
-            services.AddSingleton<IAuditStore, InMemoryAuditStore>();
+            services.AddSingleton<IAuditStore>(new InMemoryAuditStore(chainKey));
 
             // Artifact store port -> default in-memory adapter. First-class evidence objects attached to tasks; consumed by
             // the operator layer and beacon ingest later.

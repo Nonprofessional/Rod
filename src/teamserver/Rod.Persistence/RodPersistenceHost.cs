@@ -126,7 +126,12 @@ public static class RodPersistenceHost
         // enrollment that lands after the restart.
         services.Replace(ServiceDescriptor.Singleton<CoreState.Campaigns.ICampaignStore, Stores.PostgresCampaignStore>());
         services.Replace(ServiceDescriptor.Singleton<CoreState.Redirectors.IRedirectorFleet, Stores.PostgresRedirectorFleet>());
-        services.Replace(ServiceDescriptor.Singleton<IAuditStore, PostgresAuditStore>());
+        // The audit chain key (Audit:ChainKey, base64) rides the Postgres
+        // audit store the same way it rides the in-memory and file ones:
+        // keyed links when held, bare SHA when not.
+        var chainKey = Rod.Audit.AuditPersistenceOptions.ParseChainKey(configuration["Audit:ChainKey"]);
+        services.Replace(ServiceDescriptor.Singleton<IAuditStore>(sp => new PostgresAuditStore(
+            sp.GetRequiredService<IDbContextFactory<RodPersistenceDbContext>>(), chainKey)));
         services.Replace(ServiceDescriptor.Singleton<IArtifactStore, PostgresArtifactStore>());
         // The built-payload library: the durable twin so a stored artifact,
         // its loader delivery route, and its sealed-contact key binding

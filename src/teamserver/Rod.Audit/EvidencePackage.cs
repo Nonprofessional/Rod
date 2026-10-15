@@ -103,11 +103,12 @@ public static class EvidencePackage
     /// </summary>
     public static async Task<EvidencePackageVerification> VerifyAsync(
         Stream package,
+        byte[]? chainKey = null,
         CancellationToken cancellationToken = default)
     {
         try
         {
-            return await VerifyContentsAsync(package, cancellationToken).ConfigureAwait(false);
+            return await VerifyContentsAsync(package, chainKey, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is InvalidDataException or IOException or NotSupportedException or ObjectDisposedException)
         {
@@ -117,6 +118,7 @@ public static class EvidencePackage
 
     private static async Task<EvidencePackageVerification> VerifyContentsAsync(
         Stream package,
+        byte[]? chainKey,
         CancellationToken cancellationToken)
     {
         using var archive = new ZipArchive(package, ZipArchiveMode.Read, leaveOpen: true);
@@ -192,7 +194,7 @@ public static class EvidencePackage
                 $"audit.jsonl carries {trail.Count} events; the manifest records {manifest.EventCount}");
 
         // The same tamper check the live report path applies before rendering.
-        if (AuditChain.VerifyTrail(trail) is { } chainBreak)
+        if (AuditChain.VerifyTrail(trail, chainKey) is { } chainBreak)
             return EvidencePackageVerification.Fail($"audit.jsonl: the hash chain breaks: {chainBreak}");
 
         if (trail.Any(e => e.EngagementId != manifest.Header.EngagementId))

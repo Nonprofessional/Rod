@@ -1648,10 +1648,17 @@ fleet-wide code execution. Security is a first-class concern.
 - **Audit trail.** Every engagement-scoped privileged action -- tasking,
   listener and front lifecycle, automation rules, webhook subscriptions,
   snippets, membership, ROE changes -- produces an immutable, hash-chained
-  `AuditEvent`, and tampering breaks the chain (Sec. 11). Global state
-  (operator accounts and credentials, deployment-wide settings) has no
-  engagement to live in and is not carried by the trail; its events are the
-  server log's.
+  `AuditEvent`, and tampering breaks the chain (Sec. 11). The chain is bare
+  SHA-256 by default; configuring `Audit:ChainKey` switches new links to
+  HMAC-SHA256, so a rewrite of the storage needs the key too, not just the
+  write access. The boundary is honest: the key's custody is wherever it is
+  kept, links written before the key stay unkeyed (a verifier holding the
+  key tells a pre-key trail from a rewrite by verifying once without it),
+  and full protection against rewriting pre-key history needs an
+  out-of-band anchor this layer does not fake. Global state (operator
+  accounts and credentials, deployment-wide settings) has no engagement to
+  live in and is not carried by the trail; its events are the server
+  log's.
 - **Engagement isolation.** Enforced at the teamserver and by engagement binding
   in certificates; redirectors never enforce tenancy.
 - **ROE guardrails.** Each engagement carries a rules-of-engagement profile

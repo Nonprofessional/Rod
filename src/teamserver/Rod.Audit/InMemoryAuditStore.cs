@@ -26,6 +26,14 @@ public sealed class InMemoryAuditStore : IAuditStore
 {
     private readonly ConcurrentDictionary<Guid, AuditEvent> _events = new();
     private readonly ConcurrentDictionary<Guid, string> _heads = new();
+    private readonly byte[]? _chainKey;
+
+    /// <summary>
+    /// Constructs the store, optionally keying new audit links (HMAC-SHA256
+    /// under <paramref name="chainKey"/>); null keeps the bare-SHA chain.
+    /// </summary>
+    public InMemoryAuditStore(byte[]? chainKey = null)
+        => _chainKey = chainKey;
 
     // Append + head-advance must be atomic: two concurrent appends to one
     // engagement would otherwise both read the same head and produce events that
@@ -45,7 +53,7 @@ public sealed class InMemoryAuditStore : IAuditStore
                     $"Audit event {@event.EventId} is already appended; the audit trail is append-only.");
 
             var previousHash = _heads.GetValueOrDefault(@event.EngagementId, AuditChain.GenesisHash);
-            var chained = AuditChain.Chain(@event, previousHash);
+            var chained = AuditChain.Chain(@event, previousHash, _chainKey);
             _events[@event.EventId] = chained;
             _heads[@event.EngagementId] = chained.Hash;
         }
