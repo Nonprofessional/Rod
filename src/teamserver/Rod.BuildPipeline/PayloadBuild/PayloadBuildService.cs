@@ -32,8 +32,11 @@ public sealed class PayloadBuildService
     // concurrent requests would otherwise be N full tree copies and N cargo
     // processes. Past the gate a request waits its turn instead of exhausting
     // the host. An environment variable overrides the default; one keeps the
-    // everything-serial shape.
-    private static readonly SemaphoreSlim BuildGate = new(ResolveMaxConcurrentBuilds());
+    // everything-serial shape. Instance-level, not static: the limit is one
+    // deployment's (one host's) toolchain contention, and a process hosting
+    // two independently wired stacks -- the test harnesses most visibly --
+    // must not serialize one stack's builds behind the other's.
+    private readonly SemaphoreSlim _buildGate = new(ResolveMaxConcurrentBuilds());
 
     private static int ResolveMaxConcurrentBuilds()
         => int.TryParse(Environment.GetEnvironmentVariable("ROD_BUILD_MAX_CONCURRENCY"), out var limit)
@@ -80,14 +83,14 @@ public sealed class PayloadBuildService
 
         // One gate for both callers (the serial job queue and the synchronous
         // endpoint), so the host never runs an unbounded set of toolchains.
-        await BuildGate.WaitAsync(cancellationToken);
+        await _buildGate.WaitAsync(cancellationToken);
         try
         {
             return await BuildUngatedAsync(unit, request, cancellationToken);
         }
         finally
         {
-            BuildGate.Release();
+            _buildGate.Release();
         }
     }
 
