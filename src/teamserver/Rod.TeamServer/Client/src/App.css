@@ -369,22 +369,10 @@ a.topbar-link.active {
 }
 
 /* button.link carries its own small padding and centered text; inside the
-   menu it must sit flush with the rows above it. The account-settings
-   anchor joins the same row with the link voice. */
-.identity-menu button.link,
-.identity-menu a.link {
+   menu it must sit flush with the rows above it. */
+.identity-menu button.link {
   text-align: left;
   padding-left: 0;
-}
-
-.identity-menu a.link {
-  color: var(--muted);
-  font-size: 12px;
-}
-
-.identity-menu a.link:hover {
-  color: var(--text);
-  text-decoration: underline;
 }
 
 /* --- Main column ------------------------------------------------------------ */

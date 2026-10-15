@@ -914,15 +914,15 @@ evidence stays readable while the record stops serving.
 
 ## Settings
 
-`#/settings`, from the topbar's settings entry or the identity
-menu's *Account settings* item. The page is a tab strip (the same toggle
+`#/settings`, from the topbar's settings entry -- the page opens straight
+on **Account**, so the personal surface stays one click from anywhere.
+The page is a tab strip (the same toggle
 shape the engagement build page's implant/webshell pick uses), so a long
 member roster can never push the other sections off-screen. The
 **Account** and **Console** tabs are every operator's own surface, while
 the **Members** and **Runtime** tabs render for the deployment admin
 alone -- a member's settings page is purely personal, and the server
-draws the same line (a member's roster read refuses with 403). The page
-opens on **Account** for everyone.
+draws the same line (a member's roster read refuses with 403).
 
 The admin's **Members** tab is the account
 roster and its management sheet (the management path the

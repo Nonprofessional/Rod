@@ -346,11 +346,6 @@ function Identity({
               {operator.role === 'admin' ? 'admin' : 'member'} · {operator.operatorId.slice(0, 8)}
             </span>
           </div>
-          {/* The account's own surface: password change and API tokens live
-              one click away, on the settings page's account card. */}
-          <a className="link" href="#/settings" onClick={() => setOpen(false)}>
-            Account settings…
-          </a>
           <button className="link" onClick={onLogout}>
             Sign out
           </button>
