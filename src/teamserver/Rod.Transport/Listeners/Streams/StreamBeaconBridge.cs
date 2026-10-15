@@ -308,13 +308,17 @@ internal sealed class StreamBeaconBridge
             // Dispatch queued tasking while the budget lasts. The claim
             // evaluation every poll carrier runs decides what fits: a channel
             // verb claims only under the degraded discipline -- the
-            // session's opt-in -- and without it parks at the queue head for
-            // a stream transport to claim (architecture.md Sec 10.3).
+            // session's opt-in -- and without it parks, requeued for a
+            // stream transport to claim (architecture.md Sec 10.3). A
+            // requeued task joins the skip set for the rest of this
+            // contact, so a task this carrier cannot serve parks without
+            // standing at the queue head and starving the tasks behind it.
             var degraded = session.Capabilities.Contains(DegradedChannelHub.Capability);
             var budget = MaxDispatchBytes;
+            var skipped = new HashSet<TaskId>();
             while (true)
             {
-                var dispatched = await _tasks.DispatchNextAsync(session.Implant, cancellationToken);
+                var dispatched = await _tasks.DispatchNextAsync(session.Implant, cancellationToken, exclude: skipped);
                 if (dispatched is null)
                     break;
 
@@ -326,7 +330,8 @@ internal sealed class StreamBeaconBridge
                     != ClaimDecision.Claim)
                 {
                     await _tasks.RequeueAsync(dispatched.TaskId, CancellationToken.None);
-                    break;
+                    skipped.Add(dispatched.TaskId);
+                    continue;
                 }
 
                 budget -= wireSize;

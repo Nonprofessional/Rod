@@ -83,10 +83,17 @@ public interface ITaskRepository
     /// for the same implant never hand out the same task -- the beacon writer
     /// drains through this, so a reconnect overlap cannot double-dispatch
     /// (architecture.md Sec 10.3).
+    ///
+    /// <paramref name="exclude"/> names tasks the claim must pass over --
+    /// the poll carriers' skip set, so a task the carrier just requeued for
+    /// a capable transport does not block the tasks behind it (a strict
+    /// head-of-line claim would wedge a poll-only implant's queue on one
+    /// oversized or channel-bound task forever).
     /// </summary>
     System.Threading.Tasks.Task<Task?> ClaimNextPendingAsync(
         ImplantId implant,
         DateTimeOffset at,
+        IReadOnlySet<TaskId>? exclude = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -97,11 +104,13 @@ public interface ITaskRepository
     /// <see cref="ClaimNextPendingAsync"/> gives one implant. FIFO across the
     /// whole set by enqueue order, so a task queued for the parent and one
     /// queued for a fronted child dispatch in the order they were issued.
-    /// Null when no target holds a queued task.
+    /// Null when no target holds a queued task. <paramref name="exclude"/>
+    /// carries the same skip semantics the single-implant claim documents.
     /// </summary>
     System.Threading.Tasks.Task<Task?> ClaimNextPendingForAsync(
         IReadOnlyCollection<ImplantId> implants,
         DateTimeOffset at,
+        IReadOnlySet<TaskId>? exclude = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>

@@ -147,6 +147,7 @@ public sealed class InMemoryTaskRepository : ITaskRepository
     public System.Threading.Tasks.Task<Task?> ClaimNextPendingAsync(
         ImplantId implant,
         DateTimeOffset at,
+        IReadOnlySet<TaskId>? exclude = null,
         CancellationToken cancellationToken = default)
     {
         // The peek-and-mark transition runs under one lock so two concurrent
@@ -155,7 +156,8 @@ public sealed class InMemoryTaskRepository : ITaskRepository
         lock (_claimLock)
         {
             var next = _tasks.Values
-                .Where(t => t.ImplantId == implant && t.Status == TaskStatus.Queued)
+                .Where(t => t.ImplantId == implant && t.Status == TaskStatus.Queued
+                    && (exclude is null || !exclude.Contains(t.Id)))
                 .OrderBy(t => _order.GetValueOrDefault(t.Id))
                 .FirstOrDefault();
             return System.Threading.Tasks.Task.FromResult(Claimed(next, at));
@@ -165,6 +167,7 @@ public sealed class InMemoryTaskRepository : ITaskRepository
     public System.Threading.Tasks.Task<Task?> ClaimNextPendingForAsync(
         IReadOnlyCollection<ImplantId> implants,
         DateTimeOffset at,
+        IReadOnlySet<TaskId>? exclude = null,
         CancellationToken cancellationToken = default)
     {
         // The fronting claim (architecture.md Sec 5.2): the same locked
@@ -174,7 +177,8 @@ public sealed class InMemoryTaskRepository : ITaskRepository
         lock (_claimLock)
         {
             var next = _tasks.Values
-                .Where(t => t.Status == TaskStatus.Queued && implants.Contains(t.ImplantId))
+                .Where(t => t.Status == TaskStatus.Queued && implants.Contains(t.ImplantId)
+                    && (exclude is null || !exclude.Contains(t.Id)))
                 .OrderBy(t => _order.GetValueOrDefault(t.Id))
                 .FirstOrDefault();
             return System.Threading.Tasks.Task.FromResult(Claimed(next, at));

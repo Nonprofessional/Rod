@@ -479,6 +479,50 @@ public class DnsContactTests
     }
 
     [Fact]
+    public async Task Poll_AnOversizeTaskDoesNotBlockTheTaskBehindIt()
+    {
+        // A marshaled request past the datagram budget parks, requeued for a
+        // stream carrier -- but a strict head-of-line claim would hand the
+        // same task back on every poll and starve the queued tasking behind
+        // it for a DNS-only implant. The poll must pass over the oversized
+        // task and serve the next one that fits.
+        await using var env = await DnsTestEnv.StartAsync();
+        var implant = await env.EnrollImplantAsync();
+        using (var beacon = await WsBeaconClient.ConnectAsync(env.HttpPort, implant.Id.ToString()))
+        {
+        }
+
+        await env.LoginAsync();
+        var oversize = await env.Http.PostAsJsonAsync(
+            $"/engagements/{implant.EngagementId}/tasks",
+            new { ImplantId = implant.Id.ToString(), Verb = "shell.exec", Arguments = new string('a', 2048) });
+        oversize.EnsureSuccessStatusCode();
+        var oversizeBody = await oversize.Content.ReadFromJsonAsync<TaskIssuedBody>();
+
+        var fits = await env.Http.PostAsJsonAsync(
+            $"/engagements/{implant.EngagementId}/tasks",
+            new { ImplantId = implant.Id.ToString(), Verb = "shell.exec", Arguments = "id" });
+        fits.EnsureSuccessStatusCode();
+        var fitsBody = await fits.Content.ReadFromJsonAsync<TaskIssuedBody>();
+
+        var pollAnswer = await env.DnsQueryAsync(DnsContactNames.PollName(implant.Id, Zone));
+        Assert.NotNull(pollAnswer);
+        Assert.True(DnsContactNames.TryDecode(pollAnswer, out var framed));
+        Assert.Equal((byte)'t', framed![0]);
+        var taskRequest = TaskRequest.Parser.ParseFrom(framed[1..]);
+
+        // The task that fits was served, not the queue head that cannot.
+        Assert.Equal(fitsBody!.TaskId, taskRequest.TaskId);
+        Assert.Equal("id", taskRequest.Arguments);
+
+        // The oversized task stayed queued behind it, untouched.
+        var parked = await env.Http.GetFromJsonAsync<TaskBody>(
+            $"/engagements/{implant.EngagementId}/tasks/{oversizeBody!.TaskId}");
+        Assert.NotNull(parked);
+        Assert.Equal("Queued", parked!.Status);
+    }
+
+    [Fact]
     public async Task Retransmission_AGappedChunkDropRecoversOnReSend()
     {
         await using var env = await DnsTestEnv.StartAsync();

@@ -310,16 +310,23 @@ public sealed class TaskService
     /// cannot carry a fronted channel's input half, so it keeps the narrow
     /// claim and fronted tasks park for a stream to claim.
     /// </param>
+    /// <param name="exclude">
+    /// The calling carrier's skip set: tasks it just requeued for a capable
+    /// transport. The claim passes over them so one oversized or
+    /// channel-bound task cannot stand at the queue head and wedge a
+    /// poll-only implant's tasking.
+    /// </param>
     public async System.Threading.Tasks.Task<TaskDispatched?> DispatchNextAsync(
         ImplantId implant,
         CancellationToken cancellationToken = default,
-        bool includeFronted = false)
+        bool includeFronted = false,
+        IReadOnlySet<TaskId>? exclude = null)
     {
         var at = _clock.GetUtcNow();
         Rod.CoreState.Tasks.Task? task;
         if (!includeFronted)
         {
-            task = await _tasks.ClaimNextPendingAsync(implant, at, cancellationToken);
+            task = await _tasks.ClaimNextPendingAsync(implant, at, exclude, cancellationToken);
         }
         else
         {
@@ -329,14 +336,14 @@ public sealed class TaskService
             var fronted = await _implants.ListFrontedPivotsAsync(implant, cancellationToken);
             if (fronted.Count == 0)
             {
-                task = await _tasks.ClaimNextPendingAsync(implant, at, cancellationToken);
+                task = await _tasks.ClaimNextPendingAsync(implant, at, exclude, cancellationToken);
             }
             else
             {
                 var targets = new List<ImplantId>(fronted.Count + 1) { implant };
                 foreach (var pivot in fronted)
                     targets.Add(pivot.Id);
-                task = await _tasks.ClaimNextPendingForAsync(targets, at, cancellationToken);
+                task = await _tasks.ClaimNextPendingForAsync(targets, at, exclude, cancellationToken);
             }
         }
 

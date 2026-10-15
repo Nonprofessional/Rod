@@ -159,6 +159,7 @@ internal sealed class PostgresTaskRepository : ITaskRepository
     public async System.Threading.Tasks.Task<Task?> ClaimNextPendingAsync(
         ImplantId implant,
         DateTimeOffset at,
+        IReadOnlySet<TaskId>? exclude = null,
         CancellationToken cancellationToken = default)
     {
         await using var db = await _factory.CreateDbContextAsync(cancellationToken);
@@ -172,6 +173,12 @@ internal sealed class PostgresTaskRepository : ITaskRepository
         // transaction so the Dispatched mark commits with the lock released
         // only after SaveChanges. The scalar column must alias AS "Value":
         // SqlQuery composes the raw SQL as a subquery selecting s."Value".
+        // The skip set passes over rows the calling carrier just requeued;
+        // an empty set compares true against <> ALL, so the plain claim
+        // reads clean.
+        var skip = exclude is null || exclude.Count == 0
+            ? Array.Empty<Guid>()
+            : exclude.Select(id => id.Value).ToArray();
         var claimedId = await db.Database.SqlQuery<Guid>($"""
             SELECT task_id AS "Value"
             FROM tasks
@@ -179,6 +186,7 @@ internal sealed class PostgresTaskRepository : ITaskRepository
                 SELECT task_id
                 FROM tasks
                 WHERE implant_id = {implant.Value} AND status = {(int)Rod.CoreState.Tasks.TaskStatus.Queued}
+                    AND task_id <> ALL({skip})
                 ORDER BY enqueue_seq
                 LIMIT 1
                 FOR UPDATE SKIP LOCKED
@@ -201,6 +209,7 @@ internal sealed class PostgresTaskRepository : ITaskRepository
     public async System.Threading.Tasks.Task<Task?> ClaimNextPendingForAsync(
         IReadOnlyCollection<ImplantId> implants,
         DateTimeOffset at,
+        IReadOnlySet<TaskId>? exclude = null,
         CancellationToken cancellationToken = default)
     {
         if (implants.Count == 0)
@@ -213,8 +222,12 @@ internal sealed class PostgresTaskRepository : ITaskRepository
         // peek-and-mark as ClaimNextPendingAsync, widened across the fronting
         // set with an ANY over the target ids -- the oldest queued row any
         // target holds, so parent and fronted children dispatch in issue
-        // order under the same claim-once guarantee.
+        // order under the same claim-once guarantee. The skip set carries
+        // the same semantics the single-implant claim documents.
         var targets = implants.Select(i => i.Value).ToArray();
+        var skip = exclude is null || exclude.Count == 0
+            ? Array.Empty<Guid>()
+            : exclude.Select(id => id.Value).ToArray();
         var frontedId = await db.Database.SqlQuery<Guid>($"""
             SELECT task_id AS "Value"
             FROM tasks
@@ -222,6 +235,7 @@ internal sealed class PostgresTaskRepository : ITaskRepository
                 SELECT task_id
                 FROM tasks
                 WHERE implant_id = ANY({targets}) AND status = {(int)Rod.CoreState.Tasks.TaskStatus.Queued}
+                    AND task_id <> ALL({skip})
                 ORDER BY enqueue_seq
                 LIMIT 1
                 FOR UPDATE SKIP LOCKED

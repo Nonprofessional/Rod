@@ -78,17 +78,19 @@ public class DispatchPushTests
         public int Claims => Volatile.Read(ref _claims);
 
         public async System.Threading.Tasks.Task<Rod.CoreState.Tasks.Task?> ClaimNextPendingAsync(
-            ImplantId implant, DateTimeOffset at, CancellationToken cancellationToken = default)
+            ImplantId implant, DateTimeOffset at, IReadOnlySet<TaskId>? exclude = null,
+            CancellationToken cancellationToken = default)
         {
             Interlocked.Increment(ref _claims);
-            return await _inner.ClaimNextPendingAsync(implant, at, cancellationToken);
+            return await _inner.ClaimNextPendingAsync(implant, at, exclude, cancellationToken);
         }
 
         public async System.Threading.Tasks.Task<Rod.CoreState.Tasks.Task?> ClaimNextPendingForAsync(
-            IReadOnlyCollection<ImplantId> implants, DateTimeOffset at, CancellationToken cancellationToken = default)
+            IReadOnlyCollection<ImplantId> implants, DateTimeOffset at, IReadOnlySet<TaskId>? exclude = null,
+            CancellationToken cancellationToken = default)
         {
             Interlocked.Increment(ref _claims);
-            return await _inner.ClaimNextPendingForAsync(implants, at, cancellationToken);
+            return await _inner.ClaimNextPendingForAsync(implants, at, exclude, cancellationToken);
         }
 
         public System.Threading.Tasks.Task SaveAsync(
