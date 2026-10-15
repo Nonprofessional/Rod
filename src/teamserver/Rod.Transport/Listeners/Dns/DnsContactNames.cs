@@ -403,13 +403,26 @@ internal static class DnsContactNames
     /// <summary>
     /// The bounded reassembly buffer for result chunks: per-task chunk maps
     /// with a total-size cap and an entry cap so a spoofed flood cannot grow
-    /// the listener without bound. Entries vanish on completion or when the
-    /// caps push them out.
+    /// the listener without bound. Entries vanish on completion, on the idle
+    /// window, or when the caps push the least recently touched entry out --
+    /// never the task in hand, so spoofed debris occupying the map cannot
+    /// starve a live task's chunks.
     /// </summary>
     internal sealed class ResultReassembler
     {
-        private readonly ConcurrentDictionary<TaskId, ConcurrentDictionary<int, byte[]>> _byTask = new();
-        private readonly ConcurrentDictionary<TaskId, int> _bytesByTask = new();
+        // One task's state under the gate: its chunks in arrival order, the
+        // running byte total, and the last-chunk stamp the idle window and
+        // the entry cap evict by.
+        private sealed class Entry
+        {
+            public required List<(int Sequence, byte[] Chunk)> Chunks { get; init; }
+            public long Bytes;
+            public DateTimeOffset Touched;
+        }
+
+        private readonly object _gate = new();
+        private readonly TimeProvider _clock;
+        private readonly Dictionary<TaskId, Entry> _byTask = new();
 
         // The per-task output ceiling, sealed overhead included: a keyed
         // artifact's blob is plaintext plus the R1 body's fixed 46 bytes, so
@@ -418,45 +431,80 @@ internal static class DnsContactNames
         public const int MaxTasks = 256;
 
         /// <summary>
+        /// A task that has not heard a chunk in this window is abandoned --
+        /// dropped mid-sequence results and spoofed debris alike leave on
+        /// idle, not only on completion or the caps.
+        /// </summary>
+        public static readonly TimeSpan IdleEviction = TimeSpan.FromMinutes(10);
+
+        public ResultReassembler(TimeProvider? clock = null)
+            => _clock = clock ?? TimeProvider.System;
+
+        /// <summary>
         /// Adds a chunk; on the terminal chunk, returns the concatenated
         /// output when the sequence is contiguous 0..n, else null (the
         /// reassembly is dropped). Non-terminal adds return null.
         /// </summary>
         public byte[]? Add(TaskId task, int sequence, bool terminal, byte[] chunk)
         {
-            var chunks = _byTask.GetOrAdd(task, _ => new ConcurrentDictionary<int, byte[]>());
-            var total = _bytesByTask.AddOrUpdate(task, chunk.Length, (_, soFar) => soFar + chunk.Length);
-            if (total > MaxTaskBytes || _byTask.Count > MaxTasks)
+            lock (_gate)
             {
-                _byTask.TryRemove(task, out _);
-                _bytesByTask.TryRemove(task, out _);
-                return null;
+                var now = _clock.GetUtcNow();
+                foreach (var stale in _byTask
+                             .Where(kv => now - kv.Value.Touched > IdleEviction)
+                             .Select(kv => kv.Key)
+                             .ToArray())
+                {
+                    _byTask.Remove(stale);
+                }
+
+                if (!_byTask.TryGetValue(task, out var entry))
+                {
+                    // The caps push out the least recently touched entry so
+                    // the map always admits the task in hand.
+                    while (_byTask.Count >= MaxTasks)
+                    {
+                        var lru = _byTask.Aggregate((a, b) => a.Value.Touched <= b.Value.Touched ? a : b).Key;
+                        _byTask.Remove(lru);
+                    }
+                    entry = new Entry { Chunks = new List<(int, byte[])>(), Bytes = 0, Touched = now };
+                    _byTask[task] = entry;
+                }
+
+                entry.Touched = now;
+                entry.Bytes += chunk.Length;
+                if (entry.Bytes > MaxTaskBytes)
+                {
+                    _byTask.Remove(task);
+                    return null;
+                }
+                entry.Chunks.Add((sequence, chunk));
+
+                if (!terminal)
+                    return null;
+
+                _byTask.Remove(task);
+                if (!TryConcatenate(entry.Chunks, out var output))
+                    return null;
+                return output;
             }
-            chunks[sequence] = chunk;
-
-            if (!terminal)
-                return null;
-
-            _byTask.TryRemove(task, out _);
-            _bytesByTask.TryRemove(task, out _);
-            if (!TryConcatenate(chunks, out var output))
-                return null;
-            return output;
         }
 
-        private static bool TryConcatenate(ConcurrentDictionary<int, byte[]> chunks, out byte[] output)
+        private static bool TryConcatenate(List<(int Sequence, byte[] Chunk)> chunks, out byte[] output)
         {
-            output = Array.Empty<byte>();
-            var ordered = chunks.Keys.OrderBy(k => k).ToArray();
-            if (ordered.Length == 0 || ordered[0] != 0 || ordered[^1] != ordered.Length - 1)
+            var ordered = chunks.OrderBy(c => c.Sequence).ToArray();
+            if (ordered.Length == 0 || ordered[0].Sequence != 0 || ordered[^1].Sequence != ordered.Length - 1)
+            {
+                output = Array.Empty<byte>();
                 return false; // not contiguous from zero: a chunk went missing
-            var total = ordered.Sum(k => chunks[k].Length);
+            }
+            var total = ordered.Sum(c => c.Chunk.Length);
             var buffer = new byte[total];
             var offset = 0;
-            foreach (var k in ordered)
+            foreach (var (_, chunk) in ordered)
             {
-                chunks[k].CopyTo(buffer, offset);
-                offset += chunks[k].Length;
+                chunk.CopyTo(buffer, offset);
+                offset += chunk.Length;
             }
             output = buffer;
             return true;
