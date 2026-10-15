@@ -389,6 +389,11 @@ public static class TransportHost
             // concrete type stays resolvable (tests drive a pass directly).
             services.AddSingleton<SessionStalenessSweeper>();
             services.AddHostedService(sp => sp.GetRequiredService<SessionStalenessSweeper>());
+
+            // The lost-response task expiry sweep (Sec 10.3): the same
+            // plain-singleton-plus-hosted-wrapper shape, for the same reason.
+            services.AddSingleton<TaskExpirySweeper>();
+            services.AddHostedService(sp => sp.GetRequiredService<TaskExpirySweeper>());
         }
 
         // Build pipeline (architecture.md Sec 6): the build-unit registry and

@@ -162,4 +162,16 @@ public interface ITaskRepository
     System.Threading.Tasks.Task<ulong> NextNonceAsync(
         ImplantId implant,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Every task still Dispatched that was dispatched at or before
+    /// <paramref name="cutoff"/> -- the expiry sweep's candidate set
+    /// (architecture.md Sec 10.3). The caller decides which candidates are
+    /// expirable (a channel task legitimately runs for hours); the read is a
+    /// snapshot and the completion races a late result by the same
+    /// first-wins rule <see cref="CompleteAsync"/> enforces.
+    /// </summary>
+    System.Threading.Tasks.Task<IReadOnlyList<Task>> ListDispatchedBeforeAsync(
+        DateTimeOffset cutoff,
+        CancellationToken cancellationToken = default);
 }

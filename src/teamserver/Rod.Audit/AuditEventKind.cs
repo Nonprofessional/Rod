@@ -649,4 +649,17 @@ public enum AuditEventKind
     /// engagement -- a deleted listener's trail must outlive the listener.
     /// </summary>
     ListenerChanged,
+
+    /// <summary>
+    /// The platform expired a dispatched task whose response never came
+    /// back (architecture.md Sec 10.3): the TXT answer or contact response
+    /// carrying it was lost, and no poll carrier re-delivers a dispatched
+    /// task, so past the expiry window the task completes as failed with
+    /// this fact closing its arc. Attributed to the null operator (a
+    /// platform action, no human in the loop), scoped to the task's
+    /// engagement; the payload names the verb and the age at expiry. A
+    /// late-arriving real result finds the task already terminal and is
+    /// dropped by the first-wins rule, exactly like a duplicate.
+    /// </summary>
+    TaskExpired,
 }

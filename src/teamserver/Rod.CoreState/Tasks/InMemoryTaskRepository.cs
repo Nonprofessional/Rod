@@ -257,5 +257,14 @@ public sealed class InMemoryTaskRepository : ITaskRepository
         => System.Threading.Tasks.Task.FromResult(
             _nonces.AddOrUpdate(implant, 1, (_, last) => last + 1));
 
+    public System.Threading.Tasks.Task<IReadOnlyList<Task>> ListDispatchedBeforeAsync(
+        DateTimeOffset cutoff,
+        CancellationToken cancellationToken = default)
+        => System.Threading.Tasks.Task.FromResult<IReadOnlyList<Task>>(
+            _tasks.Values
+                .Where(t => t.Status == TaskStatus.Dispatched && t.DispatchedAt <= cutoff)
+                .OrderBy(t => t.DispatchedAt)
+                .ToArray());
+
     private readonly Lock _claimLock = new();
 }

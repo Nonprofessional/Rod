@@ -520,6 +520,58 @@ public sealed class TaskService
             task.CompletedAt!.Value);
     }
 
+    /// <summary>
+    /// Expires dispatched tasks whose response never came back (architecture.md
+    /// Sec 10.3): a poll carrier hands a task out once, and when the answer it
+    /// rode is lost nothing re-delivers it -- without this sweep the task hangs
+    /// Dispatched forever (the operator's cancel only reaches Queued). A task
+    /// past <paramref name="staleness"/> completes as failed, closing its arc;
+    /// a channel task is never expired, because a live channel legitimately
+    /// runs for hours and losing its eventual result would misreport it. The
+    /// completion races a late-arriving real result under the first-wins rule:
+    /// a result that lands first spares the task, and one that lands after the
+    /// expiry is dropped exactly like a duplicate. Returns the tasks this call
+    /// expired, for the caller to audit.
+    /// </summary>
+    public async System.Threading.Tasks.Task<IReadOnlyList<TaskCompleted>> ExpireLostTasksAsync(
+        TimeSpan staleness,
+        CancellationToken cancellationToken = default)
+    {
+        var now = _clock.GetUtcNow();
+        var cutoff = now - staleness;
+        var candidates = await _tasks.ListDispatchedBeforeAsync(cutoff, cancellationToken);
+
+        var expired = new List<TaskCompleted>();
+        foreach (var candidate in candidates)
+        {
+            if (ChannelVerbs.IsChannelVerb(candidate.Verb))
+                continue;
+
+            var task = await _tasks.CompleteAsync(
+                candidate.Id,
+                $"expired: dispatched {now - candidate.DispatchedAt!.Value:h\\hh\\ m\\mm} ago with no response "
+                + "(the carrying answer was lost; no poll carrier re-delivers a dispatched task)",
+                TaskOutcome.Failed,
+                now,
+                cancellationToken);
+            if (task is null)
+                continue; // A real result won the race; it stands.
+
+            expired.Add(new TaskCompleted(
+                task.Id,
+                task.EngagementId,
+                task.ImplantId,
+                task.IssuedBy,
+                task.Verb,
+                task.Arguments,
+                task.Output!,
+                task.Outcome!.Value,
+                task.CompletedAt!.Value));
+        }
+
+        return expired;
+    }
+
     // The carrier gate's half of the question: can any baked carrier run a
     // channel task? A native carrier holds a live stream; a degraded carrier
     // carries the store-and-forward discipline on its poll cycles (the

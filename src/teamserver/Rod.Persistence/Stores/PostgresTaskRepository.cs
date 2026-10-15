@@ -381,5 +381,23 @@ internal sealed class PostgresTaskRepository : ITaskRepository
             db.Database.CloseConnection();
         }
     }
+
+    public async System.Threading.Tasks.Task<IReadOnlyList<Task>> ListDispatchedBeforeAsync(
+        DateTimeOffset cutoff,
+        CancellationToken cancellationToken = default)
+    {
+        await using var db = await _factory.CreateDbContextAsync(cancellationToken);
+
+        // The expiry sweep's candidate set: dispatched rows old enough to
+        // consider. The status filter rides the enqueue-sequence index's
+        // implant columns only partially -- the sweep runs rarely, so a
+        // filtered scan of the dispatched minority is the right shape.
+        return await db.Tasks
+            .AsNoTracking()
+            .Where(t => t.Status == Rod.CoreState.Tasks.TaskStatus.Dispatched
+                && t.DispatchedAt <= cutoff)
+            .OrderBy(t => t.DispatchedAt)
+            .ToArrayAsync(cancellationToken);
+    }
 }
 
