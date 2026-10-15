@@ -381,12 +381,6 @@ namespace Rod.Persistence.Migrations
                         .HasDefaultValue(false)
                         .HasColumnName("disabled");
 
-                    b.Property<string>("DisplayName")
-                        .IsRequired()
-                        .HasMaxLength(512)
-                        .HasColumnType("character varying(512)")
-                        .HasColumnName("display_name");
-
                     b.Property<string>("Handle")
                         .IsRequired()
                         .HasMaxLength(256)

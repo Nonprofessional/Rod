@@ -27,7 +27,7 @@ public class OperatorCredentialRevocationTests
     {
         await using var env = await TestEnv.StartAsync();
         var credentials = env.Host.Services.GetRequiredService<IOperatorCredentialStore>();
-        var revokedId = await AuthenticatedHost.RegisterOperatorAsync(env.Host, Handle, "Revoked Op", Password);
+        var revokedId = await AuthenticatedHost.RegisterOperatorAsync(env.Host, Handle, Password);
         await AuthenticatedHost.LoginAsync(env.Http);
 
         // The credential works before revocation.
@@ -82,7 +82,7 @@ public class OperatorCredentialRevocationTests
         // is refused, and a re-provisioned credential does not resurrect it.
         await using var env = await TestEnv.StartAsync();
         var credentials = env.Host.Services.GetRequiredService<IOperatorCredentialStore>();
-        var revokedId = await AuthenticatedHost.RegisterOperatorAsync(env.Host, Handle, "Revoked Op", Password);
+        var revokedId = await AuthenticatedHost.RegisterOperatorAsync(env.Host, Handle, Password);
         await AuthenticatedHost.LoginAsync(env.Http);
 
         // The revoked operator holds a working session first.

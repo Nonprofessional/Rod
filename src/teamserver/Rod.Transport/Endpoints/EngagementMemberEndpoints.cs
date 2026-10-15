@@ -305,7 +305,6 @@ public static class EngagementMemberEndpoints
         return new EngagementMemberResponse(
             operatorId.ToString(),
             op?.Handle ?? string.Empty,
-            op?.DisplayName ?? string.Empty,
             role,
             addedAt);
     }
@@ -325,6 +324,5 @@ public sealed record SetMemberRoleRequest(string? Role);
 public sealed record EngagementMemberResponse(
     string OperatorId,
     string Handle,
-    string DisplayName,
     string Role,
     DateTimeOffset AddedAt);

@@ -155,7 +155,6 @@ async function jsonOrThrow<T>(response: Response): Promise<T> {
 export interface SessionOperator {
   operatorId: string
   handle: string
-  displayName: string
   // The deployment role the account holds: 'admin' (the bootstrap seed --
   // deployment management) or 'member' (console-created -- self-service
   // over its own password and tokens). The console gates its management
@@ -194,13 +193,11 @@ export async function getSessionOperator(): Promise<SessionOperator> {
   const body = (await response.json()) as {
     id: string
     handle: string
-    displayName: string
     role: 'admin' | 'member'
   }
   return {
     operatorId: body.id,
     handle: body.handle,
-    displayName: body.displayName,
     role: body.role,
   }
 }
@@ -219,7 +216,6 @@ export async function getSessionOperator(): Promise<SessionOperator> {
 export interface OperatorAccount {
   id: string
   handle: string
-  displayName: string
   createdAt: string
   // 'admin' (the bootstrap seed) or 'member' (console-created): the one
   // deployment-level privilege the account holds.
@@ -235,7 +231,6 @@ export interface OperatorAccount {
 
 export interface CreateOperatorInput {
   handle: string
-  displayName?: string
   password: string
 }
 
@@ -322,7 +317,6 @@ export async function revokeOperatorToken(operatorId: string, tokenId: string): 
 export interface EngagementMember {
   operatorId: string
   handle: string
-  displayName: string
   // owner / writer / reader -- the owner row renders beside the members.
   role: string
   addedAt: string
@@ -729,7 +723,6 @@ export async function releaseClaim(
 export interface LiveOperator {
   id: string
   handle: string
-  displayName: string
 }
 
 // Who is driving which implant (architecture.md Sec 4.5 activity presence):

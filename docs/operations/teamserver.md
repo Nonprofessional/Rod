@@ -60,9 +60,8 @@ touched):
 }
 ```
 
-A deployment sets an account name and a password, nothing else -- the
-display name derives from the handle, and the two fields resolve
-independently (a configured password with a blank handle seeds the
+A deployment sets a handle and a password, nothing else -- the two
+fields resolve independently (a configured password with a blank handle seeds the
 default handle `admin`). Unset, both environments seed `admin`: in
 Development with password `admin`, in Production with a generated
 password that is logged exactly once, at the moment its hash is stored
@@ -188,7 +187,7 @@ standard `Section__Key` mapping):
 
 | Section | What it selects | Default when absent |
 |---------|-----------------|---------------------|
-| `Operators:Initial` | The initial admin account, provisioned idempotently at startup (`Handle`, `Password` -- the display name derives from the handle, and each field falls back on its own). Bind the password through the environment (`Operators__Initial__Password`), never inline. | Handle `admin`; password `admin` in Development, or in Production a generated password logged exactly once at first boot. |
+| `Operators:Initial` | The initial admin account, provisioned idempotently at startup (`Handle`, `Password` -- each field falls back on its own). Bind the password through the environment (`Operators__Initial__Password`), never inline. | Handle `admin`; password `admin` in Development, or in Production a generated password logged exactly once at first boot. |
 | `Listeners` | The **shared tier** only: the operator front, plus any deliberately shared ingress (e.g. the certificate-less enroll edge). One entry per socket -- `Name`, `Transport` (`Http`, `Https`, `Dns`, `Doh`, or `Tcp`; `Https` is the one-port shape -- TLS with no client certificate requested anywhere, enrollment on the token and contacts on the sealed envelope under the per-artifact key, both halves on one socket; `Doh` carries the DNS grammar over RFC 8484 HTTPS bodies and, like `Dns`, takes the zone as its public endpoint), `BindAddress` (what the host opens), `PublicEndpoint` (what implants dial; typically a redirector; for a `Dns` entry it is the zone the TXT contacts live under). Https entries terminate TLS against the implant CA; DNS entries bind a UDP socket; `Tcp` entries bind a raw socket under the certificate-less identity posture. Implant-facing listeners are engagement-scoped and created through the operator API, not configuration (architecture.md Sec 8). Keep `Http` entries on loopback: the operator API and the certificate-less beacon ride them in the clear, and a non-loopback bind logs a startup warning (architecture.md Sec 8). | One loopback HTTP listener on `127.0.0.1:59443`. |
 | `Audit:DataDirectory` | File-backed audit trail, artifacts, and built payloads that survive a restart. Each append writes and flushes one hash-chained record; recovery verifies each engagement's chain and refuses a tampered trail. | In-memory (lost on restart). |
 | `ConnectionStrings:Postgres` | The durable PostgreSQL pair replaces the in-memory core-state and audit adapters (EF Core over Npgsql). Apply the schema with `dotnet ef database update -p src/teamserver/Rod.Persistence -s src/teamserver/Rod.TeamServer`. | In-memory. |

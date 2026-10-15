@@ -29,11 +29,10 @@ public partial class OperatorBootstrapTests
 
         await bootstrap.StartAsync();
 
-        // The default handle, the admin role, and the derived display name.
+        // The default handle and the admin role.
         var seeded = await harness.Operators.FindByHandleAsync("admin");
         Assert.NotNull(seeded);
         Assert.Equal(DeploymentRole.Admin, seeded!.DeploymentRole);
-        Assert.Equal("admin", seeded.DisplayName);
 
         // The generated password was revealed exactly once -- into the
         // reveal file, never a log line -- and the hash it produced
@@ -94,12 +93,11 @@ public partial class OperatorBootstrapTests
 
         await bootstrap.StartAsync();
 
-        // A fully configured account seeds as stated: admin role, handle as
-        // display name, the configured password verifying.
+        // A fully configured account seeds as stated: admin role, with the
+        // configured password verifying.
         var seeded = await harness.Operators.FindByHandleAsync("root");
         Assert.NotNull(seeded);
         Assert.Equal(DeploymentRole.Admin, seeded!.DeploymentRole);
-        Assert.Equal("root", seeded.DisplayName);
         var hash = await harness.Credentials.FindHashAsync(seeded.Id);
         Assert.Equal(
             PasswordVerificationResult.Success,

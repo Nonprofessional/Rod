@@ -451,7 +451,6 @@ public sealed class AutomationEngine : BackgroundService
         var automation = new Operator(
             AutomationOperatorIdentity.OperatorId,
             AutomationOperatorIdentity.Handle,
-            AutomationOperatorIdentity.DisplayName,
             _clock.GetUtcNow(),
             deploymentRole: DeploymentRole.Member);
         await _operators.SaveAsync(automation, cancellationToken);

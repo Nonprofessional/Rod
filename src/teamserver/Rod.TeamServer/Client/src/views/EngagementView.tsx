@@ -96,7 +96,7 @@ export function EngagementView({
       },
       onOperatorJoined: (id, handle) =>
         setOnline((current) =>
-          current.some((o) => o.id === id) ? current : [...current, { id, handle, displayName: handle }],
+          current.some((o) => o.id === id) ? current : [...current, { id, handle }],
         ),
       onOperatorLeft: (id) => setOnline((current) => current.filter((o) => o.id !== id)),
       onClaimAcquired: (claim) =>

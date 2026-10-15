@@ -134,9 +134,8 @@ public static class OperatorAuthEndpoints
         if (await operators.FindByHandleAsync(handle, cancellationToken) is not null)
             return Results.Conflict(new Problem($"Handle '{handle}' is already taken."));
 
-        var displayName = string.IsNullOrWhiteSpace(body.DisplayName) ? handle : body.DisplayName.Trim();
         var created = new Operator(
-            OperatorId.New(), handle, displayName, clock.GetUtcNow(),
+            OperatorId.New(), handle, clock.GetUtcNow(),
             deploymentRole: DeploymentRole.Member);
         await operators.SaveAsync(created, cancellationToken);
         await credentials.SetHashAsync(
@@ -501,10 +500,10 @@ public static class OperatorAuthEndpoints
     }
 
     private static OperatorAuthSummary ToSummary(Operator op)
-        => new(op.Id.Value, op.Handle, op.DisplayName, DeploymentRoles.ToName(op.DeploymentRole));
+        => new(op.Id.Value, op.Handle, DeploymentRoles.ToName(op.DeploymentRole));
 
     private static OperatorAccountResponse ToAccount(Operator op, bool hasCredential)
-        => new(op.Id.Value, op.Handle, op.DisplayName, op.CreatedAt, hasCredential, op.Disabled,
+        => new(op.Id.Value, op.Handle, op.CreatedAt, hasCredential, op.Disabled,
             DeploymentRoles.ToName(op.DeploymentRole));
 }
 
@@ -513,11 +512,10 @@ public sealed record LoginRequest(string Handle, string Password);
 
 /// <summary>
 /// A new account submitted to <c>POST /operators</c>: handle and initial
-/// password are required; the display name defaults to the handle. The
-/// account comes up as a deployment member -- reach arrives per engagement,
-/// as memberships its owners grant.
+/// password are required. The account comes up as a deployment member --
+/// reach arrives per engagement, as memberships its owners grant.
 /// </summary>
-public sealed record CreateOperatorRequest(string? Handle, string? DisplayName, string? Password);
+public sealed record CreateOperatorRequest(string? Handle, string? Password);
 
 /// <summary>
 /// The replacement password submitted to <c>PUT /operators/{id}/credentials</c>.
@@ -532,7 +530,7 @@ public sealed record CredentialSetRequest(string? Password, string? CurrentPassw
 /// identity and deployment role -- the role is the one privilege the account
 /// holds; everything else the operator may reach resolves per engagement.
 /// </summary>
-public sealed record OperatorAuthSummary(Guid Id, string Handle, string DisplayName, string Role);
+public sealed record OperatorAuthSummary(Guid Id, string Handle, string Role);
 
 /// <summary>
 /// A freshly minted API token: the secret is shown exactly once, here -- only
@@ -554,7 +552,6 @@ public sealed record TokenResponse(string TokenId, DateTimeOffset CreatedAt);
 public sealed record OperatorAccountResponse(
     Guid Id,
     string Handle,
-    string DisplayName,
     DateTimeOffset CreatedAt,
     bool HasCredential,
     bool Disabled,

@@ -86,10 +86,10 @@ public sealed class OperatorPresenceService
     }
 
     /// <summary>
-    /// An operator's live identity for presence: its id, handle, and display
-    /// name. Carries only what the peers' "who is online" view needs.
+    /// An operator's live identity for presence: its id and handle. Carries
+    /// only what the peers' "who is online" view needs.
     /// </summary>
-    public sealed record OperatorSnapshot(OperatorId Id, string Handle, string DisplayName);
+    public sealed record OperatorSnapshot(OperatorId Id, string Handle);
 
     // One engagement's presence roster. Idempotent on join/leave so a flap does
     // not duplicate entries or emit spurious events; the lock serializes the

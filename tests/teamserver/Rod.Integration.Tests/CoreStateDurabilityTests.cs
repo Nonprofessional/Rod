@@ -95,12 +95,10 @@ public sealed class CoreStateDurabilityTests : IClassFixture<PostgresFixture>
         // The operator created on host A is present on host B -- the typed id
         // round-trips through the uuid column, and the deployment role
         // through its int column: the seed stayed admin and the
-        // console-created account stayed member. The seed's display name is
-        // derived from its handle.
+        // console-created account stayed member.
         var operatorRow = await operators.FindAsync(operatorId);
         Assert.NotNull(operatorRow);
         Assert.Equal(AuthenticatedHost.Handle, operatorRow!.Handle);
-        Assert.Equal(AuthenticatedHost.Handle, operatorRow.DisplayName);
         Assert.Equal(DeploymentRole.Admin, operatorRow.DeploymentRole);
         var memberRow = await operators.FindAsync(memberId);
         Assert.NotNull(memberRow);
@@ -748,7 +746,7 @@ public sealed class CoreStateDurabilityTests : IClassFixture<PostgresFixture>
         // the in-memory adapter every ordering translates; over Postgres only
         // a translatable one does -- the rehearsal walk met a .Value reach-in
         // here as a 500 on the export, so this test pins the durable path.
-        await AuthenticatedHost.RegisterOperatorAsync(env.Host, "bob", "Bob Baker", "bob-pass-123");
+        await AuthenticatedHost.RegisterOperatorAsync(env.Host, "bob", "bob-pass-123");
         var added = await env.Http.PostAsJsonAsync(
             $"/engagements/{engagementId}/members", new AddMemberBody(Handle: "bob", Role: "reader"));
         added.EnsureSuccessStatusCode();

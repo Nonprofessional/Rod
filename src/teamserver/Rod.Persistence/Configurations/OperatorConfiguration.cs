@@ -24,7 +24,6 @@ internal sealed class OperatorConfiguration : IEntityTypeConfiguration<global::R
             .HasColumnName("operator_id");
 
         builder.Property(o => o.Handle).HasColumnName("handle").HasMaxLength(256).IsRequired();
-        builder.Property(o => o.DisplayName).HasColumnName("display_name").HasMaxLength(512).IsRequired();
         builder.Property(o => o.CreatedAt).HasColumnName("created_at");
         // The administrative off switch (architecture.md Sec 4.5): a disabled
         // account authenticates nowhere until enabled again.

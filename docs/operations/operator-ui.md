@@ -947,11 +947,11 @@ management sheet (the management path the `Operators:Initial` seed stood
 in for; see [teamserver.md](teamserver.md)). The table lists every
 account: handle (yours marked *you*; admins marked *admin*; a
 switched-off account reads *disabled*; a revoked credential reads *no
-password*), display name, and creation date. Reach arrives per
+password*), and creation date. Reach arrives per
 engagement, from each engagement's Members panel, and every account
 comes up a deployment member: the bootstrap-seeded admin alone sees *New
-operator* (handle, optional display name, and an initial password of at
-least 8 characters, handed over out of band) and the *Disable* / *Enable*
+operator* (handle and an initial password of at least 8 characters,
+handed over out of band) and the *Disable* / *Enable*
 pair -- the account off switch (two clicks): every authentication path
 -- login, live cookie session, API token -- refuses at its next use,
 while the memberships wait as they were, so *Enable* restores exactly

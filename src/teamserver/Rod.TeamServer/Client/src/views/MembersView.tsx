@@ -172,7 +172,6 @@ export function MembersView({
             <thead>
               <tr>
                 <th>Handle</th>
-                <th>Display name</th>
                 <th>Tier</th>
                 <th>Granted</th>
                 <th></th>
@@ -181,7 +180,7 @@ export function MembersView({
             <tbody>
               {members.length === 0 && (
                 <tr>
-                  <td colSpan={5}>
+                  <td colSpan={4}>
                     <div className="empty">
                       <Icon name="users" />
                       The roster did not load -- refresh to try again.
@@ -197,7 +196,6 @@ export function MembersView({
                       {member.operatorId === operator.operatorId && <span className="muted"> (you)</span>}
                     </span>
                   </td>
-                  <td>{member.displayName}</td>
                   <td title={ROLE_HELP[member.role] ?? member.role}>
                     {member.role}
                   </td>

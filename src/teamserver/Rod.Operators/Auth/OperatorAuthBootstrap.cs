@@ -65,11 +65,10 @@ public sealed class OperatorAuthBootstrap : IHostedService
         var existing = await _operators.FindByHandleAsync(seed.Handle, cancellationToken);
         if (existing is null)
         {
-            // The display name is derived from the handle: the seed is
-            // deployment plumbing, and a deployment sets a name and a
-            // password, nothing else.
+            // The seed is deployment plumbing: a deployment sets a handle and
+            // a password, nothing else.
             existing = Operator.Register(
-                OperatorId.New(), seed.Handle, seed.Handle, _time.GetUtcNow(), DeploymentRole.Admin);
+                OperatorId.New(), seed.Handle, _time.GetUtcNow(), DeploymentRole.Admin);
             await _operators.SaveAsync(existing, cancellationToken);
         }
 

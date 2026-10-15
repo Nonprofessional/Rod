@@ -30,7 +30,6 @@ public class EngagementMembershipTests
     private sealed record MemberRow(
         string OperatorId,
         string Handle,
-        string DisplayName,
         string Role,
         DateTimeOffset AddedAt);
 
@@ -40,7 +39,7 @@ public class EngagementMembershipTests
     public async Task Membership_Lifecycle_InvitesReTiersRemoves_AndRecordsTheTrail()
     {
         await using var env = await TestEnv.StartAsync();
-        await AuthenticatedHost.RegisterOperatorAsync(env.Host, MemberHandle, "Alice Aaron", MemberPassword);
+        await AuthenticatedHost.RegisterOperatorAsync(env.Host, MemberHandle, MemberPassword);
         await AuthenticatedHost.LoginAsync(env.Http);
         var engagementId = await CreateEngagementAsync(env.Http, "Operation Crew");
 
@@ -89,7 +88,7 @@ public class EngagementMembershipTests
     {
         await using var env = await TestEnv.StartAsync();
         var outsiderId = await AuthenticatedHost.RegisterOperatorAsync(
-            env.Host, "outsider", "Outsider", MemberPassword);
+            env.Host, "outsider", MemberPassword);
         await AuthenticatedHost.LoginAsync(env.Http);
         var engagementId = await CreateEngagementAsync(env.Http, "Operation Walled");
 
@@ -129,7 +128,7 @@ public class EngagementMembershipTests
     {
         await using var env = await TestEnv.StartAsync();
         await AuthenticatedHost.RegisterOperatorAsync(
-            env.Host, MemberHandle, "Alice Aaron", MemberPassword);
+            env.Host, MemberHandle, MemberPassword);
         await AuthenticatedHost.LoginAsync(env.Http);
         var engagementId = await CreateEngagementAsync(env.Http, "Operation Anchored");
         var ownerId = AuthenticatedHost.GetOperatorId(env.Host);
@@ -176,8 +175,8 @@ public class EngagementMembershipTests
     public async Task Report_RosterCarriesTheCrew_RoleTagged()
     {
         await using var env = await TestEnv.StartAsync();
-        await AuthenticatedHost.RegisterOperatorAsync(env.Host, MemberHandle, "Alice Aaron", MemberPassword);
-        await AuthenticatedHost.RegisterOperatorAsync(env.Host, "bob", "Bob Baker", MemberPassword);
+        await AuthenticatedHost.RegisterOperatorAsync(env.Host, MemberHandle, MemberPassword);
+        await AuthenticatedHost.RegisterOperatorAsync(env.Host, "bob", MemberPassword);
         await AuthenticatedHost.LoginAsync(env.Http);
         var engagementId = await CreateEngagementAsync(env.Http, "Operation Ledger");
 

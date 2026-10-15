@@ -17,6 +17,4 @@ public static class AutomationOperatorIdentity
     public static readonly OperatorId OperatorId = new(new Guid("7c5e2a10-94b3-4f6d-a1e8-3b8d0c2f4a97"));
 
     public const string Handle = "automation";
-
-    public const string DisplayName = "Automation Engine";
 }

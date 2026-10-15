@@ -29,13 +29,12 @@ public class OperatorDeploymentRoleTests
     private sealed record AccountBody(
         Guid Id,
         string Handle,
-        string DisplayName,
         DateTimeOffset CreatedAt,
         bool HasCredential,
         bool Disabled,
         string Role);
 
-    private sealed record MeBody(Guid Id, string Handle, string DisplayName, string Role);
+    private sealed record MeBody(Guid Id, string Handle, string Role);
 
     private sealed record MintedTokenBody(string TokenId, string Token, DateTimeOffset CreatedAt);
 
@@ -80,7 +79,7 @@ public class OperatorDeploymentRoleTests
             new { handle = MemberHandle, password = MemberPassword });
         var memberId = (await created.Content.ReadFromJsonAsync<AccountBody>())!.Id;
         var targetId = await AuthenticatedHost.RegisterOperatorAsync(
-            env.Host, TargetHandle, "Colleague", TargetPassword);
+            env.Host, TargetHandle, TargetPassword);
 
         using var member = env.NewClient();
         await AuthenticatedHost.LoginAsync(member, MemberHandle, MemberPassword);

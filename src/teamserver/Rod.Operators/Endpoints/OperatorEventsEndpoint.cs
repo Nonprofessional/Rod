@@ -26,9 +26,9 @@ namespace Rod.Operators.Endpoints;
 ///
 /// Identity is derived from the authenticated operator principal (cookie
 /// session): the route carries <see cref="OperatorClaims.RequireAuthorization"/>,
-/// and the id/handle/display name are read off the principal's claims rather
-/// than the request, so a live stream is only ever opened for a logged-in
-/// operator. EventSource carries the auth cookie (SameSite=Lax) with the
+/// and the id and handle are read off the principal's claims rather than the
+/// request, so a live stream is only ever opened for a logged-in operator.
+/// EventSource carries the auth cookie (SameSite=Lax) with the
 /// connection.
 /// </summary>
 public static class OperatorEventsEndpoint
@@ -71,7 +71,7 @@ public static class OperatorEventsEndpoint
         }
 
         var identity = new OperatorPresenceService.OperatorSnapshot(
-            identityClaim.Value.Id, identityClaim.Value.Handle, identityClaim.Value.DisplayName);
+            identityClaim.Value.Id, identityClaim.Value.Handle);
 
         // SSE framing: chunked text/event-stream, never cached (the stream is
         // live and per-connection).
@@ -100,7 +100,7 @@ public static class OperatorEventsEndpoint
             await WriteEventAsync(context.Response, "hello", new
             {
                 operators = (await presence.ListAsync(engagement, cancellationToken))
-                    .Select(o => new { id = o.Id.ToString(), handle = o.Handle, displayName = o.DisplayName })
+                    .Select(o => new { id = o.Id.ToString(), handle = o.Handle })
                     .ToArray(),
                 claims = (await interaction.ListAsync(engagement, cancellationToken))
                     .Select(c => new

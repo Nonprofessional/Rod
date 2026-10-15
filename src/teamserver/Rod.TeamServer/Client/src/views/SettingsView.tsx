@@ -291,7 +291,6 @@ function OperatorsCard({ operator }: { operator: SessionOperator }) {
   const [note, setNote] = useState<string | null>(null)
 
   const [handle, setHandle] = useState('')
-  const [displayName, setDisplayName] = useState('')
   const [password, setPassword] = useState('')
 
   // The expanded management row: the account being managed, its token list,
@@ -327,13 +326,11 @@ function OperatorsCard({ operator }: { operator: SessionOperator }) {
     try {
       const created = await createOperator({
         handle: handle.trim(),
-        displayName: displayName.trim() || undefined,
         password,
       })
       setNote(`Provisioned '${created.handle}' -- it can log in now with the password you set.`)
       setError(null)
       setHandle('')
-      setDisplayName('')
       setPassword('')
       await refresh()
     } catch (e) {
@@ -478,15 +475,6 @@ function OperatorsCard({ operator }: { operator: SessionOperator }) {
               />
             </label>
             <label>
-              Display name
-              <input
-                value={displayName}
-                onChange={(e) => setDisplayName(e.target.value)}
-                placeholder="optional -- defaults to the handle"
-                title="The name the roster and audit views render; the handle stands in when left empty."
-              />
-            </label>
-            <label>
               Initial password
               <input
                 type="password"
@@ -525,7 +513,6 @@ function OperatorsCard({ operator }: { operator: SessionOperator }) {
           <thead>
             <tr>
               <th>Handle</th>
-              <th>Display name</th>
               <th>Created</th>
               <th></th>
             </tr>
@@ -533,7 +520,7 @@ function OperatorsCard({ operator }: { operator: SessionOperator }) {
           <tbody>
             {accounts.length === 0 && (
               <tr>
-                <td colSpan={4}>
+                <td colSpan={3}>
                   <div className="empty">
                     <Icon name="users" />
                     The roster did not load -- refresh to try again.
@@ -580,7 +567,6 @@ function OperatorsCard({ operator }: { operator: SessionOperator }) {
                       )}
                     </span>
                   </td>
-                  <td>{account.displayName}</td>
                   <td title={new Date(account.createdAt).toLocaleString()}>
                     {new Date(account.createdAt).toLocaleDateString()}
                   </td>
@@ -634,7 +620,7 @@ function OperatorsCard({ operator }: { operator: SessionOperator }) {
                 </tr>
                 {openId === account.id && (
                   <tr className="roster-detail-row">
-                    <td colSpan={4}>
+                    <td colSpan={3}>
                       <div className="roster-detail">
                         <section>
                           <div className="roster-detail-title">API tokens</div>

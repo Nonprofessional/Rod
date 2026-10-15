@@ -41,9 +41,9 @@ public class InteractionOwnershipAcceptanceTests
         var implants = env.Host.Services.GetRequiredService<IImplantRepository>();
         var clock = env.Host.Services.GetRequiredService<TimeProvider>();
 
-        var aliceId = await AuthenticatedHost.RegisterOperatorAsync(env.Host, "alice", "Alice Op", Password);
-        var bobId = await AuthenticatedHost.RegisterOperatorAsync(env.Host, "bob", "Bob Op", Password);
-        var carolId = await AuthenticatedHost.RegisterOperatorAsync(env.Host, "carol", "Carol Op", Password);
+        var aliceId = await AuthenticatedHost.RegisterOperatorAsync(env.Host, "alice", Password);
+        var bobId = await AuthenticatedHost.RegisterOperatorAsync(env.Host, "bob", Password);
+        var carolId = await AuthenticatedHost.RegisterOperatorAsync(env.Host, "carol", Password);
 
         using var alice = await LoginAsync(env, "alice");
         using var bob = await LoginAsync(env, "bob");

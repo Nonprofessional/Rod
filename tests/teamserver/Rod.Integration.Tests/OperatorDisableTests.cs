@@ -28,7 +28,6 @@ public class OperatorDisableTests
     private sealed record AccountBody(
         Guid Id,
         string Handle,
-        string DisplayName,
         DateTimeOffset CreatedAt,
         bool HasCredential,
         bool Disabled,
@@ -42,7 +41,7 @@ public class OperatorDisableTests
     public async Task Disable_EndsEveryAuthenticationPath_AndEnableRestoresThem()
     {
         await using var env = await TestEnv.StartAsync();
-        var targetId = await AuthenticatedHost.RegisterOperatorAsync(env.Host, Handle, "Alice Aaron", Password);
+        var targetId = await AuthenticatedHost.RegisterOperatorAsync(env.Host, Handle, Password);
         await AuthenticatedHost.LoginAsync(env.Http);
 
         // Establish both authenticated states first: a live cookie session
@@ -106,7 +105,7 @@ public class OperatorDisableTests
         // only grows members): from her own session she disables the seed,
         // and both directions are idempotent on repeat.
         var aliceId = await AuthenticatedHost.RegisterOperatorAsync(
-            env.Host, Handle, "Alice Aaron", Password, DeploymentRole.Admin);
+            env.Host, Handle, Password, DeploymentRole.Admin);
         using var alice = env.NewClient();
         await AuthenticatedHost.LoginAsync(alice, Handle, Password);
         var disabled = await alice.PostAsync($"/operators/{seeded}:disable", content: null);
@@ -117,7 +116,7 @@ public class OperatorDisableTests
         // Alice is the last enabled admin now: her own disable refuses, even
         // though member accounts remain standing. Enabling a not-disabled
         // account is the idempotent no-op.
-        await AuthenticatedHost.RegisterOperatorAsync(env.Host, "colleague", "Colleague", Password);
+        await AuthenticatedHost.RegisterOperatorAsync(env.Host, "colleague", Password);
         var lastRefusal = await alice.PostAsync($"/operators/{aliceId}:disable", content: null);
         Assert.Equal(HttpStatusCode.Conflict, lastRefusal.StatusCode);
         var enableNoop = await alice.PostAsync($"/operators/{aliceId}:enable", content: null);
@@ -128,8 +127,8 @@ public class OperatorDisableTests
     public async Task Disable_IsAdminOnly_WhileAnonymousReadsRefuse()
     {
         await using var env = await TestEnv.StartAsync();
-        var targetId = await AuthenticatedHost.RegisterOperatorAsync(env.Host, Handle, "Alice Aaron", Password);
-        await AuthenticatedHost.RegisterOperatorAsync(env.Host, "colleague", "Colleague", Password);
+        var targetId = await AuthenticatedHost.RegisterOperatorAsync(env.Host, Handle, Password);
+        await AuthenticatedHost.RegisterOperatorAsync(env.Host, "colleague", Password);
         await AuthenticatedHost.LoginAsync(env.Http);
 
         // Anonymous requests refuse at the session; a member is

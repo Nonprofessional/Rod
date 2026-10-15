@@ -29,9 +29,6 @@ public static class OperatorClaims
     /// <summary>The claim that carries the authenticated operator's handle.</summary>
     public const string OperatorHandleClaimType = "rod:operator-handle";
 
-    /// <summary>The claim that carries the authenticated operator's display name.</summary>
-    public const string OperatorDisplayNameClaimType = "rod:operator-display-name";
-
     /// <summary>
     /// The claim that carries the authenticated operator's deployment role,
     /// as its wire name ("admin" / "member", <see cref="DeploymentRoles"/>).
@@ -64,13 +61,13 @@ public static class OperatorClaims
     }
 
     /// <summary>
-    /// Reads the full authenticated-operator identity (id, handle, display name)
-    /// off the principal, or null when the principal carries no operator-id
-    /// claim. The handle and display name fall back to the operator id / handle
-    /// string when their claims are absent, so a principal stamped before those
-    /// claims existed still resolves to a usable identity. The live-event stream
-    /// uses this to attribute its presence frame to the signed-in operator
-    /// without a per-connect repository lookup.
+    /// Reads the authenticated operator's identity (id and handle) off the
+    /// principal, or null when the principal carries no operator-id claim.
+    /// The handle falls back to the operator id string when its claim is
+    /// absent, so a principal stamped before that claim existed still
+    /// resolves to a usable identity. The live-event stream uses this to
+    /// attribute its presence frame to the signed-in operator without a
+    /// per-connect repository lookup.
     /// </summary>
     public static OperatorIdentity? TryGetOperatorIdentity(this ClaimsPrincipal principal)
     {
@@ -82,17 +79,13 @@ public static class OperatorClaims
         if (string.IsNullOrWhiteSpace(handle))
             handle = id.Value.Value.ToString();
 
-        var displayName = principal.FindFirst(OperatorDisplayNameClaimType)?.Value;
-        if (string.IsNullOrWhiteSpace(displayName))
-            displayName = handle;
-
-        return new OperatorIdentity(id.Value, handle, displayName);
+        return new OperatorIdentity(id.Value, handle);
     }
 }
 
 /// <summary>
 /// The authenticated operator's identity, read off the session principal. A
 /// small value type so call sites (the live-event stream's presence join) take
-/// one resolved identity rather than three separate claim lookups.
+/// one resolved identity rather than separate claim lookups.
 /// </summary>
-public readonly record struct OperatorIdentity(OperatorId Id, string Handle, string DisplayName);
+public readonly record struct OperatorIdentity(OperatorId Id, string Handle);

@@ -25,13 +25,12 @@ public class OperatorProvisioningTests
     private sealed record AccountBody(
         Guid Id,
         string Handle,
-        string DisplayName,
         DateTimeOffset CreatedAt,
         bool HasCredential,
         bool Disabled,
         string Role);
 
-    private sealed record CreateBody(string Handle, string? DisplayName, string Password);
+    private sealed record CreateBody(string Handle, string Password);
 
     [Fact]
     public async Task Create_RegistersALoginableAccount_AndListsInTheRoster()
@@ -40,14 +39,13 @@ public class OperatorProvisioningTests
         await AuthenticatedHost.LoginAsync(env.Http);
 
         var response = await env.Http.PostAsJsonAsync("/operators",
-            new CreateBody(Handle, "Alice Aaron", Password));
+            new CreateBody(Handle, Password));
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         Assert.StartsWith("/operators/", response.Headers.Location?.ToString() ?? string.Empty);
 
         var created = await response.Content.ReadFromJsonAsync<AccountBody>();
         Assert.NotNull(created);
         Assert.Equal(Handle, created!.Handle);
-        Assert.Equal("Alice Aaron", created.DisplayName);
         Assert.True(created.HasCredential);
         Assert.False(created.Disabled);
 
@@ -67,17 +65,14 @@ public class OperatorProvisioningTests
     }
 
     [Fact]
-    public async Task Create_BlankDisplayNameDefaultsToHandle_AndTheAccountCanCreateEngagements()
+    public async Task Create_LeavesAFreshAccountAbleToCreateEngagements()
     {
         await using var env = await TestEnv.StartAsync();
         await AuthenticatedHost.LoginAsync(env.Http);
 
-        // No display name: the handle stands in, the bootstrap seed's rule.
         var created = await env.Http.PostAsJsonAsync("/operators",
-            new CreateBody("bob", null, Password));
+            new CreateBody("bob", Password));
         Assert.Equal(HttpStatusCode.Created, created.StatusCode);
-        var account = await created.Content.ReadFromJsonAsync<AccountBody>();
-        Assert.Equal("bob", account!.DisplayName);
 
         // A fresh account holds no permission and needs none to start work:
         // it creates its own engagement and becomes that engagement's owner.
@@ -95,27 +90,27 @@ public class OperatorProvisioningTests
         await AuthenticatedHost.LoginAsync(env.Http);
 
         var first = await env.Http.PostAsJsonAsync("/operators",
-            new CreateBody(Handle, null, Password));
+            new CreateBody(Handle, Password));
         Assert.Equal(HttpStatusCode.Created, first.StatusCode);
 
         // A handle is one account: the second claim is a conflict, not a
         // second row.
         var duplicate = await env.Http.PostAsJsonAsync("/operators",
-            new CreateBody(Handle, null, "another-p@ss"));
+            new CreateBody(Handle, "another-p@ss"));
         Assert.Equal(HttpStatusCode.Conflict, duplicate.StatusCode);
 
         // A short password is refused before anything is stored, as are the
         // missing fields.
         var shortPassword = await env.Http.PostAsJsonAsync("/operators",
-            new CreateBody("dave", null, "short"));
+            new CreateBody("dave", "short"));
         Assert.Equal(HttpStatusCode.BadRequest, shortPassword.StatusCode);
 
         var missingHandle = await env.Http.PostAsJsonAsync("/operators",
-            new CreateBody(" ", null, Password));
+            new CreateBody(" ", Password));
         Assert.Equal(HttpStatusCode.BadRequest, missingHandle.StatusCode);
 
         var missingPassword = await env.Http.PostAsJsonAsync("/operators",
-            new CreateBody("dave", null, ""));
+            new CreateBody("dave", ""));
         Assert.Equal(HttpStatusCode.BadRequest, missingPassword.StatusCode);
 
         // None of the refused attempts left an account behind.
@@ -127,7 +122,7 @@ public class OperatorProvisioningTests
     public async Task Provisioning_IsAdminOnly_WhileAnonymousReadsRefuse()
     {
         await using var env = await TestEnv.StartAsync();
-        await AuthenticatedHost.RegisterOperatorAsync(env.Host, "colleague", "Colleague", Password);
+        await AuthenticatedHost.RegisterOperatorAsync(env.Host, "colleague", Password);
         await AuthenticatedHost.LoginAsync(env.Http);
 
         // Anonymous requests refuse at the session; a member is
@@ -136,17 +131,17 @@ public class OperatorProvisioningTests
         using var anonymous = env.NewClient();
         Assert.Equal(HttpStatusCode.Unauthorized, (await anonymous.GetAsync("/operators")).StatusCode);
         Assert.Equal(HttpStatusCode.Unauthorized,
-            (await anonymous.PostAsJsonAsync("/operators", new CreateBody("eve", null, Password))).StatusCode);
+            (await anonymous.PostAsJsonAsync("/operators", new CreateBody("eve", Password))).StatusCode);
 
         using var colleague = env.NewClient();
         await AuthenticatedHost.LoginAsync(colleague, "colleague", Password);
         var refused = await colleague.PostAsJsonAsync("/operators",
-            new CreateBody("eve", null, Password));
+            new CreateBody("eve", Password));
         Assert.Equal(HttpStatusCode.Forbidden, refused.StatusCode);
 
         // The admin creates the same account without friction.
         var provision = await env.Http.PostAsJsonAsync("/operators",
-            new CreateBody("eve", null, Password));
+            new CreateBody("eve", Password));
         Assert.Equal(HttpStatusCode.Created, provision.StatusCode);
     }
 
@@ -154,7 +149,7 @@ public class OperatorProvisioningTests
     public async Task SetCredential_ReplacesThePassword_AndEndsTheTargetLiveSessions()
     {
         await using var env = await TestEnv.StartAsync();
-        var targetId = await AuthenticatedHost.RegisterOperatorAsync(env.Host, Handle, "Alice Aaron", Password);
+        var targetId = await AuthenticatedHost.RegisterOperatorAsync(env.Host, Handle, Password);
         await AuthenticatedHost.LoginAsync(env.Http);
 
         using var session = env.NewClient();

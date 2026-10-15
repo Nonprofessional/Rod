@@ -115,8 +115,6 @@ public class OperatorAuthTests
             var summary = await response.Content.ReadFromJsonAsync<OperatorAuthSummary>();
             Assert.NotNull(summary);
             Assert.Equal(Handle, summary!.Handle);
-            // The seed's display name is derived from its handle.
-            Assert.Equal(Handle, summary.DisplayName);
             Assert.Equal("admin", summary.Role);
             Assert.NotEqual(Guid.Empty, summary.Id);
         }
@@ -170,7 +168,6 @@ public class OperatorAuthTests
             var summary = await response.Content.ReadFromJsonAsync<OperatorAuthSummary>();
             Assert.NotNull(summary);
             Assert.Equal(Handle, summary!.Handle);
-            Assert.Equal(Handle, summary.DisplayName);
         }
     }
 

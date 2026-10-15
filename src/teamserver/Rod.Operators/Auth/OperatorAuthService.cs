@@ -28,7 +28,7 @@ public sealed class OperatorAuthService
 
     // A stand-in account for the dummy verification: the password hasher
     // never reads the user, but the signature wants one.
-    private static Operator Decoy => new(OperatorId.New(), "timing-decoy", "timing-decoy", DateTimeOffset.UnixEpoch);
+    private static Operator Decoy => new(OperatorId.New(), "timing-decoy", DateTimeOffset.UnixEpoch);
 
     public OperatorAuthService(
         IOperatorRepository operators,
@@ -95,14 +95,15 @@ public sealed class OperatorAuthService
 
     /// <summary>
     /// Builds the principal persisted as the cookie session: the operator id
-    /// under <see cref="OperatorClaims.OperatorIdClaimType"/> and its handle and
-    /// display name under their claims (so transport can resolve the full
-    /// operator identity off the principal without referencing this layer), the
-    /// handle as the name, and the authentication scheme as the identity label.
-    /// The principal carries exactly one privilege, the deployment role claim:
-    /// the management surfaces the admin gate answers to. Everything else --
-    /// what the operator may reach inside an engagement -- resolves fresh from
-    /// the engagement memberships on every engagement-scoped request
+    /// under <see cref="OperatorClaims.OperatorIdClaimType"/> and its handle
+    /// under <see cref="OperatorClaims.OperatorHandleClaimType"/> (so
+    /// transport can resolve the operator identity off the principal without
+    /// referencing this layer), the handle as the name, and the
+    /// authentication scheme as the identity label. The principal carries
+    /// exactly one privilege, the deployment role claim: the management
+    /// surfaces the admin gate answers to. Everything else -- what the
+    /// operator may reach inside an engagement -- resolves fresh from the
+    /// engagement memberships on every engagement-scoped request
     /// (architecture.md Sec 3). With <paramref name="verifierHash"/> it also
     /// carries the session stamp that binds the session to that credential
     /// generation.
@@ -115,7 +116,6 @@ public sealed class OperatorAuthService
             ClaimTypes.Role);
         identity.AddClaim(new Claim(OperatorClaims.OperatorIdClaimType, op.Id.Value.ToString()));
         identity.AddClaim(new Claim(OperatorClaims.OperatorHandleClaimType, op.Handle));
-        identity.AddClaim(new Claim(OperatorClaims.OperatorDisplayNameClaimType, op.DisplayName));
         identity.AddClaim(new Claim(
             OperatorClaims.DeploymentRoleClaimType, DeploymentRoles.ToName(op.DeploymentRole)));
         identity.AddClaim(new Claim(ClaimTypes.Name, op.Handle));

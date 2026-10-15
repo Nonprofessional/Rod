@@ -37,8 +37,8 @@ public class OperatorLiveTests
 
     // Registers a named operator and returns its id, so a test can attribute
     // assertions to a specific account independently of the client session.
-    private static Task<OperatorId> RegisterAsync(IHost host, string handle, string displayName)
-        => AuthenticatedHost.RegisterOperatorAsync(host, handle, displayName, OperatorPassword);
+    private static Task<OperatorId> RegisterAsync(IHost host, string handle)
+        => AuthenticatedHost.RegisterOperatorAsync(host, handle, OperatorPassword);
 
     // A cookie-persisting client logged in as the named operator. Each operator
     // gets its own client so the sessions (and their SSE streams) stay distinct.
@@ -84,8 +84,8 @@ public class OperatorLiveTests
     public async Task Two_Operators_See_Each_Others_Actions_Live()
     {
         using var host = CreateHost();
-        var ownerA = await RegisterAsync(host, "alpha", "Alpha Operator");
-        await RegisterAsync(host, "bravo", "Bravo Operator");
+        var ownerA = await RegisterAsync(host, "alpha");
+        await RegisterAsync(host, "bravo");
         using var clientA = await OperatorClientAsync(host, "alpha");
         using var clientB = await OperatorClientAsync(host, "bravo");
 
@@ -132,7 +132,7 @@ public class OperatorLiveTests
     public async Task Operator_Receives_Hello_With_Current_Presence()
     {
         using var host = CreateHost();
-        await RegisterAsync(host, "solo", "Solo Operator");
+        await RegisterAsync(host, "solo");
         using var client = await OperatorClientAsync(host, "solo");
 
         var engagementId = await CreateEngagementAsync(client, "Operation solo");
@@ -155,7 +155,7 @@ public class OperatorLiveTests
         // guard rides along: only a genuinely new session publishes, so a poll
         // cadence (a reused session) stays silent.
         using var host = CreateHost();
-        await RegisterAsync(host, "alpha", "Alpha Operator");
+        await RegisterAsync(host, "alpha");
         using var client = await OperatorClientAsync(host, "alpha");
 
         var engagementId = await CreateEngagementAsync(client, "Operation contact");
@@ -209,9 +209,9 @@ public class OperatorLiveTests
     public async Task Events_Are_Engagement_Scoped()
     {
         using var host = CreateHost();
-        await RegisterAsync(host, "x-ray", "X-Ray Operator");
-        await RegisterAsync(host, "yankee", "Yankee Operator");
-        await RegisterAsync(host, "yankee-2", "Yankee Two Operator");
+        await RegisterAsync(host, "x-ray");
+        await RegisterAsync(host, "yankee");
+        await RegisterAsync(host, "yankee-2");
         using var clientX = await OperatorClientAsync(host, "x-ray");
         using var clientY = await OperatorClientAsync(host, "yankee");
         using var clientY2 = await OperatorClientAsync(host, "yankee-2");
@@ -285,7 +285,7 @@ public class OperatorLiveTests
     public async Task Events_Require_Authentication()
     {
         using var host = CreateHost();
-        await RegisterAsync(host, "gated", "Gated Operator");
+        await RegisterAsync(host, "gated");
         using var owner = await OperatorClientAsync(host, "gated");
 
         var engagementId = await CreateEngagementAsync(owner, "Operation gated");

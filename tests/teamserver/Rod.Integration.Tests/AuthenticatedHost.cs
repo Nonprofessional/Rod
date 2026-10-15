@@ -164,14 +164,14 @@ internal static class AuthenticatedHost
     /// standing) states it.
     /// </summary>
     public static async Task<OperatorId> RegisterOperatorAsync(
-        IHost host, string handle, string displayName, string password,
+        IHost host, string handle, string password,
         DeploymentRole role = DeploymentRole.Member)
     {
         var operators = host.Services.GetRequiredService<IOperatorRepository>();
         var credentials = host.Services.GetRequiredService<IOperatorCredentialStore>();
         var hasher = host.Services.GetRequiredService<IPasswordHasher<Operator>>();
 
-        var op = Operator.Register(OperatorId.New(), handle, displayName, DateTimeOffset.UtcNow, role);
+        var op = Operator.Register(OperatorId.New(), handle, DateTimeOffset.UtcNow, role);
         await operators.SaveAsync(op);
         var hash = hasher.HashPassword(op, password);
         await credentials.SetHashAsync(op.Id, hash);
