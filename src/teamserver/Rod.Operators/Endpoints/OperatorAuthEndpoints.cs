@@ -369,9 +369,10 @@ public static class OperatorAuthEndpoints
         var remote = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
 
         // The account is the only boundary between an attacker and the
-        // teamserver, so repeated failures put the handle into a cooldown
+        // teamserver, so repeated failures put the handle -- and, on the
+        // wider spray budget, the source address -- into a cooldown
         // instead of allowing unbounded online brute force (Sec 9).
-        if (!throttle.IsAllowed(handle))
+        if (!throttle.IsAllowed(handle, remote))
         {
             logger.LogWarning("Login for handle {Handle} from {Remote} refused: cooldown active.", handle, remote);
             return Results.Json(new Problem("Too many failed attempts; try again later."),
@@ -381,7 +382,7 @@ public static class OperatorAuthEndpoints
         var result = await auth.TryLoginAsync(handle, body.Password, cancellationToken);
         if (!result.Success || result.Principal is null || result.Operator is null)
         {
-            throttle.RecordFailure(handle);
+            throttle.RecordFailure(handle, remote);
             logger.LogWarning("Login for handle {Handle} from {Remote} failed.", handle, remote);
             return Results.Unauthorized();
         }

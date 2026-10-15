@@ -195,6 +195,70 @@ public class OperatorAuthTests
         Assert.True(throttle.IsAllowed("op"));
     }
 
+    [Fact]
+    public void LoginThrottle_AnAddressSprayingManyHandles_EntersItsOwnCooldown()
+    {
+        // The per-handle axis never notices a spray: each handle fails
+        // once. The wider per-address budget must catch that shape, while
+        // staying loose enough that a shared NAT's honest failures do not
+        // lock everyone out.
+        var clock = new MutableTimeProvider();
+        var throttle = new LoginThrottle(clock);
+
+        for (var i = 0; i < 20; i++)
+        {
+            var handle = "spray-" + i;
+            Assert.True(throttle.IsAllowed(handle, "10.9.9.9"));
+            throttle.RecordFailure(handle, "10.9.9.9");
+        }
+
+        // The address is in cooldown; a different address and an untouched
+        // handle from it still pass.
+        Assert.False(throttle.IsAllowed("fresh-handle", "10.9.9.9"));
+        Assert.True(throttle.IsAllowed("fresh-handle", "10.8.8.8"));
+
+        // The window passing lifts the address cooldown like the handle's.
+        clock.Advance(TimeSpan.FromMinutes(15));
+        Assert.True(throttle.IsAllowed("fresh-handle", "10.9.9.9"));
+    }
+
+    [Fact]
+    public async Task Login_UpgradesAnOldParameterHash_InPlace()
+    {
+        // A hash stored under older KDF parameters still verifies, and the
+        // successful login upgrades it to the configured strength -- the
+        // stored hash converges without a migration step.
+        var (client, host) = CreateClient();
+        using (host)
+        {
+            var credentials = host.Services.GetRequiredService<Rod.CoreState.Operators.IOperatorCredentialStore>();
+            var operators = host.Services.GetRequiredService<Rod.CoreState.Operators.IOperatorRepository>();
+            var op = await operators.FindByHandleAsync(Handle);
+            Assert.NotNull(op);
+
+            // Re-store the credential under a weak hasher, the shape of a
+            // hash written before the iteration count was raised.
+            var weak = new Microsoft.AspNetCore.Identity.PasswordHasher<Rod.CoreState.Operators.Operator>(
+                Microsoft.Extensions.Options.Options.Create(
+                    new Microsoft.AspNetCore.Identity.PasswordHasherOptions()));
+            await credentials.SetHashAsync(op!.Id, weak.HashPassword(op, Password));
+
+            var response = await PostLoginAsync(client, Handle, Password);
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+            // The stored hash now carries the configured iteration count --
+            // the .NET PBKDF2 frame is marker, PRF, then the big-endian
+            // iteration count at bytes 5..8 -- not the weak default it was
+            // stored under.
+            var stored = await credentials.FindHashAsync(op.Id);
+            Assert.NotNull(stored);
+            var frame = Convert.FromBase64String(stored!);
+            Assert.Equal(0x01, frame[0]);
+            var iterations = (uint)(frame[5] << 24 | frame[6] << 16 | frame[7] << 8 | frame[8]);
+            Assert.Equal(600_000u, iterations);
+        }
+    }
+
     private static async Task<HttpResponseMessage> PostLoginAsync(HttpClient client, string handle, string password)
     {
         var payload = new { handle, password };

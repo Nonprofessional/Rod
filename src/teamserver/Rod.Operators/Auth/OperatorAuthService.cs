@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Identity;
+using Rod.CoreState;
 using Rod.CoreState.Operators;
 
 namespace Rod.Operators.Auth;
@@ -20,6 +21,15 @@ public sealed class OperatorAuthService
     private readonly IOperatorCredentialStore _credentials;
     private readonly IPasswordHasher<Operator> _hasher;
 
+    // One hash of an unguessable throwaway password, minted on first use.
+    // Unknown handles verify against it so a login attempt costs the KDF
+    // either way: response timing cannot enumerate valid handles.
+    private readonly Lazy<string> _dummyHash;
+
+    // A stand-in account for the dummy verification: the password hasher
+    // never reads the user, but the signature wants one.
+    private static Operator Decoy => new(OperatorId.New(), "timing-decoy", "timing-decoy", DateTimeOffset.UnixEpoch);
+
     public OperatorAuthService(
         IOperatorRepository operators,
         IOperatorCredentialStore credentials,
@@ -28,6 +38,8 @@ public sealed class OperatorAuthService
         _operators = operators;
         _credentials = credentials;
         _hasher = hasher;
+        _dummyHash = new Lazy<string>(
+            () => _hasher.HashPassword(Decoy, Guid.NewGuid().ToString("N")));
     }
 
     /// <summary>
@@ -43,27 +55,41 @@ public sealed class OperatorAuthService
         // Resolve the account by handle. A null handle or whitespace short-
         // circuits to a failed login without touching the store. A disabled
         // account fails the same way -- an attacker cannot tell a disabled
-        // handle from an unknown one.
+        // handle from an unknown one -- and every failure path pays the KDF
+        // against the dummy hash, so timing cannot tell them apart either.
         var op = string.IsNullOrWhiteSpace(handle)
             ? null
             : await _operators.FindByHandleAsync(handle, cancellationToken);
 
         if (op is null || op.Disabled)
+        {
+            _ = _hasher.VerifyHashedPassword(Decoy, _dummyHash.Value, password ?? string.Empty);
             return OperatorLoginResult.Failed;
+        }
 
         var hash = await _credentials.FindHashAsync(op.Id, cancellationToken);
         if (hash is null)
+        {
+            _ = _hasher.VerifyHashedPassword(Decoy, _dummyHash.Value, password ?? string.Empty);
             return OperatorLoginResult.Failed;
+        }
 
         var verification = _hasher.VerifyHashedPassword(op, hash, password ?? string.Empty);
         if (verification == PasswordVerificationResult.Failed)
             return OperatorLoginResult.Failed;
 
-        // SuccessRehash is accepted as a valid login; rehashing on every login is
-        // a later hardening step and not required for the session to be trusted.
-        // The principal carries the session stamp of the verifier that issued
-        // it, so the cookie is bounded against this credential generation and
-        // revocation ends the session at its next request (Sec 9).
+        // A hash stored under older KDF parameters upgrades in place on
+        // success -- the session is trusted either way, and the stored
+        // hash converges on the configured strength without a migration
+        // step. The principal carries the stamp of the hash that actually
+        // verified, so the upgrade invalidates nothing mid-flight.
+        if (verification == PasswordVerificationResult.SuccessRehashNeeded)
+        {
+            var upgraded = _hasher.HashPassword(op, password ?? string.Empty);
+            await _credentials.SetHashAsync(op.Id, upgraded, cancellationToken);
+            hash = upgraded;
+        }
+
         return OperatorLoginResult.Succeeded(op, CreatePrincipal(op, hash));
     }
 

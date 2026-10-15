@@ -87,7 +87,14 @@ public static class RodOperatorAuthHost
         // here beyond the middleware's own plumbing.
         services.AddAuthorization();
 
-        services.AddSingleton<IPasswordHasher<Operator>, PasswordHasher<Operator>>();
+        // The KDF is tuned explicitly rather than left on the framework
+        // default: 600k PBKDF2-HMAC-SHA256 iterations is the current
+        // guidance for new hashes. Stored hashes carry their own
+        // parameters, so existing lower-iteration hashes still verify, and
+        // the login path upgrades them on success (OperatorAuthService).
+        services.AddSingleton<IPasswordHasher<Operator>>(
+            new PasswordHasher<Operator>(Microsoft.Extensions.Options.Options.Create(
+                new PasswordHasherOptions { IterationCount = 600_000 })));
         services.AddSingleton<OperatorAuthService>();
         // The per-handle login throttle shares the process clock; a successful
         // login resets the failure counter for its handle.
