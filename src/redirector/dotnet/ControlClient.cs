@@ -65,10 +65,12 @@ internal sealed class ControlClient
                     await _forwarders.StopAllAsync();
                     return 2;
 
-                case Enrolled:
-                    // The identity was persisted the moment enrollment
-                    // answered, inside the connection; nothing to do but
-                    // reset the backoff.
+                case Enrolled enrolled:
+                    // Carry the minted identity into the next connection:
+                    // the credential is spent, so a fresh-enroll link that
+                    // drops must reconnect with hello, not enroll again (a
+                    // re-enroll answers "spent", which reads as terminal).
+                    identity = enrolled.State;
                     backoff = MinBackoff;
                     continue;
 

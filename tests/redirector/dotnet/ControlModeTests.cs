@@ -1,5 +1,8 @@
 using System.Net;
 using System.Net.Sockets;
+using System.Net.WebSockets;
+using System.Text;
+using System.Text.Json;
 using Rod.Redirector;
 
 namespace Rod.Redirector.Tests;
@@ -142,6 +145,87 @@ public class ControlModeTests
         var manual = RedirectorConfig.Parse(["-listen", "127.0.0.1:8080", "-upstream", "10.0.0.5:8443"]);
         Assert.False(manual.HasControl);
     }
+
+    [Fact]
+    public async Task RunAsync_ReconnectsWithMintedIdentityAfterEnrollLinkDrops()
+    {
+        // A fresh-enrolled node whose control link drops must come back with
+        // hello (the persisted node secret), never a second enroll: the
+        // credential is spent, and a re-enroll answers "spent" -- which the
+        // client reads as a terminal refusal and retires the process.
+        var port = await GetFreePortAsync();
+        using var server = new HttpListener();
+        server.Prefixes.Add($"http://127.0.0.1:{port}/");
+        server.Start();
+
+        var statePath = Path.Combine(Path.GetTempPath(), $"rod-node-state-{Guid.NewGuid():N}.json");
+        await using var forwarders = new ForwarderSet(TextWriter.Null);
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        var client = new ControlClient(
+            new Uri($"ws://127.0.0.1:{port}/control"), "credential", statePath, forwarders, TextWriter.Null);
+        var runTask = Task.Run(() => client.RunAsync(cts.Token), cts.Token);
+
+        try
+        {
+            // Link 1: answer the enroll, then hang up -- the "teamserver
+            // restart" shape. A clean close (not an abort: the managed
+            // HttpListener's Abort is not observable from the peer on
+            // Linux) walks the same reconnect path a dropped link does.
+            var link1 = await AcceptControlLinkAsync(server);
+            Assert.Equal("enroll", link1.Message.RootElement.GetProperty("type").GetString());
+            await SendControlMessageAsync(link1.Socket,
+                $$"""{"type":"enrolled","nodeId":"node-9","nodeSecret":"secret-9"}""");
+            await link1.Socket.CloseOutputAsync(WebSocketCloseStatus.NormalClosure, "restart", CancellationToken.None);
+
+            // Link 2: the first message must be hello carrying the minted
+            // identity; a client that re-enrolled instead would surface as
+            // "enroll" here and shortly after as a refusal.
+            var link2 = await AcceptControlLinkAsync(server);
+            Assert.Equal("hello", link2.Message.RootElement.GetProperty("type").GetString());
+            Assert.Equal("node-9", link2.Message.RootElement.GetProperty("nodeId").GetString());
+            Assert.Equal("secret-9", link2.Message.RootElement.GetProperty("nodeSecret").GetString());
+            await SendControlMessageAsync(link2.Socket, """{"type":"welcome"}""");
+
+            // Steady state reached: a clean stop must exit 0, not retire.
+            cts.Cancel();
+            var exitCode = await runTask;
+            Assert.Equal(0, exitCode);
+        }
+        finally
+        {
+            cts.Cancel();
+            await runTask;
+            File.Delete(statePath);
+            server.Stop();
+        }
+    }
+
+    private static async Task<(System.Net.WebSockets.WebSocket Socket, JsonDocument Message)>
+        AcceptControlLinkAsync(HttpListener server)
+    {
+        var context = await server.GetContextAsync();
+        var socket = (await context.AcceptWebSocketAsync(null)).WebSocket;
+        var message = await ReceiveControlMessageAsync(socket);
+        return (socket, message);
+    }
+
+    private static async Task<JsonDocument> ReceiveControlMessageAsync(System.Net.WebSockets.WebSocket socket)
+    {
+        using var buffer = new MemoryStream();
+        var chunk = new byte[16 * 1024];
+        while (true)
+        {
+            var received = await socket.ReceiveAsync(new ArraySegment<byte>(chunk), CancellationToken.None);
+            if (received.MessageType == WebSocketMessageType.Close)
+                Assert.Fail("The control link closed before sending a message.");
+            buffer.Write(chunk, 0, received.Count);
+            if (received.EndOfMessage)
+                return JsonDocument.Parse(Encoding.UTF8.GetString(buffer.ToArray()));
+        }
+    }
+
+    private static Task SendControlMessageAsync(System.Net.WebSockets.WebSocket socket, string json)
+        => socket.SendAsync(Encoding.UTF8.GetBytes(json), WebSocketMessageType.Text, true, CancellationToken.None);
 
     private static async Task AssertPortAcceptsAsync(int port)
     {
