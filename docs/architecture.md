@@ -1655,10 +1655,15 @@ fleet-wide code execution. Security is a first-class concern.
   kept, links written before the key stay unkeyed (a verifier holding the
   key tells a pre-key trail from a rewrite by verifying once without it),
   and full protection against rewriting pre-key history needs an
-  out-of-band anchor this layer does not fake. Global state (operator
-  accounts and credentials, deployment-wide settings) has no engagement to
-  live in and is not carried by the trail; its events are the server
-  log's.
+  out-of-band anchor this layer does not fake. Global state binds to no
+  engagement, so it lands in the deployment bucket: operator accounts and
+  their credentials (creation, disable/enable, password set, credential
+  and API-token mint and revocation) and the redirector fleet's credential
+  lifecycle record under the empty engagement id -- the same "none"
+  convention the event's own implant and task ids already carry -- on
+  their own chain in the same stores, read through the admin-only
+  deployment trail route. Runtime settings stay in the server log: they
+  are deployment plumbing, not identity-bearing actions.
 - **Engagement isolation.** Enforced at the teamserver and by engagement binding
   in certificates; redirectors never enforce tenancy.
 - **ROE guardrails.** Each engagement carries a rules-of-engagement profile

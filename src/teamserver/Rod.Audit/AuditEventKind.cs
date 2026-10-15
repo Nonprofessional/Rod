@@ -662,4 +662,20 @@ public enum AuditEventKind
     /// dropped by the first-wins rule, exactly like a duplicate.
     /// </summary>
     TaskExpired,
+
+    /// <summary>
+    /// An operator changed deployment-level state (architecture.md Sec 9):
+    /// an operator account or its credentials -- creation, disable/enable,
+    /// password set, credential revocation, API-token mint and revocation.
+    /// These actions are the highest-privilege ones the platform takes
+    /// ("who created the backdoor account" is a question a review must be
+    /// able to answer), but they are global: they bind to no engagement, so
+    /// they land in the deployment bucket -- the trail under the empty
+    /// engagement id, the same "none" convention the event's own implant
+    /// and task ids carry -- hash-chained and read like any engagement's
+    /// through the admin-only deployment trail route. Attributed to the
+    /// acting operator, the payload names the change, the outcome is the
+    /// target account's id.
+    /// </summary>
+    OperatorAccountChanged,
 }

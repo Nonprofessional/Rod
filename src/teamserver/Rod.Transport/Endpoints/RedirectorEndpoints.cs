@@ -70,6 +70,7 @@ public static class RedirectorEndpoints
         MintCredentialRequest body,
         System.Security.Claims.ClaimsPrincipal user,
         IRedirectorFleet fleet,
+        Rod.Audit.IAuditStore audit,
         CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(body.Name))
@@ -87,6 +88,24 @@ public static class RedirectorEndpoints
             body.TtlHours is { } hours ? TimeSpan.FromHours(hours) : null,
             cancellationToken);
 
+        // The fleet credential is deployment-level state: the mint lands in
+        // the deployment bucket (the empty engagement id) like every
+        // account change, attributed to the minting admin. The secret
+        // itself never rides the trail.
+        await audit.AppendAsync(Rod.Audit.AuditEvent.Fact(
+            eventId: Guid.NewGuid(),
+            engagementId: Guid.Empty,
+            operatorId: operatorId.Value.Value,
+            implantId: Guid.Empty,
+            taskId: Guid.Empty,
+            verb: "redirector.credential-minted",
+            kind: Rod.Audit.AuditEventKind.OperatorAccountChanged,
+            payload: $"fleet credential '{minted.Name}' minted (secret shown once, never stored)"
+                + (minted.ExpiresAt is { } expires ? $", expires {expires:O}" : ", no expiry"),
+            output: null,
+            outcome: minted.Id.ToString(),
+            minted.IssuedAt), cancellationToken);
+
         // The secret exists exactly once, here: the response is the only
         // place it is ever readable (the ledger keeps hashes and stamps).
         return Results.Created(
@@ -101,7 +120,9 @@ public static class RedirectorEndpoints
 
     private static async Task<IResult> RevokeCredentialAsync(
         string id,
+        System.Security.Claims.ClaimsPrincipal user,
         IRedirectorFleet fleet,
+        Rod.Audit.IAuditStore audit,
         CancellationToken cancellationToken)
     {
         if (!RedirectorCredentialId.TryParse(id, out var credentialId))
@@ -112,13 +133,27 @@ public static class RedirectorEndpoints
         // that already enrolled changes nothing for its node -- retire the
         // node for that.
         await fleet.RevokeCredentialAsync(credentialId, DateTimeOffset.UtcNow, cancellationToken);
+        await audit.AppendAsync(Rod.Audit.AuditEvent.Fact(
+            eventId: Guid.NewGuid(),
+            engagementId: Guid.Empty,
+            operatorId: user.TryGetOperatorId()?.Value ?? Guid.Empty,
+            implantId: Guid.Empty,
+            taskId: Guid.Empty,
+            verb: "redirector.credential-revoked",
+            kind: Rod.Audit.AuditEventKind.OperatorAccountChanged,
+            payload: $"fleet credential {credentialId} revoked (a node it enrolled keeps running; retire the node for that)",
+            output: null,
+            outcome: credentialId.ToString(),
+            DateTimeOffset.UtcNow), cancellationToken);
         return Results.NoContent();
     }
 
     private static async Task<IResult> RetireNodeAsync(
         string id,
+        System.Security.Claims.ClaimsPrincipal user,
         IRedirectorFleet fleet,
         RedirectorControlHub hub,
+        Rod.Audit.IAuditStore audit,
         CancellationToken cancellationToken)
     {
         if (!RedirectorNodeId.TryParse(id, out var nodeId))
@@ -129,6 +164,18 @@ public static class RedirectorEndpoints
             return Results.NotFound(new Problem($"Redirector node {id} is not enrolled."));
 
         await fleet.RetireAsync(nodeId, DateTimeOffset.UtcNow, cancellationToken);
+        await audit.AppendAsync(Rod.Audit.AuditEvent.Fact(
+            eventId: Guid.NewGuid(),
+            engagementId: Guid.Empty,
+            operatorId: user.TryGetOperatorId()?.Value ?? Guid.Empty,
+            implantId: Guid.Empty,
+            taskId: Guid.Empty,
+            verb: "redirector.node-retired",
+            kind: Rod.Audit.AuditEventKind.OperatorAccountChanged,
+            payload: $"retired node '{node.Name}' (its next hello is refused by name)",
+            output: null,
+            outcome: nodeId.ToString(),
+            DateTimeOffset.UtcNow), cancellationToken);
         // The live session goes with the retirement: the node's next hello
         // is refused by name, and nothing pushes rules to it in between.
         await hub.CloseAsync(nodeId, cancellationToken);

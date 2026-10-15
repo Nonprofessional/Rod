@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json;
 using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.Configuration;
@@ -64,6 +65,43 @@ public class OperatorAuthTests
 
     private static Task<HttpResponseMessage> LoginAsync(HttpClient client, string handle, string password)
         => client.PostAsJsonAsync("/operators/login", new LoginRequest(handle, password));
+
+    [Fact]
+    public async Task AccountAndCredentialChanges_LandInTheDeploymentTrail()
+    {
+        // The deployment bucket: account and credential changes bind to no
+        // engagement, but they are the highest-privilege actions the
+        // platform takes -- "who created that account" must be answerable
+        // from a record, not from the server log. The trail under the empty
+        // engagement id carries them, admin-only to read.
+        var (client, host) = CreateClient();
+        using (host)
+        {
+            await LoginAsync(client, Handle, Password);
+
+            var created = await client.PostAsJsonAsync("/operators",
+                new { handle = "newcomer", password = "first-p@ss!" });
+            created.EnsureSuccessStatusCode();
+
+            var createdBody = await created.Content.ReadFromJsonAsync<JsonElement>();
+            var newId = createdBody.GetProperty("id").GetString();
+            var disabled = await client.PostAsync($"/operators/{newId}:disable", null);
+            disabled.EnsureSuccessStatusCode();
+
+            var minted = await client.PostAsync($"/operators/{newId}/tokens", null);
+            minted.EnsureSuccessStatusCode();
+
+            var trail = await client.GetFromJsonAsync<JsonElement>("/audit/deployment?limit=50");
+            var items = trail.GetProperty("items");
+            var verbs = items.EnumerateArray()
+                .Where(e => e.GetProperty("verb").GetString()!.StartsWith("operator."))
+                .Select(e => e.GetProperty("verb").GetString())
+                .ToArray();
+            Assert.Contains("operator.created", verbs);
+            Assert.Contains("operator.disabled", verbs);
+            Assert.Contains("operator.token-minted", verbs);
+        }
+    }
 
     [Fact]
     public async Task Login_WithCorrectPassword_ReturnsOperator()

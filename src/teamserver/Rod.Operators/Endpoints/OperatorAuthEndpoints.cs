@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Logging;
+using Rod.Audit;
 using Rod.CoreState.Operators;
 using Rod.Operators.Auth;
 
@@ -70,6 +71,35 @@ public static class OperatorAuthEndpoints
     private static bool MayActOn(ClaimsPrincipal user, OperatorId target)
         => user.TryGetOperatorId() == target || user.IsDeploymentAdmin();
 
+    // The deployment bucket: account and credential changes are global
+    // state with no engagement to live in, and the trail is the only
+    // attributed record the platform keeps -- the server log is not one.
+    // Guid.Empty is the bucket's id (the same "none" convention the event's
+    // own implant and task ids already use), its chain verified and read
+    // like any engagement's, through the admin-only deployment trail route.
+    private static async Task RecordAccountChangeAsync(
+        IAuditStore audit,
+        OperatorId actor,
+        OperatorId target,
+        string verb,
+        string payload,
+        TimeProvider clock,
+        CancellationToken cancellationToken)
+        => await audit.AppendAsync(
+            AuditEvent.Fact(
+                eventId: Guid.NewGuid(),
+                engagementId: Guid.Empty,
+                operatorId: actor.Value,
+                implantId: Guid.Empty,
+                taskId: Guid.Empty,
+                verb: verb,
+                kind: AuditEventKind.OperatorAccountChanged,
+                payload: payload,
+                output: null,
+                outcome: target.Value.ToString(),
+                at: clock.GetUtcNow()),
+            cancellationToken);
+
     // Provisioning (architecture.md Sec 3 and Sec 9): the management path the
     // bootstrap seed stood in for, and the admin's alone -- every account it
     // creates is a member, the role fixed at registration. Creating an
@@ -81,9 +111,11 @@ public static class OperatorAuthEndpoints
     // engagement trail.
     private static async Task<IResult> CreateAsync(
         CreateOperatorRequest? body,
+        ClaimsPrincipal user,
         IOperatorRepository operators,
         IOperatorCredentialStore credentials,
         IPasswordHasher<Operator> hasher,
+        IAuditStore audit,
         TimeProvider clock,
         CancellationToken cancellationToken)
     {
@@ -106,6 +138,8 @@ public static class OperatorAuthEndpoints
         await operators.SaveAsync(created, cancellationToken);
         await credentials.SetHashAsync(
             created.Id, hasher.HashPassword(created, body.Password), cancellationToken);
+        await RecordAccountChangeAsync(audit, user.TryGetOperatorId()!.Value, created.Id,
+            "operator.created", $"handle='{created.Handle}' role=member", clock, cancellationToken);
         return Results.Created($"/operators/{created.Id}", ToAccount(created, hasCredential: true));
     }
 
@@ -145,6 +179,8 @@ public static class OperatorAuthEndpoints
         IOperatorRepository operators,
         IOperatorCredentialStore credentials,
         IPasswordHasher<Operator> hasher,
+        IAuditStore audit,
+        TimeProvider clock,
         CancellationToken cancellationToken)
     {
         if (!Guid.TryParse(operatorId, out var operatorValue))
@@ -160,6 +196,8 @@ public static class OperatorAuthEndpoints
             return Results.NotFound(new Problem($"Operator {operatorId} does not exist."));
 
         await credentials.SetHashAsync(target.Id, hasher.HashPassword(target, body.Password), cancellationToken);
+        await RecordAccountChangeAsync(audit, user.TryGetOperatorId()!.Value, target.Id,
+            "operator.credential-set", $"password set on '{target.Handle}' (a new credential generation: its live sessions end)", clock, cancellationToken);
         return Results.Ok(new { operatorId = target.Id.ToString() });
     }
 
@@ -181,6 +219,8 @@ public static class OperatorAuthEndpoints
         string operatorId,
         ClaimsPrincipal user,
         IOperatorRepository operators,
+        IAuditStore audit,
+        TimeProvider clock,
         CancellationToken cancellationToken)
     {
         if (!Guid.TryParse(operatorId, out var operatorValue))
@@ -214,6 +254,8 @@ public static class OperatorAuthEndpoints
 
         var updated = target.WithDisabled(true);
         await operators.SaveAsync(updated, cancellationToken);
+        await RecordAccountChangeAsync(audit, user.TryGetOperatorId()!.Value, updated.Id,
+            "operator.disabled", $"disabled '{updated.Handle}' (authenticates nowhere until enabled)", clock, cancellationToken);
         return Results.Ok(new { operatorId = updated.Id.ToString(), disabled = true });
     }
 
@@ -226,6 +268,8 @@ public static class OperatorAuthEndpoints
         string operatorId,
         ClaimsPrincipal user,
         IOperatorRepository operators,
+        IAuditStore audit,
+        TimeProvider clock,
         CancellationToken cancellationToken)
     {
         if (!Guid.TryParse(operatorId, out var operatorValue))
@@ -242,6 +286,8 @@ public static class OperatorAuthEndpoints
 
         var updated = target.WithDisabled(false);
         await operators.SaveAsync(updated, cancellationToken);
+        await RecordAccountChangeAsync(audit, user.TryGetOperatorId()!.Value, updated.Id,
+            "operator.enabled", $"enabled '{updated.Handle}' (its memberships waited through the disable)", clock, cancellationToken);
         return Results.Ok(new { operatorId = updated.Id.ToString(), disabled = false });
     }
 
@@ -259,6 +305,7 @@ public static class OperatorAuthEndpoints
         ClaimsPrincipal user,
         IOperatorRepository operators,
         IOperatorApiTokenStore tokens,
+        IAuditStore audit,
         TimeProvider clock,
         CancellationToken cancellationToken)
     {
@@ -272,6 +319,8 @@ public static class OperatorAuthEndpoints
             return Results.NotFound(new Problem($"Operator {operatorId} does not exist."));
 
         var minted = await tokens.MintAsync(target.Id, clock.GetUtcNow(), cancellationToken);
+        await RecordAccountChangeAsync(audit, user.TryGetOperatorId()!.Value, target.Id,
+            "operator.token-minted", $"API token minted for '{target.Handle}' (the secret is shown once, never stored)", clock, cancellationToken);
         return Results.Ok(new MintedTokenResponse(
             minted.TokenId.ToString(),
             minted.Secret,
@@ -304,6 +353,8 @@ public static class OperatorAuthEndpoints
         ClaimsPrincipal user,
         IOperatorRepository operators,
         IOperatorApiTokenStore tokens,
+        IAuditStore audit,
+        TimeProvider clock,
         CancellationToken cancellationToken)
     {
         if (!Guid.TryParse(operatorId, out var operatorValue))
@@ -321,6 +372,8 @@ public static class OperatorAuthEndpoints
         // revocation. The next request presenting it fails -- the digest is
         // read fresh on every attempt.
         await tokens.RevokeAsync(target.Id, new OperatorApiTokenId(tokenValue), cancellationToken);
+        await RecordAccountChangeAsync(audit, user.TryGetOperatorId()!.Value, target.Id,
+            "operator.token-revoked", $"API token {tokenValue} revoked for '{target.Handle}'", clock, cancellationToken);
         return Results.Ok(new { operatorId = target.Id.ToString(), tokenId });
     }
 
@@ -338,6 +391,8 @@ public static class OperatorAuthEndpoints
         ClaimsPrincipal user,
         IOperatorRepository operators,
         IOperatorCredentialStore credentials,
+        IAuditStore audit,
+        TimeProvider clock,
         CancellationToken cancellationToken)
     {
         if (!Guid.TryParse(operatorId, out var operatorValue))
@@ -350,6 +405,8 @@ public static class OperatorAuthEndpoints
             return Results.NotFound(new Problem($"Operator {operatorId} does not exist."));
 
         await credentials.RevokeAsync(target.Id, cancellationToken);
+        await RecordAccountChangeAsync(audit, user.TryGetOperatorId()!.Value, target.Id,
+            "operator.credential-revoked", $"credential revoked on '{target.Handle}' (next login fails; live sessions end)", clock, cancellationToken);
         return Results.Ok(new { operatorId = target.Id.ToString() });
     }
 

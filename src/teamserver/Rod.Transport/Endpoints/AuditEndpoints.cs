@@ -26,7 +26,46 @@ public static class AuditEndpoints
             .MapGroup("/engagements/{engagementId}/audit")
             .RequireAuthorization().AddEndpointFilter(new EngagementAccessFilter(EngagementAccessRequirement.Read));
         group.MapGet("/", ListAsync).WithName(nameof(ListAsync));
+
+        // The deployment bucket's trail (Sec 9): the account and fleet
+        // changes that bind to no engagement, recorded under the empty
+        // engagement id. The admin's alone to read -- it is the management
+        // history of the whole deployment.
+        endpoints.MapGet("/audit/deployment", DeploymentAsync)
+            .RequireAuthorization(policy => policy.RequireClaim(
+                OperatorClaims.DeploymentRoleClaimType, DeploymentRoles.AdminName))
+            .WithName(nameof(DeploymentAsync));
         return endpoints;
+    }
+
+    private static async Task<IResult> DeploymentAsync(
+        int? limit,
+        string? cursor,
+        IAuditStore audit,
+        IOperatorRepository operators,
+        CancellationToken cancellationToken)
+    {
+        if (!ListPaging.TryBind(limit, cursor, c => TimestampIdCursor.TryDecode(c, out _, out _),
+                out var boundLimit, out var boundCursor, out var pagingError))
+        {
+            return Results.BadRequest(new Problem(pagingError));
+        }
+
+        // The bucket pages like an engagement trail: newest window first
+        // across pages, oldest first within a page.
+        var page = await audit.ListPageAsync(Guid.Empty, boundLimit, boundCursor, cancellationToken);
+
+        var handles = new Dictionary<Guid, string>();
+        foreach (var id in page.Items.Select(e => e.OperatorId).Where(id => id != Guid.Empty).Distinct())
+        {
+            var op = await operators.FindAsync(new OperatorId(id), cancellationToken);
+            handles[id] = op?.Handle ?? id.ToString();
+        }
+
+        var body = new AuditListResponse(
+            page.Items.Select(e => AuditEventEntry.Of(e, handles.GetValueOrDefault(e.OperatorId))).ToArray(),
+            page.NextCursor);
+        return Results.Ok(body);
     }
 
     private static async Task<IResult> ListAsync(
