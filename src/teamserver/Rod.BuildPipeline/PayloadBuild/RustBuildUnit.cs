@@ -65,6 +65,21 @@ public sealed class RustBuildUnit : IBuildUnit, IBuildUnitEnvironment
     // carry it in their names. The carrier manifest's minSdkVersion agrees.
     private const int AndroidApiLevel = 24;
 
+    // The ceiling every spawned toolchain process runs under. A hung cargo
+    // (a network fetch stalled mid-restore is the plausible shape) must not
+    // pin the build queue forever: past the ceiling the tree is killed and
+    // the build fails like any other toolchain fault. An environment
+    // variable overrides the default for slow build hosts; zero disables.
+    private static readonly TimeSpan ProcessTimeout = ResolveProcessTimeout();
+
+    private static TimeSpan ResolveProcessTimeout()
+    {
+        var raw = Environment.GetEnvironmentVariable("ROD_BUILD_TIMEOUT_MINUTES");
+        if (!int.TryParse(raw, out var minutes))
+            return TimeSpan.FromMinutes(20);
+        return minutes <= 0 ? Timeout.InfiniteTimeSpan : TimeSpan.FromMinutes(minutes);
+    }
+
     private readonly string _rustSourceDir;
     private readonly string _cargoBinary;
     private readonly string? _sharedTargetDir;
@@ -1103,9 +1118,22 @@ public sealed class RustBuildUnit : IBuildUnit, IBuildUnitEnvironment
             throw new BuildUnitFailureException($"Failed to start cargo ('{start.FileName}').");
         var stdout = process.StandardOutput.ReadToEndAsync(cancellationToken);
         var stderr = process.StandardError.ReadToEndAsync(cancellationToken);
+        using var bounded = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        if (ProcessTimeout != Timeout.InfiniteTimeSpan)
+            bounded.CancelAfter(ProcessTimeout);
         try
         {
-            await process.WaitForExitAsync(cancellationToken);
+            await process.WaitForExitAsync(bounded.Token);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            // The build's own ceiling, not a caller shutdown: the process
+            // tree is killed and the build reports a toolchain fault the
+            // queue can move past.
+            try { process.Kill(entireProcessTree: true); } catch { }
+            throw new BuildUnitFailureException(
+                $"'{start.FileName}' did not finish within {ProcessTimeout.TotalMinutes:0} minutes; "
+                + "the process tree was killed. Set ROD_BUILD_TIMEOUT_MINUTES on a slow build host.");
         }
         catch (OperationCanceledException)
         {
@@ -1113,6 +1141,46 @@ public sealed class RustBuildUnit : IBuildUnit, IBuildUnitEnvironment
             throw;
         }
         return (process.ExitCode, await stdout, await stderr);
+    }
+
+    /// <summary>
+    /// Removes work directories earlier builds left behind -- the crash,
+    /// OOM-kill, or host-loss shapes the per-build cleanup in each
+    /// <c>finally</c> cannot cover. Only directories idle past the sweep
+    /// threshold go: a build in flight keeps writing under its tree, and an
+    /// hour of silence is not a live cargo. Best-effort by design; a locked
+    /// file is next boot's sweep, not a startup failure.
+    /// </summary>
+    public static void SweepAbandonedWorkDirectories()
+    {
+        var threshold = DateTimeOffset.UtcNow - TimeSpan.FromHours(1);
+        foreach (var prefix in (string[])["rod-rust-build-", "rod-apk-"])
+        {
+            try
+            {
+                var root = new DirectoryInfo(Path.GetTempPath());
+                foreach (var dir in root.EnumerateDirectories(prefix + "*"))
+                {
+                    try
+                    {
+                        if (dir.LastWriteTimeUtc < threshold)
+                            dir.Delete(recursive: true);
+                    }
+                    catch (IOException)
+                    {
+                    }
+                    catch (UnauthorizedAccessException)
+                    {
+                    }
+                }
+            }
+            catch (IOException)
+            {
+            }
+            catch (UnauthorizedAccessException)
+            {
+            }
+        }
     }
 
     private static string ResolveDefaultRustSourceDir()

@@ -55,6 +55,20 @@ public sealed class PayloadBuildJobService : IHostedService
 
     public Task StartAsync(CancellationToken cancellationToken)
     {
+        // The boot sweep for work directories earlier builds could not clean
+        // (a crash, an OOM kill, a lost host): the per-build cleanup in each
+        // finally cannot cover those, and a hermetic target tree is hundreds
+        // of megabytes per abandoned build. Best-effort; a locked file is
+        // next boot's sweep.
+        try
+        {
+            RustBuildUnit.SweepAbandonedWorkDirectories();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "The startup sweep of abandoned build work directories failed.");
+        }
+
         _loop ??= Task.Run(() => RunAsync(_stopping.Token));
         return Task.CompletedTask;
     }

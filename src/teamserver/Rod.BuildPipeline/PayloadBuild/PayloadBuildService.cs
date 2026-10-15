@@ -27,6 +27,20 @@ public sealed class PayloadBuildService
     private readonly TimeProvider _clock;
     private readonly PayloadTransformChain _transforms;
 
+    // The ceiling on builds in flight. The background job queue is serial by
+    // design, but the synchronous endpoint runs whatever arrives: N
+    // concurrent requests would otherwise be N full tree copies and N cargo
+    // processes. Past the gate a request waits its turn instead of exhausting
+    // the host. An environment variable overrides the default; one keeps the
+    // everything-serial shape.
+    private static readonly SemaphoreSlim BuildGate = new(ResolveMaxConcurrentBuilds());
+
+    private static int ResolveMaxConcurrentBuilds()
+        => int.TryParse(Environment.GetEnvironmentVariable("ROD_BUILD_MAX_CONCURRENCY"), out var limit)
+            && limit >= 1
+            ? limit
+            : 2;
+
     public PayloadBuildService(IBuildUnitRegistry buildUnits, TimeProvider clock)
         : this(buildUnits, clock, PayloadTransformChain.Empty)
     {
@@ -64,6 +78,24 @@ public sealed class PayloadBuildService
             ?? throw new InvalidOperationException(
                 $"No build unit registered for language {request.Language}.");
 
+        // One gate for both callers (the serial job queue and the synchronous
+        // endpoint), so the host never runs an unbounded set of toolchains.
+        await BuildGate.WaitAsync(cancellationToken);
+        try
+        {
+            return await BuildUngatedAsync(unit, request, cancellationToken);
+        }
+        finally
+        {
+            BuildGate.Release();
+        }
+    }
+
+    private async Task<BuildArtifact> BuildUngatedAsync(
+        IBuildUnit unit,
+        BuildRequest request,
+        CancellationToken cancellationToken)
+    {
         var now = _clock.GetUtcNow();
 
         var @params = new BuildParams(
