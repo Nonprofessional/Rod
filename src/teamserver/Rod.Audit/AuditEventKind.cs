@@ -636,4 +636,17 @@ public enum AuditEventKind
     /// derived state, not a separate fact.
     /// </summary>
     ListenerFrontChanged,
+
+    /// <summary>
+    /// An operator changed the listener itself (architecture.md Sec 8):
+    /// created one, deleted one, or repointed its public endpoint -- the
+    /// burn-handling move that severs a compromised redirector without
+    /// touching the backend. The payload names the listener, its transport,
+    /// and the endpoints involved (the repoint carries old to new); the
+    /// outcome is the listener id, and the verb names the change
+    /// (listener.created / listener.deleted / listener.repointed).
+    /// Attributed to the acting operator, scoped to the listener's
+    /// engagement -- a deleted listener's trail must outlive the listener.
+    /// </summary>
+    ListenerChanged,
 }

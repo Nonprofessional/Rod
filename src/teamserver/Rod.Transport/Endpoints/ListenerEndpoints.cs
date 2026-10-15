@@ -336,8 +336,10 @@ public static class ListenerEndpoints
     private static async Task<IResult> CreateListenerAsync(
         string engagementId,
         CreateListenerRequest body,
+        ClaimsPrincipal user,
         ListenerManager manager,
         IEngagementRepository engagements,
+        Audit.IAuditStore audit,
         CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(body.Name))
@@ -451,6 +453,28 @@ public static class ListenerEndpoints
                     new EngagementId(engagementValue), trust),
                 cancellationToken);
 
+            // The lifecycle fact the front changes already write (Sec 8):
+            // what came onto the wire, where it binds, and what implants
+            // dial -- the trail must outlive the listener it names.
+            var operatorId = user.TryGetOperatorId();
+            if (operatorId is not null)
+            {
+                await audit.AppendAsync(
+                    Audit.AuditEvent.Fact(
+                        eventId: Guid.NewGuid(),
+                        engagementId: engagementValue,
+                        operatorId: operatorId.Value.Value,
+                        implantId: Guid.Empty,
+                        taskId: Guid.Empty,
+                        verb: "listener.created",
+                        kind: Audit.AuditEventKind.ListenerChanged,
+                        payload: $"'{listener.Name}' transport={listener.Transport} bind={listener.BindAddress} public={listener.PublicEndpoint} trust={trust}",
+                        output: null,
+                        outcome: listener.Id.ToString(),
+                        listener.CreatedAt),
+                    cancellationToken);
+            }
+
             return Results.Created($"/engagements/{engagementId}/listeners/{listener.Id}", Response.Of(listener));
         }
         catch (ArgumentException ex)
@@ -475,9 +499,11 @@ public static class ListenerEndpoints
         string engagementId,
         string id,
         bool? force,
+        ClaimsPrincipal user,
         ListenerManager manager,
         IListenerRegistry listeners,
         IImplantRepository implants,
+        Audit.IAuditStore audit,
         CancellationToken cancellationToken)
     {
         var (error, engagementIdValue, listenerId) = Resolve(engagementId, id);
@@ -507,6 +533,29 @@ public static class ListenerEndpoints
         }
 
         await manager.RemoveAsync(listenerId, cancellationToken);
+
+        // The trail outlives the listener: the deletion names what went
+        // away and whether the operator forced it past the live-implant
+        // guard.
+        var operatorId = user.TryGetOperatorId();
+        if (operatorId is not null)
+        {
+            await audit.AppendAsync(
+                Audit.AuditEvent.Fact(
+                    eventId: Guid.NewGuid(),
+                    engagementId: engagementIdValue,
+                    operatorId: operatorId.Value.Value,
+                    implantId: Guid.Empty,
+                    taskId: Guid.Empty,
+                    verb: "listener.deleted",
+                    kind: Audit.AuditEventKind.ListenerChanged,
+                    payload: $"'{listener!.Name}' transport={listener.Transport} bind={listener.BindAddress} public={listener.PublicEndpoint} forced={force is true}",
+                    output: null,
+                    outcome: listener.Id.ToString(),
+                    DateTimeOffset.UtcNow),
+                cancellationToken);
+        }
+
         return Results.NoContent();
     }
 
@@ -535,8 +584,10 @@ public static class ListenerEndpoints
         string engagementId,
         string id,
         RepointListenerRequest body,
+        ClaimsPrincipal user,
         IListenerRegistry listeners,
         IListenerStore definitions,
+        Audit.IAuditStore audit,
         CancellationToken cancellationToken)
     {
         var (error, engagementIdValue, listenerId) = Resolve(engagementId, id);
@@ -573,7 +624,10 @@ public static class ListenerEndpoints
         // without touching the bound socket (architecture.md Sec 7/8). The
         // bind address stays put, so a live listener keeps serving; the registry's
         // public-endpoint lookup now resolves the new endpoint and no longer
-        // resolves the old one (a burned redirector is severed).
+        // resolves the old one (a burned redirector is severed). The old
+        // endpoint is captured before the swap -- the registry hands back
+        // the same mutable entity the repoint rewrites.
+        var severedEndpoint = existing.PublicEndpoint;
         var listener = await listeners.RepointAsync(listenerId, endpoint, cancellationToken);
         if (listener is null)
             return Results.NotFound(new Problem("Listener does not exist in this engagement."));
@@ -593,6 +647,28 @@ public static class ListenerEndpoints
                 listener.TrustPosture,
                 listener.Fronts),
             cancellationToken);
+
+        // The burn-handling move is the one fact an engagement review most
+        // needs placed in time: which endpoint was severed, for which
+        // listener, by whom.
+        var operatorId = user.TryGetOperatorId();
+        if (operatorId is not null)
+        {
+            await audit.AppendAsync(
+                Audit.AuditEvent.Fact(
+                    eventId: Guid.NewGuid(),
+                    engagementId: engagementIdValue,
+                    operatorId: operatorId.Value.Value,
+                    implantId: Guid.Empty,
+                    taskId: Guid.Empty,
+                    verb: "listener.repointed",
+                    kind: Audit.AuditEventKind.ListenerChanged,
+                    payload: $"'{listener.Name}' public {severedEndpoint} -> {listener.PublicEndpoint}",
+                    output: null,
+                    outcome: listener.Id.ToString(),
+                    listener.RepointedAt ?? DateTimeOffset.UtcNow),
+                cancellationToken);
+        }
 
         return Results.Ok(Response.Of(listener));
     }

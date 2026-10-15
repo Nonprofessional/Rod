@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using Microsoft.EntityFrameworkCore;
 using Rod.Audit;
 
@@ -36,6 +37,12 @@ namespace Rod.Persistence.Stores;
 internal sealed class PostgresAuditStore : IAuditStore
 {
     private readonly IDbContextFactory<RodPersistenceDbContext> _factory;
+
+    // Engagements whose full trail has verified once, so the paged reads can
+    // refuse a tampered trail without re-walking it per page. A full read
+    // (ListAsync) re-verifies every time; appends extend the chain under the
+    // advisory lock and cannot break what already verified.
+    private readonly ConcurrentDictionary<Guid, bool> _chainVerified = new();
 
     public PostgresAuditStore(IDbContextFactory<RodPersistenceDbContext> factory)
         => _factory = factory;
@@ -114,11 +121,23 @@ internal sealed class PostgresAuditStore : IAuditStore
     public async Task<IReadOnlyList<AuditEvent>> ListAsync(Guid engagementId, CancellationToken cancellationToken = default)
     {
         await using var db = await _factory.CreateDbContextAsync(cancellationToken);
-        return await db.AuditEvents
+        var trail = await db.AuditEvents
             .AsNoTracking()
             .Where(e => e.EngagementId == engagementId)
             .OrderBy(e => EF.Property<long>(e, AppendSequenceShadow))
             .ToArrayAsync(cancellationToken);
+
+        // The full read walks the whole trail anyway, so it verifies the
+        // chain on the way out: the evidence deliverable must never
+        // silently present tampered records as intact, the same refusal
+        // the file store makes on recovery.
+        var verified = AuditChain.VerifyTrail(trail) is null;
+        _chainVerified[engagementId] = verified;
+        if (!verified)
+            throw new InvalidOperationException(
+                $"Audit chain verification failed for engagement {engagementId}; the trail is refused.");
+
+        return trail;
     }
 
     public async Task<AuditPage> ListPageAsync(
@@ -127,6 +146,11 @@ internal sealed class PostgresAuditStore : IAuditStore
         string? cursor,
         CancellationToken cancellationToken = default)
     {
+        // Same refusal as ListAsync, paged: a tampered trail is never
+        // served as evidence. The first page for an engagement walks the
+        // full chain once; later pages read the cached verdict.
+        await EnsureChainVerifiedAsync(engagementId, cancellationToken);
+
         await using var db = await _factory.CreateDbContextAsync(cancellationToken);
 
         // The paged view keys on (At, EventId) -- the same key the in-memory and
@@ -160,6 +184,34 @@ internal sealed class PostgresAuditStore : IAuditStore
     // The shadow property name on AuditEvent (see AuditEventConfiguration). Kept
     // here as a private constant so the queries reference one symbol.
     private const string AppendSequenceShadow = "AppendSequence";
+
+    // Walks the engagement's full chain once and caches the verdict for the
+    // paged reads. A verified trail stays verified for this process: appends
+    // extend it under the advisory lock, so only an out-of-process rewrite
+    // could change the answer, and the next full read catches that.
+    private async Task EnsureChainVerifiedAsync(Guid engagementId, CancellationToken cancellationToken)
+    {
+        if (_chainVerified.TryGetValue(engagementId, out var verified))
+        {
+            if (!verified)
+                throw new InvalidOperationException(
+                    $"Audit chain verification failed for engagement {engagementId}; the trail is refused.");
+            return;
+        }
+
+        await using var db = await _factory.CreateDbContextAsync(cancellationToken);
+        var trail = await db.AuditEvents
+            .AsNoTracking()
+            .Where(e => e.EngagementId == engagementId)
+            .OrderBy(e => EF.Property<long>(e, AppendSequenceShadow))
+            .ToArrayAsync(cancellationToken);
+
+        verified = AuditChain.VerifyTrail(trail) is null;
+        _chainVerified[engagementId] = verified;
+        if (!verified)
+            throw new InvalidOperationException(
+                $"Audit chain verification failed for engagement {engagementId}; the trail is refused.");
+    }
 
     // A stable int4 key for the advisory lock, derived from the engagement id.
     // GetHashCode is not stable across processes/architectures, so hash the

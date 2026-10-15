@@ -185,6 +185,46 @@ public class ListenerTests
         Assert.StartsWith("127.0.0.1:", listener.BindAddress);
     }
 
+    [Fact]
+    public async Task ListenerLifecycle_LandsInTheEngagementTrail()
+    {
+        // Create, repoint, and delete each produce their ListenerChanged
+        // fact: the trail must outlive the listener it names, and the
+        // burn-handling repoint must be placeable in time by an engagement
+        // review even after the listener itself is gone.
+        await using var env = await TestEnv.StartAsync(new ListenerConfig(
+            Name: "operator-http",
+            Transport: "http",
+            BindAddress: $"127.0.0.1:{TestSupport.GetFreeTcpPort()}",
+            PublicEndpoint: "http://localhost:5080"));
+
+        await AuthenticatedHost.LoginAsync(env.Http);
+        var engagementId = await CreateEngagementAsync(env.Http);
+        var listener = await CreateListenerAsync(
+            env.Http, engagementId, "audited-1", "http", "http://c2.example.test");
+
+        var repointed = await env.Http.PostAsJsonAsync(
+            $"/engagements/{engagementId}/listeners/{listener.Id}:repoint",
+            new ListenerEndpoints.RepointListenerRequest(PublicEndpoint: "http://c2-2.example.test"));
+        repointed.EnsureSuccessStatusCode();
+
+        var deleted = await env.Http.DeleteAsync(
+            $"/engagements/{engagementId}/listeners/{listener.Id}?force=true");
+        deleted.EnsureSuccessStatusCode();
+
+        var trail = await env.Http.GetFromJsonAsync<AuditEndpoints.AuditListResponse>(
+            $"/engagements/{engagementId}/audit?limit=100");
+        Assert.NotNull(trail);
+        var lifecycle = trail!.Items.Where(e => e.Verb.StartsWith("listener.", StringComparison.Ordinal)).ToArray();
+        Assert.Equal(
+            new[] { "listener.created", "listener.repointed", "listener.deleted" },
+            lifecycle.Select(e => e.Verb).ToArray());
+        Assert.All(lifecycle, e => Assert.Equal(listener.Id.ToString(), e.Outcome));
+        var repoint = Assert.Single(lifecycle, e => e.Verb == "listener.repointed");
+        Assert.Contains("http://c2.example.test", repoint.Payload);
+        Assert.Contains("http://c2-2.example.test", repoint.Payload);
+    }
+
     private static ListenerConfig DefaultHttpListener()
         => new("http-default", "http", $"127.0.0.1:{TestSupport.GetFreeTcpPort()}", "http://localhost");
 
