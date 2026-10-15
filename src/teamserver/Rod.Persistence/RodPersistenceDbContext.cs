@@ -51,6 +51,7 @@ public sealed class RodPersistenceDbContext : DbContext
     internal DbSet<Configurations.StoredRedirectorCredential> RedirectorCredentials => Set<Configurations.StoredRedirectorCredential>();
     public DbSet<AuditEvent> AuditEvents => Set<AuditEvent>();
     public DbSet<Artifact> Artifacts => Set<Artifact>();
+    internal DbSet<StoredPayload> Payloads => Set<StoredPayload>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

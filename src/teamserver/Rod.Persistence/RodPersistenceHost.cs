@@ -67,10 +67,13 @@ public static class RodPersistenceHost
         // Replace the in-memory core-state ports whose durable adapters are
         // implemented. Each adapter is a singleton that resolves the factory and
         // creates a fresh context per call, matching the singleton lifetime of the
-        // application services that consume the ports. All ten core-state and
-        // audit/artifact ports are now Postgres-backed when this extension runs:
-        // operators, operator credentials, operator API tokens, engagements,
-        // implants, sessions, tasks, deploy tokens, audit, and artifacts.
+        // application services that consume the ports. All core-state and
+        // audit/artifact/payload ports are Postgres-backed when this extension
+        // runs: operators, operator credentials, operator API tokens,
+        // engagements, memberships, implants, sessions, tasks, deploy tokens,
+        // listener definitions, launchers, automation rules, webhook
+        // subscriptions, task snippets, campaigns, the redirector fleet,
+        // audit, artifacts, and payloads.
         services.Replace(ServiceDescriptor.Singleton<IOperatorRepository, PostgresOperatorRepository>());
         // The operator password verifier: the in-memory adapter registered by
         // AddRodTransport is replaced by its durable twin so a provisioned
@@ -125,6 +128,11 @@ public static class RodPersistenceHost
         services.Replace(ServiceDescriptor.Singleton<CoreState.Redirectors.IRedirectorFleet, Stores.PostgresRedirectorFleet>());
         services.Replace(ServiceDescriptor.Singleton<IAuditStore, PostgresAuditStore>());
         services.Replace(ServiceDescriptor.Singleton<IArtifactStore, PostgresArtifactStore>());
+        // The built-payload library: the durable twin so a stored artifact,
+        // its loader delivery route, and its sealed-contact key binding
+        // survive a restart -- without it a Postgres deployment kept every
+        // other engagement state but lost the payloads on reboot.
+        services.Replace(ServiceDescriptor.Singleton<IPayloadStore, Stores.PostgresPayloadStore>());
 
         return services;
     }

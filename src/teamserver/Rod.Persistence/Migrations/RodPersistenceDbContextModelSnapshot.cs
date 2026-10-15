@@ -1343,6 +1343,98 @@ namespace Rod.Persistence.Migrations
                     b.ToTable("webhook_subscriptions", (string)null);
                 });
 
+            modelBuilder.Entity("Rod.Persistence.StoredPayload", b =>
+                {
+                    b.Property<Guid>("PayloadId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("payload_id");
+
+                    b.Property<string>("BuildJson")
+                        .HasColumnType("text")
+                        .HasColumnName("build_profile");
+
+                    b.Property<DateTimeOffset>("BuiltAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("built_at");
+
+                    b.Property<string>("Class")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("class");
+
+                    b.Property<byte[]>("Content")
+                        .IsRequired()
+                        .HasColumnType("bytea")
+                        .HasColumnName("content");
+
+                    b.Property<string>("ContentType")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)")
+                        .HasColumnName("content_type");
+
+                    b.Property<Guid?>("DeliversPayloadId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("delivers_payload_id");
+
+                    b.Property<string>("Endpoint")
+                        .HasMaxLength(2048)
+                        .HasColumnType("character varying(2048)")
+                        .HasColumnName("endpoint");
+
+                    b.Property<Guid>("EngagementId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("engagement_id");
+
+                    b.Property<byte[]>("EnvelopeKey")
+                        .HasColumnType("bytea")
+                        .HasColumnName("envelope_key");
+
+                    b.Property<Guid?>("EnvelopeKeyId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("envelope_key_id");
+
+                    b.Property<string>("Fingerprint")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("fingerprint");
+
+                    b.Property<string>("Language")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("language");
+
+                    b.Property<long>("Size")
+                        .HasColumnType("bigint")
+                        .HasColumnName("size");
+
+                    b.Property<string>("Target")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("target");
+
+                    b.Property<Guid?>("TokenId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("token_id");
+
+                    b.HasKey("PayloadId");
+
+                    b.HasIndex("EngagementId")
+                        .HasDatabaseName("ix_payloads_engagement_id");
+
+                    b.HasIndex("EnvelopeKeyId")
+                        .HasDatabaseName("ix_payloads_envelope_key_id");
+
+                    b.HasIndex("TokenId")
+                        .HasDatabaseName("ix_payloads_token_id");
+
+                    b.ToTable("payloads", (string)null);
+                });
+
             modelBuilder.Entity("Rod.Persistence.Configurations.StoredCampaignRecipient", b =>
                 {
                     b.HasOne("Rod.Persistence.Configurations.StoredCampaign", "Campaign")
