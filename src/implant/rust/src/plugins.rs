@@ -987,6 +987,34 @@ mod pe {
         let (export_rva, export_size) = directory(0);
         let (tls_rva, tls_size) = directory(9);
 
+        // Every field the map turns into a pointer or a length is bounds-
+        // checked here, before any allocation: module bytes are operator-
+        // input, and a malformed table must fail the load, never walk off
+        // the image. An absent directory (rva and size both zero) passes;
+        // a present one must sit inside the image.
+        if size_of_image == 0 {
+            return Err(bad("the image declares no size"));
+        }
+        if headers_len == 0 || headers_len > bytes.len() || headers_len > size_of_image as usize {
+            return Err(bad("the headers length sits outside the file or the image"));
+        }
+        if entry_point >= size_of_image as usize {
+            return Err(bad("the entry point runs past the image"));
+        }
+        let inside_image = |rva: u32, size: u32| {
+            (rva == 0 && size == 0)
+                || (rva as usize)
+                    .checked_add(size as usize)
+                    .is_some_and(|end| end <= size_of_image as usize)
+        };
+        if !inside_image(reloc_rva, reloc_size)
+            || !inside_image(import_rva, import_size)
+            || !inside_image(export_rva, export_size)
+            || !inside_image(tls_rva, tls_size)
+        {
+            return Err(bad("a data directory runs past the image"));
+        }
+
         let sections_at = optional + optional_size;
         if sections_at + section_count * 40 > bytes.len() {
             return Err(bad("truncated section table"));
@@ -1096,16 +1124,29 @@ mod pe {
                 let at = (word & 0xfff) as usize;
                 match kind {
                     0 => {} // pad
-                    3 => unsafe {
-                        // HIGHLOW: a 32-bit VA.
-                        let slot = base.add(page_rva + at);
-                        poke_u32(slot, peek_u32(slot).wrapping_add(delta as u32));
-                    },
-                    10 => unsafe {
-                        // DIR64: a 64-bit VA.
-                        let slot = base.add(page_rva + at);
-                        poke_u64(slot, peek_u64(slot).wrapping_add(delta as u64));
-                    },
+                    width @ (3 | 10) => {
+                        // The slot the entry names must land inside the
+                        // image: the table itself is module bytes, so a
+                        // hostile or corrupt entry is refused, not trusted
+                        // to point somewhere loadable.
+                        let slot_width = if width == 3 { 4 } else { 8 };
+                        let Some(slot) = page_rva.checked_add(at) else {
+                            return Err("module.load: malformed relocation table".into());
+                        };
+                        if slot + slot_width > image.size_of_image as usize {
+                            return Err("module.load: a relocation slot runs past the image".into());
+                        }
+                        unsafe {
+                            let slot = base.add(slot);
+                            if width == 3 {
+                                // HIGHLOW: a 32-bit VA.
+                                poke_u32(slot, peek_u32(slot).wrapping_add(delta as u32));
+                            } else {
+                                // DIR64: a 64-bit VA.
+                                poke_u64(slot, peek_u64(slot).wrapping_add(delta as u64));
+                            }
+                        }
+                    }
                     other => {
                         return Err(format!("module.load: unsupported relocation type {other}"))
                     }
@@ -1120,14 +1161,24 @@ mod pe {
         if image.import_rva == 0 && image.import_size == 0 {
             return Ok(());
         }
+        let image_size = image.size_of_image as usize;
         let mut offset = 0usize;
         loop {
+            // The descriptor and both tables it names are module bytes:
+            // each walk step is bounds-checked against the image rather
+            // than trusted to terminate on a null name.
+            if image.import_rva as usize + offset + 20 > image_size {
+                return Err("module.load: the import table runs past the image".into());
+            }
             let descriptor = base.add(image.import_rva as usize + offset);
             let name_rva = unsafe { peek_u32(descriptor.add(12)) };
             if name_rva == 0 {
                 return Ok(());
             }
-            let dll = unsafe { c_string_at(base.add(name_rva as usize)) };
+            if name_rva as usize >= image_size {
+                return Err("module.load: an import name runs past the image".into());
+            }
+            let dll = unsafe { c_string_at(base.add(name_rva as usize), base.add(image_size)) };
             let dll =
                 CString::new(dll).map_err(|_| "module.load: a bad import name".to_string())?;
             let library = unsafe { LoadLibraryA(dll.as_ptr().cast()) };
@@ -1139,6 +1190,11 @@ mod pe {
             let lookup_table = if original != 0 { original } else { first_thunk };
             let mut slot = 0usize;
             loop {
+                if lookup_table + slot * 8 + 8 > image_size
+                    || first_thunk + slot * 8 + 8 > image_size
+                {
+                    return Err("module.load: an import table runs past the image".into());
+                }
                 let value = unsafe { peek_u64(base.add(lookup_table + slot * 8)) };
                 if value == 0 {
                     break;
@@ -1147,6 +1203,9 @@ mod pe {
                     let ordinal = (value & 0xffff) as usize;
                     unsafe { GetProcAddress(library, ordinal as *const u8) }
                 } else {
+                    if value as usize >= image_size {
+                        return Err("module.load: an import hint/name runs past the image".into());
+                    }
                     let name = base.add(value as usize + 2);
                     unsafe { GetProcAddress(library, name) }
                 };
@@ -1181,15 +1240,29 @@ mod pe {
         // each one was fixuped to the mapped base, so they are live
         // pointers here -- reducing them against image_base (or rebasing
         // them) computes an address twice and lands off the image.
+        // They are module bytes all the same: each one must point inside
+        // the mapped image before anything dereferences or copies it.
+        let image_start = base as usize;
+        let image_end = image_start + image.size_of_image as usize;
+        let in_image = |address: usize| address >= image_start && address < image_end;
         let start = unsafe { peek_usize(directory) };
         let end = unsafe { peek_usize(directory.add(width)) };
         let index_address = unsafe { peek_usize(directory.add(2 * width)) } as *mut u8;
         let callbacks = unsafe { peek_usize(directory.add(3 * width)) };
         let zero_fill = unsafe { peek_u32(directory.add(4 * width)) } as usize;
         let template_len = end.saturating_sub(start);
-        let block_len = template_len + zero_fill;
+        let block_len = template_len.saturating_add(zero_fill);
         if block_len == 0 {
             return Ok(());
+        }
+        if template_len > 0 && !(in_image(start) && end >= start && in_image(end)) {
+            return Err("module.load: the TLS template sits outside the image".into());
+        }
+        if !index_address.is_null() && !in_image(index_address as usize) {
+            return Err("module.load: the TLS index variable sits outside the image".into());
+        }
+        if callbacks != 0 && !in_image(callbacks) {
+            return Err("module.load: the TLS callbacks sit outside the image".into());
         }
         let block = unsafe {
             VirtualAlloc(
@@ -1305,11 +1378,14 @@ mod pe {
         Err("module.load: this Windows architecture carries no TLS map".into())
     }
 
-    unsafe fn c_string_at(at: *mut u8) -> Vec<u8> {
+    // Walks a NUL-terminated string with a hard stop at the image end: a
+    // module whose bytes hold no terminator must not walk the walk past the
+    // allocation.
+    unsafe fn c_string_at(at: *mut u8, end: *mut u8) -> Vec<u8> {
         let mut bytes = Vec::new();
         let mut walk = at;
         unsafe {
-            while *walk != 0 {
+            while walk < end && *walk != 0 {
                 bytes.push(*walk);
                 walk = walk.add(1);
             }
@@ -1324,15 +1400,31 @@ mod pe {
         if image.export_rva == 0 || image.export_size == 0 {
             return Err("module.load: the image exports nothing".into());
         }
+        let image_size = image.size_of_image as usize;
         let directory = base.add(image.export_rva as usize);
         let names_count = unsafe { peek_u32(directory.add(24)) } as usize;
         let functions_rva = unsafe { peek_u32(directory.add(28)) } as usize;
         let names_rva = unsafe { peek_u32(directory.add(32)) } as usize;
         let ordinals_rva = unsafe { peek_u32(directory.add(36)) } as usize;
+        // The three arrays the directory names are module bytes: their
+        // extents are bounds-checked before the walk, and each row's own
+        // values (a name RVA, an ordinal) are checked where they are used.
+        if names_rva
+            .checked_add(names_count * 4)
+            .is_none_or(|end| end > image_size)
+            || ordinals_rva
+                .checked_add(names_count * 2)
+                .is_none_or(|end| end > image_size)
+        {
+            return Err("module.load: the export arrays run past the image".into());
+        }
         let mut exports = HashMap::new();
         for index in 0..names_count {
             let name_rva = unsafe { peek_u32(base.add(names_rva + index * 4)) } as usize;
-            let name = unsafe { c_string_at(base.add(name_rva)) };
+            if name_rva >= image_size {
+                continue;
+            }
+            let name = unsafe { c_string_at(base.add(name_rva), base.add(image_size)) };
             let Ok(name) = String::from_utf8(name) else {
                 continue;
             };
@@ -1340,7 +1432,13 @@ mod pe {
                 continue;
             }
             let ordinal = unsafe { peek_u16(base.add(ordinals_rva + index * 2)) } as usize;
-            let function = unsafe { peek_u32(base.add(functions_rva + ordinal * 4)) } as usize;
+            let Some(function) = (functions_rva + ordinal * 4)
+                .checked_add(4)
+                .filter(|end| *end <= image_size)
+            else {
+                continue;
+            };
+            let function = unsafe { peek_u32(base.add(function)) } as usize;
             exports.insert(name, function);
         }
         if exports.is_empty() {
