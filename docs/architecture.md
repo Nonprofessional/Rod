@@ -1645,8 +1645,13 @@ fleet-wide code execution. Security is a first-class concern.
 - **Kill-date enforcement.** Both sides refuse past the baked date, the
   discipline Sec 5.1 defines: the teamserver at handshake, the implant at
   startup and each beacon cycle.
-- **Audit trail.** Every privileged action produces an immutable, hash-chained
-  `AuditEvent`. Tampering breaks the chain (Sec. 11).
+- **Audit trail.** Every engagement-scoped privileged action -- tasking,
+  listener and front lifecycle, automation rules, webhook subscriptions,
+  snippets, membership, ROE changes -- produces an immutable, hash-chained
+  `AuditEvent`, and tampering breaks the chain (Sec. 11). Global state
+  (operator accounts and credentials, deployment-wide settings) has no
+  engagement to live in and is not carried by the trail; its events are the
+  server log's.
 - **Engagement isolation.** Enforced at the teamserver and by engagement binding
   in certificates; redirectors never enforce tenancy.
 - **ROE guardrails.** Each engagement carries a rules-of-engagement profile

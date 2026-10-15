@@ -2,9 +2,9 @@
 
 Open work only. An item leaves this file the moment it ships -- its record
 is the commit history, and the design it followed lives in
-[architecture.md](architecture.md); the designed-but-deferred items (the
-redirector control plane, Sec 8; sealing, Sec 9) stay where they are
-designed. Nothing here is an archive of the done.
+[architecture.md](architecture.md); the designed-but-deferred items stay
+where they are designed (the sections carry their own _(future)_ /
+_(shipped)_ markers). Nothing here is an archive of the done.
 
 Each item names the architecture section it serves and carries a one-line
 acceptance criterion (_AC:_), so "done" stays testable. Follow the
