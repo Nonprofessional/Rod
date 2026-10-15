@@ -22,23 +22,350 @@ import { HelpHint } from '../components/HelpHint'
 import { Icon } from '../components/Icons'
 import { useArmedDelete } from '../useArmedDelete'
 
-// The teamserver's runtime settings -- operator-level, not engagement-level:
-// server-wide knobs an operator adjusts while working. The session-presence
-// pair explains the fleet's offline behavior: how long a silent session holds
-// its Online dot before the sweep closes it, and how often the sweep checks.
-// Changes apply live (the sweeper reads the current values on every pass; no
-// restart) and the server persists them, so they survive the next restart.
+// The settings page, split by who may write what. The account card and the
+// console-behavior card are everyone's: password and API tokens are
+// self-service over the signed-in operator's own account, and the console
+// knobs are this browser's. The two management cards render for the
+// deployment admin alone: the member roster (provisioning, resets, the
+// disable switch) first, then the server-wide runtime settings -- a member's
+// settings page is purely personal, and the server draws the same line the
+// page draws (a member's roster read refuses with 403).
+
+// Up to two leading characters of a handle, for the avatar tile -- the same
+// rule the topbar's identity chip uses.
+function initials(handle: string): string {
+  return handle.replace(/[^a-zA-Z0-9]/g, '').slice(0, 2).toUpperCase() || '?'
+}
+
+export function SettingsView({ operator }: { operator: SessionOperator }) {
+  const isAdmin = operator.role === 'admin'
+  return (
+    <section className="view">
+      <h2>
+        Settings
+        <HelpHint>
+          Your account (password, API tokens), this browser's console behavior, and -- for the
+          deployment admin -- the member roster and the server-wide runtime settings.
+        </HelpHint>
+      </h2>
+      {isAdmin && <MembersCard operator={operator} />}
+      {isAdmin && <RuntimeCard />}
+      <AccountCard operator={operator} />
+      <ConsoleCard />
+    </section>
+  )
+}
+
+// The member roster and its management (the deployment admin's alone): the
+// provisioning form, the account table, and the per-row actions -- password
+// resets, the API-token shelf, and the disable switch. What an account may
+// reach inside engagements arrives separately, as memberships each
+// engagement's owner grants from that engagement's Members panel.
+function MembersCard({ operator }: { operator: SessionOperator }) {
+  const [accounts, setAccounts] = useState<OperatorAccount[]>([])
+  const [error, setError] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [note, setNote] = useState<string | null>(null)
+
+  const [handle, setHandle] = useState('')
+  const [password, setPassword] = useState('')
+
+  // The row whose management sheet is open. Closing it drops any one-time
+  // token secret with it.
+  const [openId, setOpenId] = useState<string | null>(null)
+
+  const refresh = useCallback(async () => {
+    setBusy(true)
+    try {
+      setAccounts(await listOperators())
+      setError(null)
+    } catch (e) {
+      setError(String(e))
+    } finally {
+      setBusy(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    void refresh()
+  }, [refresh])
+
+  const onCreate = async (event: React.FormEvent) => {
+    event.preventDefault()
+    if (password.length < 8) {
+      setError('The initial password must be at least 8 characters.')
+      return
+    }
+    try {
+      const created = await createOperator({ handle: handle.trim(), password })
+      setNote(`Provisioned '${created.handle}' -- it can log in now with the password you set.`)
+      setError(null)
+      setHandle('')
+      setPassword('')
+      await refresh()
+    } catch (e) {
+      setNote(null)
+      setError(String(e))
+    }
+  }
+
+  // An admin reset on another account states no proof; on the admin's own
+  // row the change is self-service, and self-service proves the current
+  // password (the server enforces both).
+  const onResetPassword = async (account: OperatorAccount) => {
+    const own = account.id === operator.operatorId
+    let current: string | null = null
+    if (own) {
+      current = window.prompt(
+        `Current password for '${account.handle}' (a change on your own account proves the current password).`,
+      )
+      if (current === null) return
+    }
+    const next = window.prompt(
+      `New password for '${account.handle}' (at least 8 characters). ` +
+        'A reset is a new credential generation: every live session of this account ends at its next request.',
+    )
+    if (next === null) return
+    if (next.length < 8) {
+      setError('The new password must be at least 8 characters.')
+      return
+    }
+    try {
+      await setOperatorPassword(account.id, next, current ?? undefined)
+      setNote(
+        `Password replaced for '${account.handle}'. Its live sessions ended` +
+          (own ? ' -- including this one; sign in again with the new password.' : '.'),
+      )
+      setError(null)
+      await refresh()
+    } catch (e) {
+      setNote(null)
+      setError(String(e))
+    }
+  }
+
+  const [armed, armDisable] = useArmedDelete()
+
+  const onDisable = async (account: OperatorAccount) => {
+    try {
+      await disableOperator(account.id)
+      setNote(
+        `'${account.handle}' disabled -- its sessions and tokens refuse at their next use; enabling restores exactly what it had.`,
+      )
+      setError(null)
+      setOpenId(null)
+      await refresh()
+    } catch (e) {
+      setNote(null)
+      setError(String(e))
+    }
+  }
+
+  const onEnable = async (account: OperatorAccount) => {
+    try {
+      await enableOperator(account.id)
+      setNote(`'${account.handle}' enabled -- it can log in again with the memberships it kept.`)
+      setError(null)
+      await refresh()
+    } catch (e) {
+      setNote(null)
+      setError(String(e))
+    }
+  }
+
+  return (
+    <div className="card">
+      <h3>
+        <Icon name="users" />
+        Members
+        <HelpHint>
+          The accounts that can log in. The bootstrap seed is the deployment admin (the '· admin'
+          mark); every account after it is provisioned here and comes up a member. Reach is granted
+          per engagement, from each engagement's Members panel.
+        </HelpHint>
+      </h3>
+
+      <form className="build-form settings-form" onSubmit={onCreate}>
+        <fieldset>
+          <legend>New operator</legend>
+          <label>
+            Handle
+            <input
+              value={handle}
+              onChange={(e) => setHandle(e.target.value)}
+              placeholder="alice"
+              title="The login handle. One account per handle -- a taken handle refuses with a conflict."
+              required
+            />
+          </label>
+          <label>
+            Initial password
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              title="The password the account first logs in with (at least 8 characters). Hand it over out of band; it can be reset from the roster at any time."
+              required
+            />
+          </label>
+          <p className="muted" style={{ gridColumn: '1 / -1', margin: 0 }}>
+            Accounts come up as deployment members -- after one logs in, grant its reach per
+            engagement from that engagement's Members panel.
+          </p>
+        </fieldset>
+        <button className="primary" type="submit" disabled={busy}>
+          Provision
+        </button>
+      </form>
+      {note && <p className="muted">{note}</p>}
+      {error && <p className="error">{error}</p>}
+
+      <div className="inline-form">
+        <button className="ghost" onClick={() => void refresh()} disabled={busy}>
+          <Icon name="refresh" />
+          Refresh
+        </button>
+      </div>
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Handle</th>
+              <th>Created</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {accounts.length === 0 && (
+              <tr>
+                <td colSpan={3}>
+                  <div className="empty">
+                    <Icon name="users" />
+                    The roster did not load -- refresh to try again.
+                  </div>
+                </td>
+              </tr>
+            )}
+            {accounts.map((account) => {
+              const own = account.id === operator.operatorId
+              return (
+                <Fragment key={account.id}>
+                  <tr className={account.disabled ? 'roster-row-disabled' : undefined}>
+                    <td>
+                      <span className="endpoint-cell">
+                        <code>{account.handle}</code>
+                        {own && <span className="muted"> (you)</span>}
+                        {account.role === 'admin' && (
+                          <span
+                            className="muted"
+                            title="The deployment admin: provisions accounts, holds the disable switch, writes the fleet and runtime settings. Seeded at bootstrap; the console only grows members."
+                          >
+                            {' '}
+                            · admin
+                          </span>
+                        )}
+                        {account.disabled && (
+                          <span
+                            className="muted"
+                            title="Switched off: no authentication path accepts this account (login, cookie session, API token) and its sessions ended at their next use. Its memberships wait as they were, so enabling restores exactly what it had."
+                          >
+                            {' '}
+                            · disabled
+                          </span>
+                        )}
+                        {!account.hasCredential && (
+                          <span
+                            className="muted"
+                            title="No password stands behind this account: the credential was revoked, and login refuses until a new one is provisioned."
+                          >
+                            {' '}
+                            · no password
+                          </span>
+                        )}
+                      </span>
+                    </td>
+                    <td title={new Date(account.createdAt).toLocaleString()}>
+                      {new Date(account.createdAt).toLocaleDateString()}
+                    </td>
+                    <td>
+                      <span className="row-actions">
+                        <button
+                          className="ghost sm"
+                          onClick={() => setOpenId(openId === account.id ? null : account.id)}
+                          title="Open this account's management sheet: the API-token shelf."
+                        >
+                          <Icon name="edit" />
+                          {openId === account.id ? 'Close' : 'Manage'}
+                        </button>
+                        <button
+                          className="ghost sm"
+                          onClick={() => void onResetPassword(account)}
+                          title={
+                            own
+                              ? 'Change your own password: states the current password, and the change signs this session out too.'
+                              : "Set a new password for this account. A reset is a new credential generation: the account's live sessions end at their next request."
+                          }
+                        >
+                          Reset password
+                        </button>
+                        {account.disabled ? (
+                          <button
+                            className="sm"
+                            onClick={() => void onEnable(account)}
+                            title="Re-open every authentication path for this account, with the memberships it kept through the disable."
+                          >
+                            Enable
+                          </button>
+                        ) : (
+                          <button
+                            className={`sm danger${armed === account.id ? ' armed' : ''}`}
+                            onClick={() => armDisable(account.id, () => void onDisable(account))}
+                            title={
+                              own
+                                ? 'Switch this account off (two clicks). Disabling yourself ends this session at its next request -- you will need another admin to enable you, so this is usually a mistake.'
+                                : armed === account.id
+                                  ? 'Click again to disable — the button reverts on its own after a few seconds'
+                                  : "Switch this account off (two clicks: the first arms, the second disables). Every authentication path refuses at its next use; enabling restores exactly what it had. The last enabled account or admin can't be disabled."
+                            }
+                          >
+                            {armed === account.id ? 'Confirm' : 'Disable'}
+                          </button>
+                        )}
+                      </span>
+                    </td>
+                  </tr>
+                  {openId === account.id && (
+                    <tr className="roster-detail-row">
+                      <td colSpan={3}>
+                        <div className="roster-detail">
+                          <TokenShelf operatorId={account.id} />
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+// The teamserver's runtime settings -- server-wide knobs the deployment
+// admin adjusts while working. The session-presence pair explains the
+// fleet's offline behavior: how long a silent session holds its Online dot
+// before the sweep closes it, and how often the sweep checks. Changes apply
+// live (the sweeper reads the current values on every pass; no restart) and
+// the server persists them, so they survive the next restart.
 //
 // The bounds mirror the server's validation: threshold 1 minute..24 hours,
 // sweep interval 10 seconds..1 hour. The threshold must stay above any
 // implant's contact interval -- a threshold shorter than the sleep flaps
 // every quiet period to offline -- which is why the minimum is a minute and
 // the help text says so.
-
-export function SettingsView({ operator }: { operator: SessionOperator }) {
-  // The runtime settings are deployment state: every operator reads them,
-  // the deployment admin writes them (the server enforces the same line).
-  const isAdmin = operator.role === 'admin'
+function RuntimeCard() {
   const [threshold, setThreshold] = useState('')
   const [interval, setIntervalValue] = useState('')
   const [saved, setSaved] = useState<string | null>(null)
@@ -122,105 +449,300 @@ export function SettingsView({ operator }: { operator: SessionOperator }) {
   }
 
   return (
-    <section className="view">
-      <h2>
-        Settings
+    <div className="card">
+      <h3>
+        Runtime settings
         <HelpHint>
-          Server-wide runtime settings, this browser's own behavior, and the account roster.
+          Teamserver runtime settings -- server-wide, live on save, remembered across
+          restarts.
         </HelpHint>
-      </h2>
-      <div className="card">
-        <h3>
-          Runtime settings
-          <HelpHint>
-            Teamserver runtime settings -- server-wide, live on save, remembered across
-            restarts.
-          </HelpHint>
-        </h3>
+      </h3>
 
-        <form className="build-form" onSubmit={onSave}>
-          <fieldset>
-            <legend>Session presence</legend>
-            <label>
-              Offline after (min)
-              <input
-                value={threshold}
-                onChange={(e) => setThreshold(e.target.value)}
-                readOnly={!isAdmin}
-                title="How long a session may go silent before the sweep closes it and the implant shows offline. A stream that closes cleanly drops immediately; this is the wait for one that dies silently. Keep it above your implants' contact interval (a shorter threshold flaps every quiet period). 1..1440; default 15."
-              />
-            </label>
-            <label>
-              Sweep every (min)
-              <input
-                value={interval}
-                onChange={(e) => setIntervalValue(e.target.value)}
-                readOnly={!isAdmin}
-                title="How often the staleness check runs. A shorter interval drops vanished implants sooner at the cost of more frequent passes. 0.17..60; default 1."
-              />
-            </label>
-            <p className="muted" style={{ gridColumn: '1 / -1', margin: 0 }}>
-              Why a vanished implant holds its dot: a beacon stream that dies without a clean close
-              keeps its session Active until the sweep closes it -- the Online dot lags reality by at
-              most the threshold, and the fleet's Last seen column always tells the truth in the
-              meantime.
-            </p>
-          </fieldset>
-          {isAdmin ? (
+      <form className="build-form settings-form" onSubmit={onSave}>
+        <fieldset>
+          <legend>Session presence</legend>
+          <label>
+            Offline after (min)
+            <input
+              value={threshold}
+              onChange={(e) => setThreshold(e.target.value)}
+              title="How long a session may go silent before the sweep closes it and the implant shows offline. A stream that closes cleanly drops immediately; this is the wait for one that dies silently. Keep it above your implants' contact interval (a shorter threshold flaps every quiet period). 1..1440; default 15."
+            />
+          </label>
+          <label>
+            Sweep every (min)
+            <input
+              value={interval}
+              onChange={(e) => setIntervalValue(e.target.value)}
+              title="How often the staleness check runs. A shorter interval drops vanished implants sooner at the cost of more frequent passes. 0.17..60; default 1."
+            />
+          </label>
+          <p className="muted" style={{ gridColumn: '1 / -1', margin: 0 }}>
+            A beacon stream that dies without a clean close keeps its Online dot until the sweep
+            closes it -- the dot lags reality by at most the threshold; Last seen always tells the
+            truth meanwhile.
+          </p>
+        </fieldset>
+        <button className="primary" type="submit" disabled={busy}>
+          Save
+        </button>
+      </form>
+      {saved && <p className="muted">{saved}</p>}
+
+      <form className="build-form form-section settings-form" onSubmit={onSaveCache}>
+        <fieldset>
+          <legend>Build cache</legend>
+          <label>
+            Shared cargo target dir
+            <input
+              value={cacheDir}
+              onChange={(e) => setCacheDir(e.target.value)}
+              placeholder="/var/lib/rod/cargo-target"
+              title="The persistent directory payload builds share as their cargo target dir -- the warm compile cache. Dependency artifacts are reused across builds (only the implant crate recompiles), turning a cold cross-compile into a one-time cost; concurrent builds queue on cargo's own lock. Empty = hermetic: a fresh disposable target dir per build, every cold compile pays in full. Must be an absolute path. The boot default is the ROD_RUST_TARGET_DIR environment variable; this setting outranks it and survives restarts."
+            />
+            <span className="field-help">empty = hermetic per-build dirs</span>
+          </label>
+          <p className="muted" style={{ gridColumn: '1 / -1', margin: 0 }}>
+            Where payload builds compile. The System page's build findings read this value; the
+            first build after a change pays the cold compile into the new directory.
+          </p>
+        </fieldset>
+        <button className="primary" type="submit" disabled={cacheBusy}>
+          Save
+        </button>
+      </form>
+      {cacheSaved && <p className="muted">{cacheSaved}</p>}
+      {error && <p className="error">{error}</p>}
+    </div>
+  )
+}
+
+// The signed-in operator's own surface: identity at a glance, the password
+// change (self-service -- the current password is stated and verified, and
+// a change ends this session at its next request), and this account's API
+// tokens. The same card renders for admin and member alike; what differs
+// by role lives in the management cards above.
+function AccountCard({ operator }: { operator: SessionOperator }) {
+  const [current, setCurrent] = useState('')
+  const [next, setNext] = useState('')
+  const [confirm, setConfirm] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [saved, setSaved] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  const onChangePassword = async (event: React.FormEvent) => {
+    event.preventDefault()
+    if (next.length < 8) {
+      setError('The new password must be at least 8 characters.')
+      setSaved(null)
+      return
+    }
+    if (next !== confirm) {
+      setError('The new password and its confirmation differ.')
+      setSaved(null)
+      return
+    }
+    setBusy(true)
+    try {
+      await setOperatorPassword(operator.operatorId, next, current)
+      setSaved(
+        'Password replaced -- this session ends at its next request; sign in again with the new one.',
+      )
+      setError(null)
+      setCurrent('')
+      setNext('')
+      setConfirm('')
+    } catch (e) {
+      setSaved(null)
+      setError(String(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="card">
+      <h3>
+        Account
+        <HelpHint>
+          Your own account: the password change and the API tokens are self-service -- the
+          deployment admin never needs to stand in.
+        </HelpHint>
+      </h3>
+
+      <div className="settings-grid">
+        <div className="settings-col">
+          <div className="account-head">
+            <span className="avatar account-avatar">{initials(operator.handle)}</span>
+            <div>
+              <div className="account-handle">
+                <code>{operator.handle}</code>
+                <span className="muted"> · {operator.role}</span>
+              </div>
+              <div
+                className="muted"
+                title={new Date(operator.createdAt).toLocaleString()}
+                style={{ fontSize: 11 }}
+              >
+                created {new Date(operator.createdAt).toLocaleDateString()}
+              </div>
+            </div>
+          </div>
+
+          <form className="build-form settings-form" onSubmit={onChangePassword}>
+            <fieldset>
+              <legend>Change password</legend>
+              <label>
+                Current password
+                <input
+                  type="password"
+                  value={current}
+                  onChange={(e) => setCurrent(e.target.value)}
+                  title="Self-service proves possession: the current password is verified against the stored hash."
+                  required
+                />
+              </label>
+              <label>
+                New password
+                <input
+                  type="password"
+                  value={next}
+                  onChange={(e) => setNext(e.target.value)}
+                  title="At least 8 characters. A change is a new credential generation: every live session of this account (including this one) ends at its next request."
+                  required
+                />
+              </label>
+              <label>
+                Confirm new password
+                <input
+                  type="password"
+                  value={confirm}
+                  onChange={(e) => setConfirm(e.target.value)}
+                  required
+                />
+              </label>
+            </fieldset>
             <button className="primary" type="submit" disabled={busy}>
-              Save
+              Change password
             </button>
-          ) : (
-            <p className="muted" style={{ margin: 0 }}>
-              Read-only for members — the deployment admin adjusts the runtime settings.
-            </p>
-          )}
-        </form>
-        {saved && <p className="muted">{saved}</p>}
-        {error && <p className="error">{error}</p>}
+          </form>
+          {saved && <p className="muted">{saved}</p>}
+          {error && <p className="error">{error}</p>}
+        </div>
 
-        <form className="build-form form-section" onSubmit={onSaveCache}>
-          <fieldset>
-            <legend>Build cache</legend>
-            <label>
-              Shared cargo target dir
-              <input
-                value={cacheDir}
-                onChange={(e) => setCacheDir(e.target.value)}
-                readOnly={!isAdmin}
-                placeholder="/var/lib/rod/cargo-target"
-                title="The persistent directory payload builds share as their cargo target dir -- the warm compile cache. Dependency artifacts are reused across builds (only the implant crate recompiles), turning a cold cross-compile into a one-time cost; concurrent builds queue on cargo's own lock. Empty = hermetic: a fresh disposable target dir per build, every cold compile pays in full. Must be an absolute path. The boot default is the ROD_RUST_TARGET_DIR environment variable; this setting outranks it and survives restarts."
-              />
-              <span className="field-help">empty = hermetic per-build dirs</span>
-            </label>
-            <p className="muted" style={{ gridColumn: '1 / -1', margin: 0 }}>
-              Where payload builds compile. The System page's build findings read this value; the
-              first build after a change pays the cold compile into the new directory.
-            </p>
-          </fieldset>
-          {isAdmin ? (
-            <button className="primary" type="submit" disabled={cacheBusy}>
-              Save
-            </button>
-          ) : (
-            <p className="muted" style={{ margin: 0 }}>
-              Read-only for members.
-            </p>
-          )}
-        </form>
-        {cacheSaved && <p className="muted">{cacheSaved}</p>}
+        <div className="token-shelf-box">
+          <TokenShelf operatorId={operator.operatorId} />
+        </div>
       </div>
+    </div>
+  )
+}
 
-      <ConsoleCard />
-      <OperatorsCard operator={operator} />
+// One account's API tokens: bearer credentials for the API and the MCP
+// surface, usable wherever the cookie session is not. The one-time secret
+// is shown exactly once, at mint; only the digest is stored afterwards.
+// Revocation bites at the token's next use, and a disabled account's
+// tokens refuse until it is enabled again.
+function TokenShelf({ operatorId }: { operatorId: string }) {
+  const [tokens, setTokens] = useState<OperatorTokenRow[]>([])
+  const [minted, setMinted] = useState<MintedOperatorToken | null>(null)
+  const [secretCopied, setSecretCopied] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const reload = useCallback(async () => {
+    try {
+      setTokens(await listOperatorTokens(operatorId))
+      setError(null)
+    } catch (e) {
+      setError(String(e))
+    }
+  }, [operatorId])
+
+  useEffect(() => {
+    void reload()
+  }, [reload])
+
+  const onMint = async () => {
+    try {
+      setMinted(await mintOperatorToken(operatorId))
+      setSecretCopied(false)
+      setError(null)
+      await reload()
+    } catch (e) {
+      setError(String(e))
+    }
+  }
+
+  const onRevoke = async (tokenId: string) => {
+    try {
+      await revokeOperatorToken(operatorId, tokenId)
+      if (minted?.tokenId === tokenId) setMinted(null)
+      setError(null)
+      await reload()
+    } catch (e) {
+      setError(String(e))
+    }
+  }
+
+  const onCopySecret = async () => {
+    if (!minted) return
+    try {
+      await navigator.clipboard.writeText(minted.token)
+      setSecretCopied(true)
+    } catch {
+      // Clipboard access can be denied; the text stays selectable to copy.
+    }
+  }
+
+  return (
+    <section className="token-shelf">
+      <div className="roster-detail-title">API tokens</div>
+      {minted && (
+        <div className="token-reveal">
+          <code>{minted.token}</code>
+          <button className="ghost sm" onClick={() => void onCopySecret()}>
+            {secretCopied ? 'Copied' : 'Copy'}
+          </button>
+          <span className="muted">shown once -- only the digest is stored from here on</span>
+        </div>
+      )}
+      <div>
+        <button className="sm" onClick={() => void onMint()}>
+          Mint token
+        </button>
+      </div>
+      {tokens.length > 0 ? (
+        <ul className="token-list">
+          {tokens.map((t) => (
+            <li key={t.tokenId}>
+              <code>{t.tokenId.slice(0, 8)}</code>
+              <span className="muted"> minted {new Date(t.createdAt).toLocaleDateString()}</span>
+              <button
+                className="ghost sm"
+                onClick={() => void onRevoke(t.tokenId)}
+                title="Revoke this token: it fails at its next use. Idempotent."
+              >
+                Revoke
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        !error && (
+          <p className="muted" style={{ margin: 0 }}>
+            No tokens minted for this account.
+          </p>
+        )
+      )}
+      {error && <p className="error">{error}</p>}
     </section>
   )
 }
 
 // This browser's own console preferences: presentation state the UI keeps
 // in localStorage, applies on the spot, and never sends to the server --
-// unlike the card above, these follow the operator's browser, not the
-// teamserver.
+// unlike the runtime card above, these follow the operator's browser, not
+// the teamserver.
 function ConsoleCard() {
   const [pollDraft, setPollDraft] = useState(() => String(readPollIntervalSeconds()))
   const [saved, setSaved] = useState<string | null>(null)
@@ -249,7 +771,7 @@ function ConsoleCard() {
           teamserver.
         </HelpHint>
       </h3>
-      <form className="build-form" onSubmit={onSavePoll}>
+      <form className="build-form settings-form" onSubmit={onSavePoll}>
         <fieldset>
           <legend>Refresh cadence</legend>
           <label>
@@ -268,418 +790,6 @@ function ConsoleCard() {
       </form>
       {saved && <p className="muted">{saved}</p>}
       {error && <p className="error">{error}</p>}
-    </div>
-  )
-}
-
-// The account roster, the provisioning form, and the per-account management
-// row. The bootstrap account (Operators:Initial) is the first operator and
-// the deployment admin; every account after it arrives here and comes up a
-// member -- POST /operators registers the handle and its initial password
-// in one step, so the account works the moment the row appears. What an
-// account may reach inside engagements arrives separately, as memberships
-// its owners grant (the engagement's Members panel). Management splits on
-// the roles the server enforces: provisioning and the disable switch are
-// the admin's alone, while password and API tokens are self-service -- each
-// operator's own row always opens its management sheet, whoever else's
-// never does for a member.
-function OperatorsCard({ operator }: { operator: SessionOperator }) {
-  const isAdmin = operator.role === 'admin'
-  const [accounts, setAccounts] = useState<OperatorAccount[]>([])
-  const [error, setError] = useState<string | null>(null)
-  const [busy, setBusy] = useState(false)
-  const [note, setNote] = useState<string | null>(null)
-
-  const [handle, setHandle] = useState('')
-  const [password, setPassword] = useState('')
-
-  // The expanded management row: the account being managed, its token list,
-  // and the one-time secret of the token just minted (the secret lives only
-  // here -- closing the row or minting again drops it).
-  const [openId, setOpenId] = useState<string | null>(null)
-  const [tokens, setTokens] = useState<OperatorTokenRow[]>([])
-  const [minted, setMinted] = useState<MintedOperatorToken | null>(null)
-  const [secretCopied, setSecretCopied] = useState(false)
-
-  const refresh = useCallback(async () => {
-    setBusy(true)
-    try {
-      setAccounts(await listOperators())
-      setError(null)
-    } catch (e) {
-      setError(String(e))
-    } finally {
-      setBusy(false)
-    }
-  }, [])
-
-  useEffect(() => {
-    void refresh()
-  }, [refresh])
-
-  const onCreate = async (event: React.FormEvent) => {
-    event.preventDefault()
-    if (password.length < 8) {
-      setError('The initial password must be at least 8 characters.')
-      return
-    }
-    try {
-      const created = await createOperator({
-        handle: handle.trim(),
-        password,
-      })
-      setNote(`Provisioned '${created.handle}' -- it can log in now with the password you set.`)
-      setError(null)
-      setHandle('')
-      setPassword('')
-      await refresh()
-    } catch (e) {
-      setNote(null)
-      setError(String(e))
-    }
-  }
-
-  const onResetPassword = async (account: OperatorAccount) => {
-    const next = window.prompt(
-      `New password for '${account.handle}' (at least 8 characters). ` +
-        'A reset is a new credential generation: every live session of this account ends at its next request.',
-    )
-    if (next === null) return
-    if (next.length < 8) {
-      setError('The new password must be at least 8 characters.')
-      return
-    }
-    try {
-      await setOperatorPassword(account.id, next)
-      setNote(
-        `Password replaced for '${account.handle}'. Its live sessions ended` +
-          (account.id === operator.operatorId ? ' -- including this one; sign in again with the new password.' : '.'),
-      )
-      setError(null)
-      await refresh()
-    } catch (e) {
-      setNote(null)
-      setError(String(e))
-    }
-  }
-
-  // --- The expanded management row ---------------------------------------
-
-  const reloadTokens = async (operatorId: string) => {
-    try {
-      setTokens(await listOperatorTokens(operatorId))
-    } catch (e) {
-      setError(String(e))
-    }
-  }
-
-  const onManage = async (account: OperatorAccount) => {
-    if (openId === account.id) {
-      setOpenId(null)
-      setMinted(null)
-      return
-    }
-    setOpenId(account.id)
-    setMinted(null)
-    setSecretCopied(false)
-    await reloadTokens(account.id)
-  }
-
-  const onMint = async (account: OperatorAccount) => {
-    try {
-      const secret = await mintOperatorToken(account.id)
-      setMinted(secret)
-      setSecretCopied(false)
-      setError(null)
-      await reloadTokens(account.id)
-    } catch (e) {
-      setError(String(e))
-    }
-  }
-
-  const onRevokeToken = async (account: OperatorAccount, tokenId: string) => {
-    try {
-      await revokeOperatorToken(account.id, tokenId)
-      if (minted?.tokenId === tokenId) setMinted(null)
-      setError(null)
-      await reloadTokens(account.id)
-    } catch (e) {
-      setError(String(e))
-    }
-  }
-
-  const onCopySecret = async () => {
-    if (!minted) return
-    try {
-      await navigator.clipboard.writeText(minted.token)
-      setSecretCopied(true)
-    } catch {
-      // Clipboard access can be denied; the text stays selectable to copy.
-    }
-  }
-
-  const [armed, armDisable] = useArmedDelete()
-
-  const onDisable = async (account: OperatorAccount) => {
-    try {
-      await disableOperator(account.id)
-      setNote(
-        `'${account.handle}' disabled -- its sessions and tokens refuse at their next use; enabling restores exactly what it had.`,
-      )
-      setError(null)
-      setMinted(null)
-      await refresh()
-    } catch (e) {
-      setNote(null)
-      setError(String(e))
-    }
-  }
-
-  const onEnable = async (account: OperatorAccount) => {
-    try {
-      await enableOperator(account.id)
-      setNote(`'${account.handle}' enabled -- it can log in again with the memberships it kept.`)
-      setError(null)
-      await refresh()
-    } catch (e) {
-      setNote(null)
-      setError(String(e))
-    }
-  }
-
-  return (
-    <div className="card">
-      <h3>
-        <Icon name="users" />
-        Operators
-        <HelpHint>
-          The accounts that can log in. The bootstrap seed is the deployment admin (the '· admin'
-          mark); every account after it is provisioned here and comes up a member. Reach is granted
-          per engagement, from each engagement's Members panel. Your own row keeps password and
-          token self-service; the rest of the management is the admin's.
-        </HelpHint>
-      </h3>
-
-      {isAdmin ? (
-        <form className="build-form" onSubmit={onCreate}>
-          <fieldset>
-            <legend>New operator</legend>
-            <label>
-              Handle
-              <input
-                value={handle}
-                onChange={(e) => setHandle(e.target.value)}
-                placeholder="alice"
-                title="The login handle. One account per handle -- a taken handle refuses with a conflict."
-                required
-              />
-            </label>
-            <label>
-              Initial password
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                title="The password the account first logs in with (at least 8 characters). Hand it over out of band; it can be reset from the roster at any time."
-                required
-              />
-            </label>
-            <p className="muted" style={{ gridColumn: '1 / -1', margin: 0 }}>
-              Accounts come up as deployment members -- after one logs in, grant its reach per
-              engagement from that engagement's Members panel.
-            </p>
-          </fieldset>
-          <button className="primary" type="submit" disabled={busy}>
-            Provision
-          </button>
-        </form>
-      ) : (
-        <p className="muted">
-          Accounts are provisioned by the deployment admin; reach is granted per engagement, from
-          each engagement's Members panel.
-        </p>
-      )}
-      {note && <p className="muted">{note}</p>}
-      {error && <p className="error">{error}</p>}
-
-      <div className="inline-form">
-        <button className="ghost" onClick={() => void refresh()} disabled={busy}>
-          <Icon name="refresh" />
-          Refresh
-        </button>
-      </div>
-      <div className="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>Handle</th>
-              <th>Created</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {accounts.length === 0 && (
-              <tr>
-                <td colSpan={3}>
-                  <div className="empty">
-                    <Icon name="users" />
-                    The roster did not load -- refresh to try again.
-                  </div>
-                </td>
-              </tr>
-            )}
-            {accounts.map((account) => {
-              const own = account.id === operator.operatorId
-              const mayManage = isAdmin || own
-              return (
-              <Fragment key={account.id}>
-                <tr className={account.disabled ? 'roster-row-disabled' : undefined}>
-                  <td>
-                    <span className="endpoint-cell">
-                      <code>{account.handle}</code>
-                      {own && <span className="muted"> (you)</span>}
-                      {account.role === 'admin' && (
-                        <span
-                          className="muted"
-                          title="The deployment admin: provisions accounts, holds the disable switch, writes the fleet and runtime settings. Seeded at bootstrap; the console only grows members."
-                        >
-                          {' '}
-                          · admin
-                        </span>
-                      )}
-                      {account.disabled && (
-                        <span
-                          className="muted"
-                          title="Switched off: no authentication path accepts this account (login, cookie session, API token) and its sessions ended at their next use. Its memberships wait as they were, so enabling restores exactly what it had."
-                        >
-                          {' '}
-                          · disabled
-                        </span>
-                      )}
-                      {!account.hasCredential && (
-                        <span
-                          className="muted"
-                          title="No password stands behind this account: the credential was revoked, and login refuses until a new one is provisioned."
-                        >
-                          {' '}
-                          · no password
-                        </span>
-                      )}
-                    </span>
-                  </td>
-                  <td title={new Date(account.createdAt).toLocaleString()}>
-                    {new Date(account.createdAt).toLocaleDateString()}
-                  </td>
-                  <td>
-                    <span className="row-actions">
-                        {mayManage && (
-                          <button
-                            className="ghost sm"
-                            onClick={() => void onManage(account)}
-                            title="Open this account's management sheet: the API-token shelf and the disable switch."
-                          >
-                            <Icon name="edit" />
-                            {openId === account.id ? 'Close' : 'Manage'}
-                          </button>
-                        )}
-                        {mayManage && (
-                          <button
-                            className="ghost sm"
-                            onClick={() => void onResetPassword(account)}
-                            title="Set a new password for this account. A reset is a new credential generation: the account's live sessions end at their next request -- resetting your own signs this session out too."
-                          >
-                            Reset password
-                          </button>
-                        )}
-                        {isAdmin &&
-                          (account.disabled ? (
-                            <button
-                              className="sm"
-                              onClick={() => void onEnable(account)}
-                              title="Re-open every authentication path for this account, with the memberships it kept through the disable."
-                            >
-                              Enable
-                            </button>
-                          ) : (
-                            <button
-                              className={`sm danger${armed === account.id ? ' armed' : ''}`}
-                              onClick={() => armDisable(account.id, () => void onDisable(account))}
-                              title={
-                                own
-                                  ? 'Switch this account off (two clicks). Disabling yourself ends this session at its next request -- you will need another admin to enable you, so this is usually a mistake.'
-                                  : armed === account.id
-                                    ? 'Click again to disable — the button reverts on its own after a few seconds'
-                                    : "Switch this account off (two clicks: the first arms, the second disables). Every authentication path refuses at its next use; enabling restores exactly what it had. The last enabled account or admin can't be disabled."
-                              }
-                            >
-                              {armed === account.id ? 'Confirm' : 'Disable'}
-                            </button>
-                          ))}
-                      </span>
-                  </td>
-                </tr>
-                {openId === account.id && (
-                  <tr className="roster-detail-row">
-                    <td colSpan={3}>
-                      <div className="roster-detail">
-                        <section>
-                          <div className="roster-detail-title">API tokens</div>
-                          {minted && (
-                            <div className="token-reveal">
-                              <code>{minted.token}</code>
-                              <button className="ghost sm" onClick={() => void onCopySecret()}>
-                                {secretCopied ? 'Copied' : 'Copy'}
-                              </button>
-                              <span className="muted">
-                                shown once -- only the digest is stored from here on
-                              </span>
-                            </div>
-                          )}
-                          <div>
-                            <button className="sm" onClick={() => void onMint(account)}>
-                              Mint token
-                            </button>
-                          </div>
-                          {tokens.length > 0 ? (
-                            <ul className="token-list">
-                              {tokens.map((t) => (
-                                <li key={t.tokenId}>
-                                  <code>{t.tokenId.slice(0, 8)}</code>
-                                  <span className="muted">
-                                    {' '}
-                                    minted {new Date(t.createdAt).toLocaleDateString()}
-                                  </span>
-                                  <button
-                                    className="ghost sm"
-                                    onClick={() => void onRevokeToken(account, t.tokenId)}
-                                    title="Revoke this token: it fails at its next use. Idempotent."
-                                  >
-                                    Revoke
-                                  </button>
-                                </li>
-                              ))}
-                            </ul>
-                          ) : (
-                            <p className="muted" style={{ margin: 0 }}>
-                              No tokens minted for this account.
-                            </p>
-                          )}
-                          <p className="muted" style={{ margin: 0 }}>
-                            Bearer credentials for the API and the MCP surface, usable wherever the
-                            cookie session is not. Revocation bites at the token's next use; a
-                            disabled account's tokens refuse until it is enabled again.
-                          </p>
-                        </section>
-                      </div>
-                    </td>
-                  </tr>
-                )}
-              </Fragment>
-              )
-            })}
-          </tbody>
-        </table>
-      </div>
     </div>
   )
 }

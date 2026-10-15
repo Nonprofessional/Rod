@@ -155,6 +155,8 @@ async function jsonOrThrow<T>(response: Response): Promise<T> {
 export interface SessionOperator {
   operatorId: string
   handle: string
+  // When the account was provisioned -- the account card's "member since".
+  createdAt: string
   // The deployment role the account holds: 'admin' (the bootstrap seed --
   // deployment management) or 'member' (console-created -- self-service
   // over its own password and tokens). The console gates its management
@@ -193,11 +195,13 @@ export async function getSessionOperator(): Promise<SessionOperator> {
   const body = (await response.json()) as {
     id: string
     handle: string
+    createdAt: string
     role: 'admin' | 'member'
   }
   return {
     operatorId: body.id,
     handle: body.handle,
+    createdAt: body.createdAt,
     role: body.role,
   }
 }

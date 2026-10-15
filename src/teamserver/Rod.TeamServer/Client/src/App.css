@@ -369,10 +369,22 @@ a.topbar-link.active {
 }
 
 /* button.link carries its own small padding and centered text; inside the
-   menu it must sit flush with the rows above it. */
-.identity-menu button.link {
+   menu it must sit flush with the rows above it. The account-settings
+   anchor joins the same row with the link voice. */
+.identity-menu button.link,
+.identity-menu a.link {
   text-align: left;
   padding-left: 0;
+}
+
+.identity-menu a.link {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.identity-menu a.link:hover {
+  color: var(--text);
+  text-decoration: underline;
 }
 
 /* --- Main column ------------------------------------------------------------ */
@@ -1355,6 +1367,73 @@ a:hover {
 .build-form select {
   height: 30px;
   font-size: 12.5px;
+}
+
+/* --- Settings page: compact property forms and the account layout ------------ */
+
+/* Settings forms are property sheets, not wide empty fields: cap the
+   controls so a wide card does not stretch them card-wide. Scoped to the
+   settings page's own class; other surfaces keep the full-width field
+   treatment. */
+.settings-form input {
+  max-width: 300px;
+}
+
+/* The account card: identity and the password change on the left, the API
+   token shelf beside it; one column on narrow viewports. */
+.settings-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+  gap: 20px;
+  align-items: start;
+}
+
+.settings-col {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+@media (max-width: 1100px) {
+  .settings-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.account-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.account-avatar {
+  width: 36px;
+  height: 36px;
+  font-size: 13px;
+}
+
+.account-handle {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 13px;
+}
+
+/* One account's API tokens: the roster's expanded row styles it bare
+   (.roster-detail section); standing alone in the account card it takes a
+   box of its own, fieldset-shaped. */
+.token-shelf {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.token-shelf-box {
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
 }
 
 /* A checkbox is not a text control: the form input-height rules must not

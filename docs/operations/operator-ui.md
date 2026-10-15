@@ -914,56 +914,67 @@ evidence stays readable while the record stops serving.
 
 ## Settings
 
-`#/settings`, from the topbar's settings entry -- operator-level runtime
-settings, server-wide rather than per-engagement. **Console behavior** is
-the exception to that scope: this browser's own preferences, kept in
-localStorage and never sent to the server. Its one knob is the refresh
-cadence -- how often presence-style surfaces (the redirector roster, the
-engagement view's fallback refresh, the shell roster) re-read while
-their tab is visible; build progress keeps its own faster cadence because
-it is task progress, not presence. Saves re-arm running timers on the
-spot. The runtime cards -- **Session presence** and **Build cache** --
-are the deployment admin's to write: a member reads the values and sees
-the read-only note instead of the save actions. Session presence
-explains the fleet's offline behavior and adjusts it live: *Offline
-after* is how long a silent session holds its Online dot before the
-staleness sweep closes it (1 minute..24 hours; keep it above your
-implants' contact interval or every quiet gap flaps offline), *Sweep
-every* is how often the check runs (10 seconds..1 hour). Saving applies
-on the next sweep pass -- no restart -- and the server persists the pair
-(`RuntimeSettings:FilePath`, default `runtime-settings.json` beside the
-server) so a restart remembers them; the `Sessions:Staleness` config
-section remains the boot default. Bounds violations refuse with the
-reason rather than clamping. The build cache is the
-shared cargo target dir payload builds compile against: a persistent
-directory turns a cold cross-compile into a one-time cost (dependency
-artifacts are reused; concurrent builds queue on cargo's own lock),
-empty keeps builds hermetic, and the boot default is the
+`#/settings`, from the topbar's settings entry or the identity
+menu's *Account settings* item. The page splits by who may write what:
+the **Account** and **Console behavior** cards are every operator's own
+surface, while the **Members** and **Runtime settings** cards render for
+the deployment admin alone -- a member's settings page is purely
+personal, and the server draws the same line (a member's roster read
+refuses with 403).
+
+For the deployment admin the page opens on **Members** -- the account
+roster and its management sheet (the management path the
+`Operators:Initial` seed stood in for; see [teamserver.md](teamserver.md))
+-- so the admin's most-used card sits first, not last. The table lists
+every account: handle (yours marked *you*; admins marked *admin*; a
+switched-off account reads *disabled*; a revoked credential reads *no
+password*) and creation date. Reach arrives per engagement, from each
+engagement's Members panel, and every account comes up a deployment
+member: the admin provisions with *New operator* (handle and an initial
+password of at least 8 characters, handed over out of band) and holds
+the *Disable* / *Enable* pair -- the account off switch (two clicks):
+every authentication path -- login, live cookie session, API token --
+refuses at its next use, while the memberships wait as they were, so
+*Enable* restores exactly the reach the account had; the last enabled
+account, or the last enabled admin, cannot be disabled (the 409 names
+the rule), and disabling yourself ends your own session with no way back
+alone. *Reset password* takes just the new password on another
+operator's row; on the admin's own row it asks for the current password
+first, because a change on your own account is self-service and proves
+possession. *Manage* opens the row's **API tokens** shelf (mint with the
+one-time secret beside a copy button, list, revoke).
+
+Next comes **Runtime settings** -- server-wide, live on save, remembered
+across restarts. Session presence explains the fleet's offline behavior
+and adjusts it live: *Offline after* is how long a silent session holds
+its Online dot before the staleness sweep closes it (1 minute..24 hours;
+keep it above your implants' contact interval or every quiet gap flaps
+offline), *Sweep every* is how often the check runs (10 seconds..1
+hour). Saving applies on the next sweep pass -- no restart -- and the
+server persists the pair (`RuntimeSettings:FilePath`, default
+`runtime-settings.json` beside the server) so a restart remembers them;
+the `Sessions:Staleness` config section remains the boot default. Bounds
+violations refuse with the reason rather than clamping. The build cache
+is the shared cargo target dir payload builds compile against: a
+persistent directory turns a cold cross-compile into a one-time cost
+(dependency artifacts are reused; concurrent builds queue on cargo's own
+lock), empty keeps builds hermetic, and the boot default is the
 `ROD_RUST_TARGET_DIR` variable. Applies to the next build, remembered
 across restarts.
 
-The page's second card is **Operators** -- the account roster and its
-management sheet (the management path the `Operators:Initial` seed stood
-in for; see [teamserver.md](teamserver.md)). The table lists every
-account: handle (yours marked *you*; admins marked *admin*; a
-switched-off account reads *disabled*; a revoked credential reads *no
-password*), and creation date. Reach arrives per
-engagement, from each engagement's Members panel, and every account
-comes up a deployment member: the bootstrap-seeded admin alone sees *New
-operator* (handle and an initial password of at least 8 characters,
-handed over out of band) and the *Disable* / *Enable*
-pair -- the account off switch (two clicks): every authentication path
--- login, live cookie session, API token -- refuses at its next use,
-while the memberships wait as they were, so *Enable* restores exactly
-the reach the account had; the last enabled account, or the last enabled
-admin, cannot be disabled (the 409 names the rule), and disabling
-yourself ends your own session with no way back alone. *Reset password*
-and *Manage* (the row's **API tokens** shelf -- mint with the one-time
-secret beside a copy button, list, revoke) render on your own row for
-every operator -- password and tokens are self-service -- and on every
-row for the admin. The server draws the same lines (a member's writes
-refuse with 403); the console only mirrors them
-(architecture.md Sec 4.5).
+**Account** is the signed-in operator's own surface, the same card for
+admin and member: identity at a glance (avatar, handle, role, creation
+date), *Change password* (current password, new, confirm -- the current
+one is verified server-side, and the change ends this session at its
+next request, so the console walks back to the login view), and this
+account's **API tokens** shelf -- password and tokens are self-service;
+the admin never needs to stand in. **Console behavior** is this
+browser's own preferences, kept in localStorage and never sent to the
+server. Its one knob is the refresh cadence -- how often presence-style
+surfaces (the redirector roster, the engagement view's fallback refresh,
+the shell roster) re-read while their tab is visible; build progress
+keeps its own faster cadence because it is task progress, not presence.
+Saves re-arm running timers on the spot.
 
 ## Members
 
