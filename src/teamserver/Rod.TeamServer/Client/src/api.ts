@@ -208,9 +208,10 @@ export async function getSessionOperator(): Promise<SessionOperator> {
 // --- Operator roster (the account machinery) ---------------------------------
 //
 // The provisioned accounts beside the session's own: GET /operators lists the
-// roster (every account, whether a password stands behind it), POST
-// /operators provisions a new one with its initial password (the deployment
-// admin's alone; the account comes up as a member), and
+// roster (every account, whether a password stands behind it -- the
+// deployment admin's read; a member's account surface is /operators/me),
+// POST /operators provisions a new one with its initial password (the
+// deployment admin's alone; the account comes up as a member), and
 // PUT /operators/{id}/credentials re-provisions a password (self-service on
 // the caller's own account, admin-only on anyone else's -- the server
 // enforces both, drawing 403 where the session's role does not reach).

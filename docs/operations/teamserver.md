@@ -80,7 +80,9 @@ boot is the only way a deployment grows an admin. Members keep
 self-service over their own password and API tokens; reach inside
 engagements arrives per engagement, as memberships engagement owners
 grant (`POST /engagements/{id}/members`). `GET /operators` lists the
-roster with each account's role. `PUT /operators/{id}/credentials`
+roster with each account's role -- the deployment admin's read; a
+member's account surface is `GET /operators/me`.
+`PUT /operators/{id}/credentials`
 re-provisions a password (the previous generation's sessions end at
 their next request; the caller's own account or the admin's), and
 `POST /operators/{id}:disable` / `:enable` are the account's off and

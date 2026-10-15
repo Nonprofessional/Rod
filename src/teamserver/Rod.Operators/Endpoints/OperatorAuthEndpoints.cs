@@ -23,8 +23,10 @@ namespace Rod.Operators.Endpoints;
 /// (<c>PUT /operators/{id}/credentials</c>), holds the disable pair
 /// (<c>POST /operators/{id}:disable</c> / <c>:enable</c>), and manages API
 /// tokens on any account, while every operator keeps self-service over its
-/// own password and tokens. The roster read stays open to all: engagement
-/// members are invited by handle, so every operator must see them.
+/// own password and tokens. The roster read (<c>GET /operators</c>) is the
+/// admin's alone: a member's account surface is <c>GET /operators/me</c>,
+/// and the handles it works beside arrive per engagement, from that
+/// engagement's member roster -- never the deployment-wide account list.
 /// </summary>
 public static class OperatorAuthEndpoints
 {
@@ -37,12 +39,12 @@ public static class OperatorAuthEndpoints
     public static IEndpointRouteBuilder Map(this IEndpointRouteBuilder endpoints)
     {
         // Login is anonymous (it is how a session is established); everything
-        // else requires an existing session. Provisioning carries the admin
-        // claim requirement directly; the account routes that take an
-        // operator id gate in the handler, where "self or admin" is
-        // expressible (a claim requirement cannot say "self").
+        // else requires an existing session. Provisioning and the roster
+        // read carry the admin claim requirement directly; the account
+        // routes that take an operator id gate in the handler, where "self
+        // or admin" is expressible (a claim requirement cannot say "self").
         endpoints.MapPost("/login", LoginAsync).AllowAnonymous();
-        endpoints.MapGet("/", ListAsync).RequireAuthorization();
+        endpoints.MapGet("/", ListAsync).RequireAuthorization(DeploymentAdmin());
         endpoints.MapPost("/", CreateAsync).RequireAuthorization(DeploymentAdmin());
         endpoints.MapGet("/me", MeAsync).RequireAuthorization();
         endpoints.MapPost("/logout", LogoutAsync).RequireAuthorization();
@@ -66,8 +68,9 @@ public static class OperatorAuthEndpoints
 
     // The self-or-admin gate the account routes share: an account's password
     // and tokens are its own to manage, and acting on another operator's
-    // account is the admin's alone. The roster is public, so refusing by
-    // role rather than existence discloses nothing.
+    // account is the admin's alone. The refusal is by role, not existence --
+    // it names the route's rule, never whether an account stands behind the
+    // id.
     private static bool MayActOn(ClaimsPrincipal user, OperatorId target)
         => user.TryGetOperatorId() == target || user.IsDeploymentAdmin();
 
@@ -144,10 +147,12 @@ public static class OperatorAuthEndpoints
     }
 
     // The roster: every account, ordered by handle, with whether a password
-    // stands behind it (a revoked credential reads as absent). Any
-    // authenticated operator may read it: engagement members are invited by
-    // handle, so every operator must see the handles there are. Each row
-    // carries its deployment role -- the one privilege an account holds.
+    // stands behind it (a revoked credential reads as absent). The
+    // deployment admin's read -- a member's account surface is
+    // /operators/me, and the handles it works beside arrive per engagement,
+    // from that engagement's member roster, so no surface needs the
+    // deployment-wide list. Each row carries its deployment role -- the one
+    // privilege an account holds.
     private static async Task<IResult> ListAsync(
         IOperatorRepository operators,
         IOperatorCredentialStore credentials,

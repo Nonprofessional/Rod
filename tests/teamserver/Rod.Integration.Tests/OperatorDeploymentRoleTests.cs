@@ -90,6 +90,12 @@ public class OperatorDeploymentRoleTests
             (await member.PostAsJsonAsync("/operators",
                 new { handle = "eve", password = "eve-p@ssword" })).StatusCode);
 
+        // The deployment-wide roster is management too: the member reads its
+        // own summary (/operators/me) and the engagement rosters it belongs
+        // to, never the account list.
+        Assert.Equal(HttpStatusCode.Forbidden,
+            (await member.GetAsync("/operators")).StatusCode);
+
         // Every other-operator account action draws 403 -- on the target and
         // on the admin alike; the member's own disable is refused too (the
         // switch is not self-service).
@@ -115,6 +121,7 @@ public class OperatorDeploymentRoleTests
             (await member.PostAsync($"/operators/{memberId}:disable", content: null)).StatusCode);
 
         // The admin performs the same actions without friction.
+        Assert.Equal(HttpStatusCode.OK, (await env.Http.GetAsync("/operators")).StatusCode);
         Assert.Equal(HttpStatusCode.OK,
             (await env.Http.PutAsJsonAsync($"/operators/{targetId}/credentials",
                 new { password = "rotated-p@ss" })).StatusCode);
