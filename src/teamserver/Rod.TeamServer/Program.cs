@@ -106,16 +106,22 @@ if (app.Services.GetService<IDbContextFactory<RodPersistenceDbContext>>() is { }
 
 // Defense-in-depth response headers (architecture.md Sec 9). The operator UI
 // renders implant-controlled strings (task output, audit payloads), so a strict
-// CSP backs React's escaping: no inline scripts or styles exist in the bundle,
-// which keeps the policy tight. img-src admits blob: for the loot view's
-// screenshot previews -- object URLs the page builds from bytes it fetched
-// same-origin, so the allowance adds no remote source. Embedding and
-// MIME-sniffing controls round it out. Applied to every response, including
-// the API, so a stray HTML-shaped API response is still covered.
+// CSP backs React's escaping: no inline scripts exist in the bundle, which
+// keeps the script policy tight. Styles carry 'unsafe-inline' for a concrete
+// need: the terminal emulator (xterm) positions its cursor, selection, and
+// scroll surfaces by writing style attributes on DOM elements, and a
+// style-src without it silently strips them -- a console whose caret and
+// selection render nowhere. Style injection is a far weaker primitive than
+// script injection, and scripts stay locked down. img-src admits blob: for
+// the loot view's screenshot previews -- object URLs the page builds from
+// bytes it fetched same-origin, so the allowance adds no remote source.
+// Embedding and MIME-sniffing controls round it out. Applied to every
+// response, including the API, so a stray HTML-shaped API response is still
+// covered.
 app.Use(async (context, next) =>
 {
     context.Response.Headers["Content-Security-Policy"] =
-        "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; " +
+        "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; " +
         "connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'";
     context.Response.Headers["X-Content-Type-Options"] = "nosniff";
     context.Response.Headers["X-Frame-Options"] = "DENY";
