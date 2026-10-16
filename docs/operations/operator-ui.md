@@ -590,17 +590,19 @@ C2's own CA -- no system-trust assumptions.
 ## Launchers
 
 The engagement's one-liner home: every command an operator copies out, in
-one place. **Deliver a beacon** and **Hook a browser** share one card slot
-as a two-entry tab strip (the settings page's strip shape; both keep their
-drafts across a switch) -- each card carries its own growing roster, so
-neither list pushes the other card off-screen.
+one place. **Catch a shell**, **Deliver a beacon**, and **Hook a browser**
+share one card slot as a tab strip (the settings page's strip shape; all
+keep their drafts and picks across a switch) -- each card carries its own
+growing roster, so no list pushes another card off-screen. The catch tab
+rides only while a shellcatch listener exists.
 
-**Catch a shell** renders the paste-ready reverse-shell one-liners per
-shellcatch listener -- the classic shapes across the interpreter families a
-target is likely to have (`bash -i >& /dev/tcp/...`, `nc`, a Python/Perl/
-PHP/socat one-liner, a PowerShell client). No credential is involved: the
-address is the listener's public endpoint, and the caught shell lands in
-the Shells roster.
+**Catch a shell** renders the paste-ready reverse-shell one-liners for a
+shellcatch listener's public endpoint -- the classic shapes across the
+interpreter families a target is likely to have (`bash -i >& /dev/tcp/...`,
+`nc`, a Python/Perl/PHP/socat one-liner, a PowerShell client). A listener
+picker renders the chosen endpoint's set in one fixed place when several
+catchers exist. No credential is involved: the address is the listener's
+own endpoint, and the caught shell lands in the Shells roster.
 
 **Deliver a beacon** cuts the payload fetch command, so a target with any
 shell access beacons without a file landing first. The shell console's

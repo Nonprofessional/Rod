@@ -80,12 +80,14 @@ export function LaunchersView({
   const [hookBusy, setHookBusy] = useState(false)
   const [lastMinted, setLastMinted] = useState<MintedHook | null>(null)
 
-  // The delivery and hook cards share one slot as tabs (the settings page's
-  // strip shape): each card carries its own growing roster -- the kept
-  // launchers, the minted hooks -- and stacking them meant one list pushed
-  // the other card off-screen. Both forms' drafts live in this view's state,
-  // so a tab switch keeps what was picked.
-  const [formTab, setFormTab] = useState<'deliver' | 'hook'>('deliver')
+  // The catch, delivery, and hook cards share one slot as tabs (the settings
+  // page's strip shape): each card carries its own growing roster -- the
+  // catch one-liners, the kept launchers, the minted hooks -- and stacking
+  // them meant one list pushed the other cards off-screen. All drafts live
+  // in this view's state, so a tab switch keeps what was picked.
+  const [formTab, setFormTab] = useState<'deliver' | 'hook' | 'catch'>('deliver')
+  // The catch tab's listener pick; empty means the first shellcatch listener.
+  const [catchListenerId, setCatchListenerId] = useState('')
 
   // The quiet clock keeps expiry counts moving between interactions.
   const now = useNow(30_000)
@@ -229,6 +231,12 @@ export function LaunchersView({
     return named ? named.name : 'named front'
   }, [listenerId, webListeners])
 
+  // The catcher whose one-liners render; the tab strip falls back to the
+  // delivery form if the last shellcatch listener goes away while the catch
+  // tab is open.
+  const catchCatcher = catchers.find((l) => l.id === catchListenerId) ?? catchers[0]
+  const shownTab = formTab === 'catch' && catchers.length === 0 ? 'deliver' : formTab
+
   return (
     <section className="view">
       <h2>
@@ -237,76 +245,106 @@ export function LaunchersView({
           Every paste-ready one-liner this engagement can cut, in one place: reverse shells that
           land in the Shells roster, payload fetches that grow a beacon in the Implants table,
           and the browser hook that enrolls a victim's browser as a Browser-class implant. The
-          delivery and hook forms ride one tab strip, each keeping its own roster below it;
+          three surfaces ride one tab strip, each keeping its own roster or one-liners below it;
           every fetch render is kept — re-copy it any time; Delete closes its lifecycle (the
           credential dies with the row, and the mint's history is the audit trail's to keep).
         </HelpHint>
       </h2>
       {error && <p className="error">{error}</p>}
 
-      {catchers.length > 0 && (
-        <div className="card">
-          <h3>
-            Catch a shell
-            <HelpHint>
-              Reverse-shell one-liners per shellcatch listener. No credential is involved — the
-              address is the listener's public endpoint; paste one on the target and the shell
-              lands in the Shells roster.
-            </HelpHint>
-          </h3>
-          {catchers.map((listener) => {
-            const launchers = catchLaunchers(listener.publicEndpoint)
-            if (launchers.length === 0) return null
-            return (
-              <details key={listener.id} className="catch-details">
-                <summary title="The paste-ready reverse-shell one-liners for this listener's public endpoint — expand to copy one">
-                  Catch on <code>{listener.name}</code> · <code>{listener.publicEndpoint}</code>
-                  <span className="muted"> — {launchers.length} one-liners</span>
-                </summary>
-                <div className="upgrade-panel">
-                  {launchers.map((launcher) => (
-                    <div key={launcher.id} className="upgrade-launcher">
-                      <span title={`For ${launcher.os} targets`}>
-                        <Icon name={osIconFor(launcher.os)} className="wire-icon" />
-                      </span>
-                      <code>{launcher.id}</code>
-                      <code className="upgrade-command">{launcher.command}</code>
-                      <CopyButton text={launcher.command} />
-                    </div>
-                  ))}
-                </div>
-              </details>
-            )
-          })}
-        </div>
-      )}
-
-      {/* The delivery and hook cards share one slot as tabs: each carries its
-          own growing roster, so stacking them let one list push the other
-          card off-screen. The strip shape is the settings page's. */}
+      {/* The catch, delivery, and hook cards share one slot as tabs: each
+          carries its own growing roster, so stacking them let one list push
+          the other cards off-screen. The strip shape is the settings
+          page's; the catch tab rides only when a shellcatch listener
+          exists. */}
       <div className="inline-form">
         <button
-          className={formTab === 'deliver' ? 'primary sm' : 'ghost sm'}
+          className={shownTab === 'deliver' ? 'primary sm' : 'ghost sm'}
           onClick={() => setFormTab('deliver')}
           title="Cut a paste-ready one-liner that fetches a built payload over the engagement's web front and runs it."
         >
           Deliver a beacon
         </button>
         <button
-          className={formTab === 'hook' ? 'primary sm' : 'ghost sm'}
+          className={shownTab === 'hook' ? 'primary sm' : 'ghost sm'}
           onClick={() => setFormTab('hook')}
           title="Mint a served hook script and inject the answer as a script tag on the vulnerable page."
         >
           Hook a browser
         </button>
+        {catchers.length > 0 && (
+          <button
+            className={shownTab === 'catch' ? 'primary sm' : 'ghost sm'}
+            onClick={() => setFormTab('catch')}
+            title="The paste-ready reverse-shell one-liners for a shellcatch listener's public endpoint."
+          >
+            Catch a shell
+          </button>
+        )}
       </div>
+
+      {/* The catch surface: no credential, no mint -- the pure rendering of
+          a shellcatch listener's (host, port) into the classic reverse-shell
+          shapes. The listener picker renders one set of one-liners in one
+          fixed place, instead of a fold per listener when several exist. */}
+      {shownTab === 'catch' && (
+        <div className="card">
+          <h3>
+            Catch a shell
+            <HelpHint>
+              Reverse-shell one-liners for a shellcatch listener's public endpoint. No credential
+              is involved — the address is the listener's own endpoint; paste one on the target
+              and the shell lands in the Shells roster.
+            </HelpHint>
+          </h3>
+          {catchers.length > 1 ? (
+            <div className="inline-form">
+              <select
+                value={catchCatcher?.id ?? ''}
+                onChange={(e) => setCatchListenerId(e.target.value)}
+                title="Which shellcatch listener's public endpoint the one-liners dial"
+              >
+                {catchers.map((l) => (
+                  <option key={l.id} value={l.id}>
+                    {l.name} · {l.publicEndpoint}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : (
+            <p className="muted">
+              Catching on <code>{catchCatcher?.name}</code> ·{' '}
+              <code>{catchCatcher?.publicEndpoint}</code>
+            </p>
+          )}
+          {catchCatcher && catchLaunchers(catchCatcher.publicEndpoint).length > 0 ? (
+            <div className="upgrade-panel">
+              {catchLaunchers(catchCatcher.publicEndpoint).map((launcher) => (
+                <div key={launcher.id} className="upgrade-launcher">
+                  <span title={`For ${launcher.os} targets`}>
+                    <Icon name={osIconFor(launcher.os)} className="wire-icon" />
+                  </span>
+                  <code>{launcher.id}</code>
+                  <code className="upgrade-command">{launcher.command}</code>
+                  <CopyButton text={launcher.command} />
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="muted">
+              This listener's public endpoint is not a dialable host:port — repoint it and the
+              one-liners render.
+            </p>
+          )}
+        </div>
+      )}
 
       {/* The browser-hook mint: the XSS foothold's delivery. A hook is not a
           one-liner but a served script -- the mint renders it with its bake
           and answers the `<script src>` tag to inject; the hooked browsers
           then appear in the Implants table as Browser-class rows, taskable
           from the same menu as any implant. */}
-      {formTab === 'hook' && (
+      {shownTab === 'hook' && (
       <div className="card">
           <h3>
             Hook a browser
@@ -448,7 +486,7 @@ export function LaunchersView({
           the same single surface the Build tab gives its form and job strip,
           so cutting a launcher and coming back to it reads as one place
           instead of two boxed steps. */}
-      {formTab === 'deliver' && (
+      {shownTab === 'deliver' && (
       <div className="card">
         <h3>
           Deliver a beacon
