@@ -3205,3 +3205,401 @@ button.palette-trigger {
   white-space: pre-wrap;
   word-break: break-word;
 }
+
+/* --- Home dashboard --------------------------------------------------------- */
+
+/* The landing posture strip: one orienting number per card (engagement mix,
+   fleet health, windowed tasking, the fleet's last check-in), sized by the
+   same auto-fit the console uses elsewhere so the row folds on narrow
+   screens without a bespoke breakpoint. */
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(205px, 1fr));
+  gap: 14px;
+  margin: 0 0 20px;
+}
+
+.stat-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 14px 18px;
+  box-shadow: var(--shadow);
+  min-width: 0;
+}
+
+.stat-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+}
+
+.stat-label {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.stat-value {
+  margin-top: 6px;
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+}
+
+.stat-sub {
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* The chart cards sit two-up under the posture strip; the activity chart
+   spans both columns because its day columns want the width. */
+.dash-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 20px;
+}
+
+.dash-grid .card {
+  min-width: 0;
+}
+
+.dash-wide {
+  grid-column: 1 / -1;
+}
+
+/* Stacked daily task bars: one column per local day, segments proportioned
+   against the busiest day, exact counts on the column's native title. The
+   stack carries the fixed height so the date labels (only every other
+   column) cannot shift the bars' baseline. */
+.activity-chart {
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+  margin: 14px 0 8px;
+}
+
+.activity-col {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.activity-stack {
+  height: 150px;
+  flex: none;
+  display: flex;
+  flex-direction: column-reverse;
+  border-radius: 3px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+
+.activity-seg {
+  width: 100%;
+}
+
+.activity-seg.completed {
+  background: var(--success);
+}
+
+.activity-seg.open {
+  background: var(--accent);
+}
+
+.activity-seg.cancelled {
+  background: var(--muted);
+}
+
+.activity-seg.failed {
+  background: var(--danger);
+}
+
+.activity-label {
+  margin-top: 6px;
+  font-size: 10px;
+  color: var(--muted);
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+/* The shared series key under the chart (and the donut's family colors read
+   from the same swatch shape). */
+.legend-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+.legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.swatch {
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  display: inline-block;
+  flex: none;
+}
+
+.swatch.completed {
+  background: var(--success);
+}
+
+.swatch.open {
+  background: var(--accent);
+}
+
+.swatch.cancelled {
+  background: var(--muted);
+}
+
+.swatch.failed {
+  background: var(--danger);
+}
+
+/* The OS-family donut beside its legend; the center number is the fleet's
+   active total so the split reads against it. */
+.donut-wrap {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  margin-top: 10px;
+}
+
+.donut {
+  width: 118px;
+  height: 118px;
+  flex: none;
+}
+
+.donut-track {
+  fill: none;
+  stroke: var(--surface-3);
+  stroke-width: 6;
+}
+
+.donut-seg {
+  fill: none;
+  stroke-width: 6;
+}
+
+.donut-center {
+  font-size: 10px;
+  font-weight: 650;
+  fill: var(--text);
+}
+
+.donut-legend {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  min-width: 0;
+}
+
+.donut-legend-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+}
+
+.donut-swatch {
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  flex: none;
+}
+
+.donut-legend-label {
+  flex: 1;
+}
+
+.donut-legend-value {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+/* A labeled share bar: a quiet track plus filled segments, used by the
+   fleet rows (online/offline/retired) and the verb mix alike. */
+.share-bar {
+  height: 8px;
+  border-radius: 4px;
+  background: var(--surface-3);
+  overflow: hidden;
+  display: flex;
+}
+
+.share-fill {
+  height: 100%;
+}
+
+.share-fill.online {
+  background: var(--success);
+}
+
+.share-fill.offline {
+  background: var(--border-strong);
+}
+
+.share-fill.retired {
+  background: var(--muted);
+  opacity: 0.45;
+}
+
+.share-fill.verb {
+  background: var(--accent);
+}
+
+/* The per-engagement posture rows: name, close-out state, fleet bar, and the
+   online/active counts, the whole row a link into the engagement. */
+.fleet-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 8px;
+}
+
+.fleet-row {
+  display: grid;
+  grid-template-columns: minmax(90px, 1.3fr) auto minmax(80px, 2fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  text-decoration: none;
+  font-size: 12.5px;
+}
+
+.fleet-row:hover {
+  background: var(--surface-2);
+}
+
+.fleet-name {
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fleet-row code {
+  font-size: 11px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The verb mix: verb, share of the window's tasking, count. */
+.verb-list {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  margin-top: 10px;
+}
+
+.verb-row {
+  display: grid;
+  grid-template-columns: minmax(70px, auto) minmax(60px, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  font-size: 12.5px;
+}
+
+.verb-row code {
+  font-size: 11.5px;
+}
+
+.verb-row .muted {
+  font-size: 11.5px;
+  min-width: 3ch;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The newest operator work across engagements: relative time, status, verb,
+   arguments, engagement, and who issued it, each row linking into that
+   engagement's task log. */
+.recent-list {
+  display: flex;
+  flex-direction: column;
+  margin-top: 8px;
+}
+
+.recent-row {
+  display: grid;
+  grid-template-columns: 64px 92px minmax(64px, auto) minmax(0, 1.2fr) minmax(80px, 1fr) minmax(56px, auto);
+  align-items: center;
+  gap: 10px;
+  padding: 7px 8px;
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  text-decoration: none;
+  font-size: 12.5px;
+}
+
+.recent-row:hover {
+  background: var(--surface-2);
+}
+
+.recent-time {
+  font-size: 11.5px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.recent-row code {
+  font-size: 11.5px;
+}
+
+.recent-args {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.recent-engagement {
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.recent-row .muted {
+  font-size: 11.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The dashboard folds before the global breakpoints: charts first (two-up to
+   one-up), then the recent rows shed their softer columns. */
+@media (max-width: 1100px) {
+  .dash-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 760px) {
+  .recent-args,
+  .recent-row .muted {
+    display: none;
+  }
+}

@@ -919,11 +919,17 @@ export interface EngagementTask {
   completedAt: string | null
 }
 
+// The limit rides along for windowed reads (the home dashboard's activity
+// chart): the server caps a page at 200 items, and the default is 50.
 export async function listEngagementTasks(
   engagementId: string,
   cursor?: string,
+  limit?: number,
 ): Promise<ListPage<EngagementTask>> {
-  const query = cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''
+  const params = new URLSearchParams()
+  if (cursor) params.set('cursor', cursor)
+  if (limit !== undefined) params.set('limit', String(limit))
+  const query = params.size > 0 ? `?${params.toString()}` : ''
   return jsonOrThrow(await fetch(`engagements/${engagementId}/tasks${query}`))
 }
 

@@ -8,18 +8,20 @@ import { useLive } from './shell'
 import { ENGAGEMENT_TABS, type TabId } from './tabs'
 import { EngagementView } from './views/EngagementView'
 import { EngagementsView } from './views/EngagementsView'
+import { HomeView } from './views/HomeView'
 import { SettingsView } from './views/SettingsView'
 import { SystemView } from './views/SystemView'
 import { RedirectorsView } from './views/RedirectorsView'
 import { LoginView } from './views/LoginView'
 
 // Operator UI shell: the topbar carries what is global -- the breadcrumb,
-// the command palette, the global surfaces (engagements, settings, system),
-// the live engagement state, and the signed-in operator -- while the sidebar
-// is purely contextual: the brand, the engagement's tab groups inside an
-// engagement, and a recent-engagements quick-jump outside one. Each open
-// engagement holds a Server-Sent Events stream open so every connected
-// operator sees tasking, results, and presence in real time.
+// the command palette, the global surfaces (home, engagements, redirectors,
+// settings, system), the live engagement state, and the signed-in operator
+// -- while the sidebar is purely contextual: the brand (itself a link home),
+// the engagement's tab groups inside an engagement, and a
+// recent-engagements quick-jump outside one. Each open engagement holds a
+// Server-Sent Events stream open so every connected operator sees tasking,
+// results, and presence in real time.
 //
 // The session is the teamserver's cookie: GET /operators/me resolves the signed-
 // in operator (never a client-generated id), and an unauthenticated browser is
@@ -27,6 +29,7 @@ import { LoginView } from './views/LoginView'
 // fallback keeps deep links working without a server-side router.
 
 type Route =
+  | { kind: 'home' }
   | { kind: 'engagements' }
   | { kind: 'engagement'; engagementId: string; tab: string; implantId?: string }
   | { kind: 'settings' }
@@ -46,10 +49,14 @@ function parseHash(): Route {
   if (tabbed) return { kind: 'engagement', engagementId: tabbed[1], tab: tabbed[2] }
   const match = /^\/engagements\/([\da-fA-F-]+)\/?$/.exec(hash)
   if (match) return { kind: 'engagement', engagementId: match[1], tab: 'implants' }
+  if (/^\/engagements\/?$/.test(hash)) return { kind: 'engagements' }
   if (/^\/redirectors\/?$/.test(hash)) return { kind: 'redirectors' }
   if (/^\/settings\/?$/.test(hash)) return { kind: 'settings' }
   if (/^\/system\/?$/.test(hash)) return { kind: 'system' }
-  return { kind: 'engagements' }
+  // Everything else -- the bare hash, #/home, and any unrecognized link --
+  // lands on the dashboard, so the console opens and falls back somewhere
+  // orienting.
+  return { kind: 'home' }
 }
 
 function useRoute(): Route {
@@ -214,6 +221,7 @@ function Topbar({
           is the topbar's Engagements anchor, so no leading link duplicates
           it. */}
       <div className="topbar-crumb">
+        {route.kind === 'home' && <span className="current">Home</span>}
         {route.kind === 'engagement' && <EngagementCrumb engagementId={route.engagementId} />}
         {(route.kind === 'settings' || route.kind === 'system' || route.kind === 'redirectors') && (
           <span className="current">
@@ -259,7 +267,16 @@ function Topbar({
         )}
         {/* The global surfaces, labeled: navigation that belongs to no
             single context rides the topbar instead of the sidebar's context
-            navigation. */}
+            navigation. Home leads: the dashboard is the landing surface the
+            brand and the bare hash both resolve to. */}
+        <a
+          className={`topbar-link${route.kind === 'home' ? ' active' : ''}`}
+          href="#/"
+          title="The home dashboard: posture and activity across your engagements"
+        >
+          <Icon name="home" />
+          <span className="label">Home</span>
+        </a>
         <a
           className={`topbar-link${route.kind === 'engagements' ? ' active' : ''}`}
           href="#/engagements"
@@ -444,7 +461,7 @@ function App() {
   return (
     <div className="shell">
       <aside className="sidebar">
-        <a className="brand" href="#/engagements">
+        <a className="brand" href="#/" title="Back to the home dashboard">
           <img className="brand-logo" src="brand-logo.png" alt="" width="28" height="28" />
           <span className="brand-text">
             <span className="brand-name">Rod</span>
@@ -467,7 +484,9 @@ function App() {
           onLogout={() => void onLogout()}
         />
         <main className="main">
-          {route.kind === 'engagements' ? (
+          {route.kind === 'home' ? (
+            <HomeView />
+          ) : route.kind === 'engagements' ? (
             <EngagementsView />
           ) : route.kind === 'settings' ? (
             <SettingsView operator={operator} />

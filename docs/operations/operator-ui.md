@@ -889,9 +889,33 @@ is one synchronous execution whose output appends to a local transcript
 -- a web-shell has no live stream, and the task log carries the durable
 history.
 
+## Home
+
+The dashboard at `#/` -- the console's landing route, reached by the bare
+hash, the topbar's Home entry, and the sidebar's brand mark. One orienting
+page composed over every engagement the operator can reach (the roster plus
+the same per-engagement implant and task reads the engagement views make;
+there is no cross-engagement aggregate endpoint, and the composition keeps
+the dashboard inside the engagement-scoped surface the server enforces).
+
+Four posture cards open the page: the engagement mix (open, frozen,
+retired), the fleet's live posture (sessions over active implants across
+non-retired engagements), tasking volume over the last 14 days with its
+failure count, and the fleet's newest check-in. Below them: a stacked daily
+activity chart over the same 14-day window (completed, open, cancelled,
+failed), the active fleet split by OS family, a per-engagement fleet bar
+(every row links into its engagement; sealed records read from the roster's
+own summary), the window's top task verbs, and the newest tasking across
+engagements -- each row linking into that engagement's task log. The task
+window reads each engagement's newest 200 tasks (the listing's page cap),
+so an engagement with more history than the cap undercounts its oldest
+days; the dashboard is an operating overview, not a ledger. Retired
+records are sealed -- they count toward the engagement-mix card only.
+Roster changes (create, close-out) re-read the page on the spot.
+
 ## Engagements
 
-The landing roster: every engagement the operator can reach, created and
+The full roster: every engagement the operator can reach, created and
 edited here, with the close-out arc on the row. The count chips above the
 table size the close-out pipeline at a glance (open, frozen, retired) and
 the deployment's live posture beside it (online/active implants across
