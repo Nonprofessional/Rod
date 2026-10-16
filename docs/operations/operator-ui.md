@@ -894,24 +894,36 @@ history.
 The dashboard at `#/` -- the console's landing route, reached by the bare
 hash, the topbar's Home entry, and the sidebar's brand mark. One orienting
 page composed over every engagement the operator can reach (the roster plus
-the same per-engagement implant and task reads the engagement views make;
-there is no cross-engagement aggregate endpoint, and the composition keeps
-the dashboard inside the engagement-scoped surface the server enforces).
+the same per-engagement implant, task, and loot reads the engagement views
+make; there is no cross-engagement aggregate endpoint, and the composition
+keeps the dashboard inside the engagement-scoped surface the server
+enforces).
 
-Four posture cards open the page: the engagement mix (open, frozen,
-retired), the fleet's live posture (sessions over active implants across
-non-retired engagements), tasking volume over the last 14 days with its
-failure count, and the fleet's newest check-in. Below them: a stacked daily
-activity chart over the same 14-day window (completed, open, cancelled,
-failed), the active fleet split by OS family, a per-engagement fleet bar
-(every row links into its engagement; sealed records read from the roster's
-own summary), the window's top task verbs, and the newest tasking across
-engagements -- each row linking into that engagement's task log. The task
-window reads each engagement's newest 200 tasks (the listing's page cap),
-so an engagement with more history than the cap undercounts its oldest
-days; the dashboard is an operating overview, not a ledger. Retired
-records are sealed -- they count toward the engagement-mix card only.
-Roster changes (create, close-out) re-read the page on the spot.
+An attention strip opens the page when anything outranks the numbers:
+active implants past their baked kill date (danger) or hitting one within
+7 days (warn, linking to the affected engagement's fleet), open engagements
+with no implants (no foothold yet), and open engagements idle 7 days or
+longer. It renders nothing when there is nothing to flag.
+
+Five posture cards follow: the engagement mix (open, frozen, retired), the
+fleet's live posture (sessions over active implants, with the host count),
+tasking volume over the last 14 days with its failure count and a daily
+mini-trend, loot captured across engagements (count and bytes), and the
+fleet's newest check-in. Below them: a stacked daily activity chart over
+the same 14-day window (completed, open, cancelled, failed), fleet growth
+(cumulative enrolled implants with the per-day enrollment bars), the
+operating rhythm (weekday x hour task density, local timezone), the active
+fleet split by OS family, the window's top task verbs, a per-engagement
+fleet table (fleet bar, online/active, windowed task count, last tasking
+age; every row links into its engagement, sealed records read from the
+roster's own summary), and the newest tasking across engagements -- each
+row linking into that engagement's task log.
+
+Every windowed read takes the listing's newest page (200 items, the page
+cap), so an engagement with more history than the cap undercounts its
+oldest days -- the dashboard is an operating overview, not a ledger.
+Retired records are sealed: they count toward the engagement-mix card
+only. Roster changes (create, close-out) re-read the page on the spot.
 
 ## Engagements
 

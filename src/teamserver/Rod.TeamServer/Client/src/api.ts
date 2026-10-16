@@ -1402,10 +1402,12 @@ export async function listLoot(
   engagementId: string,
   kind?: string,
   cursor?: string,
+  limit?: number,
 ): Promise<ListPage<LootEntry>> {
   const params = new URLSearchParams()
   if (kind) params.set('kind', kind)
   if (cursor) params.set('cursor', cursor)
+  if (limit !== undefined) params.set('limit', String(limit))
   const query = params.size > 0 ? `?${params.toString()}` : ''
   return jsonOrThrow(await fetch(`engagements/${engagementId}/loot${query}`))
 }

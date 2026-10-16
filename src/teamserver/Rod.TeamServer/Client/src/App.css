@@ -3474,7 +3474,7 @@ button.palette-trigger {
 
 .fleet-row {
   display: grid;
-  grid-template-columns: minmax(90px, 1.3fr) auto minmax(80px, 2fr) auto;
+  grid-template-columns: minmax(96px, 1.25fr) auto minmax(64px, 1.5fr) auto auto auto;
   align-items: center;
   gap: 10px;
   padding: 6px 8px;
@@ -3590,16 +3590,265 @@ button.palette-trigger {
 }
 
 /* The dashboard folds before the global breakpoints: charts first (two-up to
-   one-up), then the recent rows shed their softer columns. */
+   one-up), then the fleet and recent rows shed their softer columns. */
 @media (max-width: 1100px) {
   .dash-grid {
     grid-template-columns: minmax(0, 1fr);
   }
+
+  .fleet-last {
+    display: none;
+  }
 }
 
 @media (max-width: 760px) {
+  .fleet-tasks,
   .recent-args,
   .recent-row .muted {
     display: none;
   }
+
+  .fleet-row {
+    grid-template-columns: minmax(80px, 1.25fr) auto minmax(56px, 1.5fr) auto;
+  }
+}
+
+/* --- Home dashboard: attention and enrichment ------------------------------- */
+
+/* The attention strip: conditions that outrank the numbers (kill dates
+   arriving, footholds missing, engagements gone quiet), each chip linking to
+   the surface that acts on it. Absent entirely when there is nothing to
+   flag -- the dashboard opens quiet, not with a strip of empty warnings. */
+.alert-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 14px;
+}
+
+.alert-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  text-decoration: none;
+  font-size: 12.5px;
+  font-weight: 550;
+  box-shadow: var(--shadow);
+  transition: border-color 0.12s;
+}
+
+.alert-chip:hover {
+  border-color: var(--border-strong);
+}
+
+.alert-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: none;
+  background: var(--muted);
+}
+
+.alert-chip.warn .alert-dot {
+  background: var(--warn);
+}
+
+.alert-chip.danger .alert-dot {
+  background: var(--danger);
+}
+
+.alert-chip.danger {
+  border-color: var(--danger-soft);
+  background: var(--danger-soft);
+}
+
+.alert-chip.warn {
+  border-color: var(--warn-soft);
+  background: var(--warn-soft);
+}
+
+.alert-chip.info .alert-dot {
+  background: var(--info);
+}
+
+/* The tasking card's mini trend: the window's daily totals as thin bars,
+   newest on the right in the accent so the card reads direction, not just
+   volume. */
+.sparkline {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 30px;
+  margin-top: 10px;
+}
+
+.spark-bar {
+  flex: 1;
+  min-width: 2px;
+  border-radius: 1px;
+  background: var(--muted);
+  opacity: 0.45;
+}
+
+.spark-bar.last {
+  background: var(--accent);
+  opacity: 1;
+}
+
+.spark-bar:not(.last):not(.flat) {
+  opacity: 0.65;
+}
+
+.spark-bar.flat {
+  opacity: 0.18;
+}
+
+/* A muted qualifier beside a card heading (the growth card's window count). */
+.card h3 .card-sub {
+  margin-left: auto;
+  font-size: 11.5px;
+  font-weight: 450;
+}
+
+/* The growth chart's SVG classes: gridlines and axis text stay quiet so the
+   cumulative line and its area carry the read; the daily bars sit behind at
+   half height. */
+.growth-chart {
+  width: 100%;
+  height: auto;
+  display: block;
+  margin-top: 8px;
+}
+
+.chart-grid {
+  stroke: var(--border);
+  stroke-width: 1;
+}
+
+.chart-axis-text {
+  fill: var(--muted);
+  font-size: 10px;
+  font-family: var(--font-mono);
+}
+
+.growth-bar {
+  fill: var(--accent);
+  opacity: 0.18;
+}
+
+.growth-area {
+  fill: var(--accent-soft);
+}
+
+.growth-line {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.chart-last-value {
+  fill: var(--text);
+  font-size: 11px;
+  font-weight: 650;
+  font-family: var(--font-mono);
+}
+
+.swatch.line {
+  background: var(--accent);
+  border-radius: 2px;
+  height: 3px;
+  width: 12px;
+  align-self: center;
+}
+
+.swatch.bar-soft {
+  background: var(--accent);
+  opacity: 0.25;
+  border-radius: 2px;
+}
+
+/* The weekday x hour density grid: a leading row label then 24 cells, tinted
+   by the accent with the cell's count on its native title. */
+.rhythm-chart {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-top: 10px;
+}
+
+.rhythm-row {
+  display: grid;
+  grid-template-columns: 34px repeat(24, minmax(0, 1fr));
+  gap: 3px;
+  align-items: center;
+}
+
+.rhythm-row-label {
+  font-size: 10px;
+  color: var(--muted);
+  text-align: right;
+  padding-right: 4px;
+}
+
+.rhythm-cell {
+  height: 15px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+
+.rhythm-cell.empty {
+  background: var(--surface-3);
+}
+
+.rhythm-axis {
+  display: grid;
+  grid-template-columns: 34px repeat(24, minmax(0, 1fr));
+  gap: 3px;
+  margin-top: 2px;
+}
+
+.rhythm-hour-label {
+  font-size: 9.5px;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  text-align: left;
+  grid-column-end: span 3;
+}
+
+.rhythm-hour-label:last-child {
+  text-align: right;
+  grid-column: auto;
+}
+
+.rhythm-note {
+  margin: 10px 0 0;
+  font-size: 11px;
+}
+
+/* The fleet rows' added columns: windowed task count and the last tasking's
+   age, both quiet until looked for. */
+.fleet-counts {
+  min-width: 5ch;
+  text-align: right;
+}
+
+.fleet-tasks {
+  font-size: 11.5px;
+  color: var(--muted);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.fleet-last {
+  font-size: 11.5px;
+  white-space: nowrap;
+  min-width: 4ch;
+  text-align: right;
 }
