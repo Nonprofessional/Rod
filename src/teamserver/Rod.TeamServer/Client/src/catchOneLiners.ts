@@ -20,14 +20,25 @@ export function catchLaunchers(publicEndpoint: string): CatchLauncher[] {
   if (!/^\d+$/.test(port)) return []
   const fifo = '/tmp/.rod-catch'
   return [
-    // The socat shape leads: it is the only one running the shell under a
-    // real pty, which is what colors the prompt, carries ^C and job control,
-    // and runs full-screen programs. The plain shapes are the fallbacks for
-    // a target without socat -- they work, but the shell has no terminal.
+    // The python pty shape leads: it is the full-interactive catch -- a real
+    // pty is what echoes typing, colors the prompt, turns ^C into SIGINT,
+    // and runs full-screen programs. python3 is the dependency most targets
+    // actually have (socat and script are rarer); the socat shape serves the
+    // targets that have it instead, and the plain shapes are the last
+    // resort -- they work, but the shell has no terminal, so typing has no
+    // echo and ^C is just a byte.
+    {
+      id: 'unix-python-pty',
+      os: 'linux',
+      command:
+        `python3 -c 'import socket,os,pty;s=socket.socket(socket.AF_INET,socket.SOCK_STREAM);s.connect(("${host}",${port}));os.dup2(s.fileno(),0);os.dup2(s.fileno(),1);os.dup2(s.fileno(),2);pty.spawn(["/bin/sh","-c","stty rows 30 cols 120; export TERM=xterm-256color; exec bash -i"])'`,
+    },
+
     {
       id: 'unix-socat',
       os: 'linux',
-      // The exec preamble sizes the pty and names its terminal type before
+      // The same pty posture over socat, for targets that have it: the exec
+      // preamble sizes the pty and names its terminal type before
       // the shell runs: a pty at the default 0x0 refuses full-screen
       // programs (vim, top), and without TERM the target's programs fall
       // back to terminal types with no colors (vim's E558 warning). The

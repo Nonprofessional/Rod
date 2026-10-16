@@ -602,13 +602,15 @@ interpreter families a target is likely to have (`bash -i >& /dev/tcp/...`,
 `nc`, a Python/Perl/PHP/socat one-liner, a PowerShell client). A listener
 picker renders the chosen endpoint's set in one fixed place when several
 catchers exist. No credential is involved: the address is the listener's
-own endpoint, and the caught shell lands in the Shells roster. The socat
-shape leads because it is the only one running the shell under a real
-pty -- prompt colors, ^C and job control, and full-screen programs come
-with a terminal; the plain shapes run without one (their output is
-faithfully rendered, colorless and line-at-a-time, and the console
-converts their bare-LF line endings so the transcript does not
-staircase).
+own endpoint, and the caught shell lands in the Shells roster. The
+python pty shape leads because it is the full-interactive catch: a real
+pty (via python's pty module -- the dependency most targets have) echoes
+typing, colors the prompt, turns ^C into SIGINT, and runs full-screen
+programs; the socat shape serves the same posture where socat exists.
+The plain shapes run without a terminal -- their output is faithfully
+rendered, colorless and line-at-a-time (the console converts their
+bare-LF line endings so the transcript does not staircase), but typing
+has no echo and ^C is just a byte.
 
 **Deliver a beacon** cuts the payload fetch command, so a target with any
 shell access beacons without a file landing first. The shell console's
