@@ -113,6 +113,13 @@ export function LaunchersView({
   const [hookBusy, setHookBusy] = useState(false)
   const [lastMinted, setLastMinted] = useState<MintedHook | null>(null)
 
+  // The delivery and hook cards share one slot as tabs (the settings page's
+  // strip shape): each card carries its own growing roster -- the kept
+  // launchers, the minted hooks -- and stacking them meant one list pushed
+  // the other card off-screen. Both forms' drafts live in this view's state,
+  // so a tab switch keeps what was picked.
+  const [formTab, setFormTab] = useState<'deliver' | 'hook'>('deliver')
+
   // The quiet clock keeps expiry counts moving between interactions.
   const now = useNow(30_000)
 
@@ -262,8 +269,9 @@ export function LaunchersView({
         <HelpHint>
           Every paste-ready one-liner this engagement can cut, in one place: reverse shells that
           land in the Shells roster, payload fetches that grow a beacon in the Implants table,
-          and the browser hook that enrolls a victim's browser as a Browser-class implant. Every
-          fetch render is kept below — re-copy it any time; Delete closes its lifecycle (the
+          and the browser hook that enrolls a victim's browser as a Browser-class implant. The
+          delivery and hook forms ride one tab strip, each keeping its own roster below it;
+          every fetch render is kept — re-copy it any time; Delete closes its lifecycle (the
           credential dies with the row, and the mint's history is the audit trail's to keep).
         </HelpHint>
       </h2>
@@ -306,11 +314,32 @@ export function LaunchersView({
         </div>
       )}
 
+      {/* The delivery and hook cards share one slot as tabs: each carries its
+          own growing roster, so stacking them let one list push the other
+          card off-screen. The strip shape is the settings page's. */}
+      <div className="inline-form">
+        <button
+          className={formTab === 'deliver' ? 'primary sm' : 'ghost sm'}
+          onClick={() => setFormTab('deliver')}
+          title="Cut a paste-ready one-liner that fetches a built payload over the engagement's web front and runs it."
+        >
+          Deliver a beacon
+        </button>
+        <button
+          className={formTab === 'hook' ? 'primary sm' : 'ghost sm'}
+          onClick={() => setFormTab('hook')}
+          title="Mint a served hook script and inject the answer as a script tag on the vulnerable page."
+        >
+          Hook a browser
+        </button>
+      </div>
+
       {/* The browser-hook mint: the XSS foothold's delivery. A hook is not a
           one-liner but a served script -- the mint renders it with its bake
           and answers the `<script src>` tag to inject; the hooked browsers
           then appear in the Implants table as Browser-class rows, taskable
           from the same menu as any implant. */}
+      {formTab === 'hook' && (
       <div className="card">
           <h3>
             Hook a browser
@@ -446,11 +475,13 @@ export function LaunchersView({
           </>
         )}
       </div>
+      )}
 
       {/* One card, one flow: the render form above, the kept rows below --
           the same single surface the Build tab gives its form and job strip,
           so cutting a launcher and coming back to it reads as one place
           instead of two boxed steps. */}
+      {formTab === 'deliver' && (
       <div className="card">
         <h3>
           Deliver a beacon
@@ -707,6 +738,7 @@ export function LaunchersView({
           </table>
         </div>
       </div>
+      )}
     </section>
   )
 }

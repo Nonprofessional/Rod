@@ -590,7 +590,10 @@ C2's own CA -- no system-trust assumptions.
 ## Launchers
 
 The engagement's one-liner home: every command an operator copies out, in
-one place.
+one place. **Deliver a beacon** and **Hook a browser** share one card slot
+as a two-entry tab strip (the settings page's strip shape; both keep their
+drafts across a switch) -- each card carries its own growing roster, so
+neither list pushes the other card off-screen.
 
 **Catch a shell** renders the paste-ready reverse-shell one-liners per
 shellcatch listener -- the classic shapes across the interpreter families a
