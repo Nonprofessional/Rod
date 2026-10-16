@@ -3,11 +3,13 @@ import {
   type ListenerSummary,
   type PayloadSummary,
   type ShellSession,
+  closeShell,
   listListeners,
   listPayloads,
   listShells,
 } from '../api'
 import { usePollIntervalMs } from '../clientPrefs'
+import { useArmedDelete } from '../useArmedDelete'
 import { HelpHint } from '../components/HelpHint'
 import { Icon } from '../components/Icons'
 import { ShellConsole } from '../components/ShellConsole'
@@ -91,6 +93,21 @@ export function ShellsView({
   // the transcript is the working view, the audit trail is the record.
   const onEnded = useCallback(() => void refresh(), [refresh])
 
+  // The row-level disconnect: an operator drops a shell without opening its
+  // console first. Two clicks, the shared armed pattern -- ending a live
+  // connection is the one destructive act this roster has.
+  const [armed, armDisconnect] = useArmedDelete()
+  const onDisconnect = (shell: ShellSession) =>
+    armDisconnect(shell.sessionId, () => void (async () => {
+      try {
+        await closeShell(engagementId, shell.sessionId)
+        setError(null)
+        await refresh()
+      } catch (e) {
+        setError(String(e))
+      }
+    })())
+
   return (
     <section className="view">
       <h2>
@@ -156,16 +173,31 @@ export function ShellsView({
                     {shell.lastOutputAt ? new Date(shell.lastOutputAt).toLocaleTimeString() : '—'}
                   </td>
                   <td>
-                    <button
-                      className={shell.sessionId === selectedId ? 'ghost sm' : 'primary sm'}
-                      onClick={() =>
-                        setSelectedId((current) =>
-                          current === shell.sessionId ? null : shell.sessionId,
-                        )
-                      }
-                    >
-                      {shell.sessionId === selectedId ? 'Hide console' : 'Console'}
-                    </button>
+                    <div className="row-actions">
+                      <button
+                        className={shell.sessionId === selectedId ? 'ghost sm' : 'primary sm'}
+                        onClick={() =>
+                          setSelectedId((current) =>
+                            current === shell.sessionId ? null : shell.sessionId,
+                          )
+                        }
+                      >
+                        {shell.sessionId === selectedId ? 'Hide console' : 'Console'}
+                      </button>
+                      {shell.status === 'live' && (
+                        <button
+                          className={`ghost sm danger${armed === shell.sessionId ? ' armed' : ''}`}
+                          onClick={() => onDisconnect(shell)}
+                          title={
+                            armed === shell.sessionId
+                              ? 'Click again — the button reverts on its own after a few seconds'
+                              : 'Disconnect this shell: the socket closes and the target-side one-liner exits. No confirm dialog past this arm.'
+                          }
+                        >
+                          {armed === shell.sessionId ? 'Confirm' : 'Disconnect'}
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}

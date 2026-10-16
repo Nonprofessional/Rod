@@ -894,7 +894,11 @@ and names its type before the shell runs (stty 120x30, TERM
 xterm-256color; the console mirrors that fixed geometry, since the catch
 socket carries no resize channel), the plain shapes have none. The typing half is
 claim-aware (see
-[Interaction ownership](#interaction-ownership)).
+[Interaction ownership](#interaction-ownership)). **Disconnect** ends a
+live shell from the row or the console (two clicks from the row): the
+socket closes, the target-side one-liner exits with it, and the row's
+status settles -- an ended row keeps its readable transcript until
+dismissed.
 
 **Upgrade** renders the same paste-ready launchers the Launchers tab cuts
 (the fetch one-liners that grow the shell into an enrolled implant), with

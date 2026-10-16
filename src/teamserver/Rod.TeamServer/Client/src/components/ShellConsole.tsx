@@ -161,7 +161,7 @@ export function ShellConsole({
     }
   }, [engagementId, shell.sessionId, onEnded])
 
-  const onCloseShell = async () => {
+  const onDisconnectShell = async () => {
     setBusy(true)
     try {
       await closeShell(engagementId, shell.sessionId)
@@ -228,11 +228,11 @@ export function ShellConsole({
           </button>
           <button
             className="ghost sm"
-            onClick={() => void onCloseShell()}
+            onClick={() => void onDisconnectShell()}
             disabled={busy || done}
-            title="End this shell (the target-side one-liner exits with the socket)"
+            title="Disconnect this shell: the socket closes and the target-side one-liner exits with it"
           >
-            Close
+            Disconnect
           </button>
         </span>
       </div>
