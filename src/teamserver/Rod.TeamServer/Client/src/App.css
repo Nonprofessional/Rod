@@ -3833,18 +3833,15 @@ button.palette-trigger {
   text-align: right;
 }
 
-/* The caught-shell console's emulator surface: the terminal owns its own
-   scrolling and rendering; the frame just sizes it and keeps the console's
-   terminal palette. The height is generous -- this is the console's primary
-   surface, not a peek. */
+/* The caught-shell console's emulator surface. The emulator carries a fixed
+   geometry mirroring the catch shape's pty (the socket has no resize
+   channel), so the frame does not size it: the terminal's own viewport
+   defines the height, and a card narrower than the fixed width scrolls
+   horizontally rather than reflowing the target's screen. */
 .terminal-surface {
-  height: 420px;
   padding: 8px 10px;
   background: var(--terminal-bg);
-}
-
-.terminal-surface .xterm {
-  height: 100%;
+  overflow-x: auto;
 }
 
 .terminal-surface:focus-within {

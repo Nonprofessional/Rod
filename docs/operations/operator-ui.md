@@ -884,7 +884,9 @@ the input route as typed (Enter, ^C, and paste are the shell's line
 discipline's to interpret -- there is no form), output renders with its
 colors and cursor addressing, and full-screen programs (vim, top) work
 when the caught shell runs under a pty -- the socat catch shape sizes one
-(stty before the shell), the plain shapes have none. The typing half is
+and names its type before the shell runs (stty 120x30, TERM
+xterm-256color; the console mirrors that fixed geometry, since the catch
+socket carries no resize channel), the plain shapes have none. The typing half is
 claim-aware (see
 [Interaction ownership](#interaction-ownership)).
 

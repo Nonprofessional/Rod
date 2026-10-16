@@ -41,11 +41,14 @@ export function catchLaunchers(publicEndpoint: string): CatchLauncher[] {
     {
       id: 'unix-socat',
       os: 'linux',
-      // The stty sets the pty's window size before the shell runs: a pty at
-      // the default 0x0 refuses full-screen programs (vim, top), and the
-      // catch socket carries no resize channel to fix it later.
+      // The exec preamble sizes the pty and names its terminal type before
+      // the shell runs: a pty at the default 0x0 refuses full-screen
+      // programs (vim, top), and without TERM the target's programs fall
+      // back to terminal types with no colors (vim's E558 warning). The
+      // catch socket carries no resize channel, so the geometry is fixed
+      // here -- and the console mirrors it.
       command:
-        `socat exec:'stty rows 40 cols 120; bash -i',pty,stderr,setsid,sigint,sane tcp:${host}:${port}`,
+        `socat exec:'stty rows 30 cols 120; export TERM=xterm-256color; exec bash -i',pty,stderr,setsid,sigint,sane tcp:${host}:${port}`,
     },
 
     {

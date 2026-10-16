@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from 'react'
-import { FitAddon } from '@xterm/addon-fit'
 import { Terminal } from '@xterm/xterm'
 import '@xterm/xterm/css/xterm.css'
 import {
@@ -25,6 +24,13 @@ import { StatusBadge } from './StatusBadge'
 // the terminal's own (colors, cursor addressing, full-screen programs on a
 // pty-backed shell). A transcript renderer could only show text; a shell that
 // runs vim needs the real thing.
+
+// The emulator's geometry: the socat catch shape sizes its pty at 120x30 and
+// the catch socket carries no resize channel, so the console mirrors that
+// fixed geometry instead of fitting the card -- a mismatched width garbles
+// every full-screen redraw the target makes.
+const TERM_COLS = 120
+const TERM_ROWS = 30
 //
 // The typing half is claim-aware (architecture.md Sec 4.5): a shell another
 // operator holds blocks input and names the holder, and this console's typing
@@ -77,6 +83,8 @@ export function ShellConsole({
       convertEol: false,
       cursorBlink: true,
       scrollback: 5000,
+      cols: TERM_COLS,
+      rows: TERM_ROWS,
       fontSize: 12,
       fontFamily: token('--font-mono', 'monospace'),
       theme: {
@@ -85,14 +93,7 @@ export function ShellConsole({
         cursor: token('--accent', '#2fc6e8'),
       },
     })
-    const fit = new FitAddon()
-    term.loadAddon(fit)
     term.open(terminalRef.current)
-    try {
-      fit.fit()
-    } catch {
-      // A hidden container cannot fit; the first visible layout will.
-    }
     termRef.current = term
     term.focus()
 
@@ -103,16 +104,7 @@ export function ShellConsole({
       })
     })
 
-    const onResize = () => {
-      try {
-        fit.fit()
-      } catch {
-        // Fit before layout is not fatal.
-      }
-    }
-    window.addEventListener('resize', onResize)
     return () => {
-      window.removeEventListener('resize', onResize)
       term.dispose()
       termRef.current = null
     }
