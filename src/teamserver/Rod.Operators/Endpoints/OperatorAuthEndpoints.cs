@@ -500,7 +500,7 @@ public static class OperatorAuthEndpoints
     }
 
     private static OperatorAuthSummary ToSummary(Operator op)
-        => new(op.Id.Value, op.Handle, op.CreatedAt, DeploymentRoles.ToName(op.DeploymentRole));
+        => new(op.Id.ToString(), op.Handle, op.CreatedAt, DeploymentRoles.ToName(op.DeploymentRole));
 
     private static OperatorAccountResponse ToAccount(Operator op, bool hasCredential)
         => new(op.Id.Value, op.Handle, op.CreatedAt, hasCredential, op.Disabled,
@@ -529,9 +529,11 @@ public sealed record CredentialSetRequest(string? Password, string? CurrentPassw
 /// The authenticated operator returned by login and <c>GET /operators/me</c>:
 /// identity, the account's creation time, and deployment role -- the role is
 /// the one privilege the account holds; everything else the operator may
-/// reach resolves per engagement.
+/// reach resolves per engagement. The id is the domain's compact "N" wire
+/// form, so the console's id comparisons (the live claims it holds, the
+/// presence roster) match the same operator without format gymnastics.
 /// </summary>
-public sealed record OperatorAuthSummary(Guid Id, string Handle, DateTimeOffset CreatedAt, string Role);
+public sealed record OperatorAuthSummary(string Id, string Handle, DateTimeOffset CreatedAt, string Role);
 
 /// <summary>
 /// A freshly minted API token: the secret is shown exactly once, here -- only

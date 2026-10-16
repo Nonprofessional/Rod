@@ -116,7 +116,11 @@ public class OperatorAuthTests
             Assert.NotNull(summary);
             Assert.Equal(Handle, summary!.Handle);
             Assert.Equal("admin", summary.Role);
-            Assert.NotEqual(Guid.Empty, summary.Id);
+            // The id is the domain's compact "N" wire form -- the shape the
+            // live claims and presence roster carry, so a console comparing
+            // its session id against them matches.
+            Assert.NotEqual(Guid.Empty, Guid.Parse(summary.Id));
+            Assert.DoesNotContain('-', summary.Id);
         }
     }
 
