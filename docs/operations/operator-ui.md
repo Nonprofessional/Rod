@@ -896,7 +896,11 @@ and names its type before the shell runs (stty 120x30, TERM
 xterm-256color; the console mirrors that fixed geometry, since the catch
 socket carries no resize channel), the plain shapes have none. The typing half is
 claim-aware (see
-[Interaction ownership](#interaction-ownership)). **Disconnect** ends a
+[Interaction ownership](#interaction-ownership)). Typing lands where the
+surface's inset frame sits: click the surface to focus, and the clipboard
+rides Ctrl+Shift+C / Ctrl+Shift+V (the Insert pair works too; native
+Ctrl+V pastes) while Ctrl+C stays the interrupt a terminal expects.
+**Disconnect** ends a
 live shell from the row or the console (two clicks from the row): the
 socket closes, the target-side one-liner exits with it, and the row's
 status settles -- an ended row keeps its readable transcript until

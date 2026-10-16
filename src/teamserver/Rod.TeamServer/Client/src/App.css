@@ -3847,3 +3847,10 @@ button.palette-trigger {
 .terminal-surface:focus-within {
   outline: none;
 }
+
+/* The focus frame: typing lands in the emulator's textarea, so an inset
+   accent while it holds the keyboard focus answers "where am I typing"
+   without stealing attention. */
+.terminal-surface.focused {
+  box-shadow: inset 0 0 0 1px var(--accent);
+}

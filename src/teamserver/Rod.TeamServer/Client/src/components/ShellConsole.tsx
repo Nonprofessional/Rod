@@ -54,6 +54,9 @@ export function ShellConsole({
   const [upgradeListenerId, setUpgradeListenerId] = useState('')
   const [upgradePayloadId, setUpgradePayloadId] = useState('')
   const [busy, setBusy] = useState(false)
+  // Whether the emulator's textarea holds the keyboard focus -- the visible
+  // answer to "where does my typing go", as an inset frame on the surface.
+  const [focused, setFocused] = useState(false)
   const terminalRef = useRef<HTMLDivElement>(null)
   // The emulator and its write handle: one per shell session, owned by the
   // effect below; the read pump reaches it through the ref.
@@ -102,14 +105,61 @@ export function ShellConsole({
     termRef.current = term
     term.focus()
 
+    const send = (text: string): Promise<void> => {
+      if (doneRef.current || lockedRef.current || text === '') return Promise.resolve()
+      return sendShellInput(engagementId, shell.sessionId, text)
+    }
+
     term.onData((data) => {
-      if (doneRef.current || lockedRef.current || data === '') return
-      void sendShellInput(engagementId, shell.sessionId, data).catch((e: unknown) => {
+      void send(data).catch((e: unknown) => {
         setError(String(e))
       })
     })
 
+    // The terminal keyboard's copy/paste conventions, spelled out: ^C and
+    // ^V are control bytes to the shell, so the clipboard rides the shifted
+    // pairs (and the Insert pair for the Windows habit). Native Ctrl+V paste
+    // keeps working alongside -- the browser fires it on the terminal's
+    // textarea and xterm forwards the text.
+    term.attachCustomKeyEventHandler((event) => {
+      if (event.type !== 'keydown') return true
+      const key = event.key.toLowerCase()
+      const copy =
+        (event.ctrlKey && event.shiftKey && key === 'c')
+        || (event.ctrlKey && key === 'insert')
+      const paste =
+        (event.ctrlKey && event.shiftKey && key === 'v')
+        || (event.shiftKey && !event.ctrlKey && key === 'insert')
+      if (copy) {
+        const selection = term.getSelection()
+        if (selection !== '') {
+          void navigator.clipboard
+            .writeText(selection)
+            .then(() => term.clearSelection())
+            .catch((e: unknown) => setError(String(e)))
+        }
+        return false
+      }
+      if (paste) {
+        void navigator.clipboard
+          .readText()
+          .then((text) => send(text))
+          .catch((e: unknown) => setError(String(e)))
+        return false
+      }
+      return true
+    })
+
+    // The focus frame: the emulator's hidden textarea is where typing
+    // lands, so its focus/blur drives the surface's inset frame.
+    const onFocus = () => setFocused(true)
+    const onBlur = () => setFocused(false)
+    term.textarea?.addEventListener('focus', onFocus)
+    term.textarea?.addEventListener('blur', onBlur)
+
     return () => {
+      term.textarea?.removeEventListener('focus', onFocus)
+      term.textarea?.removeEventListener('blur', onBlur)
       term.dispose()
       termRef.current = null
     }
@@ -240,9 +290,14 @@ export function ShellConsole({
           key, not a button); full-screen programs need the target shell under
           a pty, which the socat catch shape provides. */}
       <div
-        className="terminal-surface"
+        className={`terminal-surface${focused ? ' focused' : ''}`}
         ref={terminalRef}
-        title={locked ? `held by ${holderHandle}` : undefined}
+        onMouseDown={() => termRef.current?.focus()}
+        title={
+          locked
+            ? `held by ${holderHandle}`
+            : 'Click to type — Ctrl+Shift+C / Ctrl+Shift+V (or the Insert pair) copy and paste; Ctrl+C interrupts; Ctrl+V pastes natively'
+        }
       />
       {upgrade && (
         <div className="upgrade-panel">
