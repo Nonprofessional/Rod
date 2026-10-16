@@ -89,6 +89,10 @@ export function ShellConsole({
       // conversion renders those streams in place, and costs the pty shapes
       // nothing (their \r\n just gains a redundant carriage return).
       convertEol: true,
+      // The bar cursor reads as "type here" the way every editor's caret
+      // does; a block over a character is easier to miss.
+      cursorStyle: 'bar',
+      cursorWidth: 2,
       cursorBlink: true,
       scrollback: 5000,
       cols: TERM_COLS,
@@ -99,6 +103,14 @@ export function ShellConsole({
         background: token('--terminal-bg', '#07090d'),
         foreground: token('--terminal-text', '#c9d7e4'),
         cursor: token('--accent', '#2fc6e8'),
+        // The glyph color where the bar cursor stands, so the character
+        // under it stays readable.
+        cursorAccent: token('--terminal-bg', '#07090d'),
+        // Without an explicit selection background the highlight renders
+        // near-invisible against the dark palette -- a selection the
+        // operator cannot see is a selection that cannot be trusted.
+        selectionBackground: 'rgba(47, 198, 232, 0.30)',
+        selectionInactiveBackground: 'rgba(47, 198, 232, 0.14)',
       },
     })
     term.open(terminalRef.current)
