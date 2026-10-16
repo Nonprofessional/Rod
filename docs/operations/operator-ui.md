@@ -872,6 +872,26 @@ audited without the secret, and the secret reads out exactly once in the
 dialog that minted it -- copy it before closing. A standalone token has
 no payload row, so its revoke rides the same dialog.
 
+## Shells
+
+The engagement's caught reverse shells: every no-protocol connection a
+shellcatch listener accepted, with its status, remote address, and
+last-output stamp. Selecting a row opens the console, which renders the
+shell's output as a terminal rather than a byte dump: SGR colors,
+bold/dim/underline, carriage returns, backspaces, and tab stops render,
+while the invisible control data a pseudo-terminal shell emits -- window
+title sets, shell-integration markers, cursor moves -- is consumed. The
+typing half is claim-aware (see
+[Interaction ownership](#interaction-ownership)).
+
+**Upgrade** renders the same paste-ready launchers the Launchers tab cuts
+(the fetch one-liners that grow the shell into an enrolled implant), with
+the same picks: which build the fetch delivers -- a payload whose baked
+enrollment credential is dead cannot enroll the beacon it downloads, so
+those entries refuse, and with no deliverable build at all the button
+says so instead of letting the paste discover it -- and which front
+serves the fetch.
+
 ## Web shells
 
 The operating side of the web-shell builds: the roster of scripts placed

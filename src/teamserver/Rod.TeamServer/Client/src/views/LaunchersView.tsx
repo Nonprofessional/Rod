@@ -20,6 +20,7 @@ import { CopyButton } from '../components/CopyButton'
 import { HelpHint } from '../components/HelpHint'
 import { Icon } from '../components/Icons'
 import { osIconFor } from '../osKind'
+import { deliverable, payloadLabel } from '../payloads'
 import { useNow } from '../when'
 
 // The engagement's one-liner home: every command an operator copies out,
@@ -33,24 +34,6 @@ import { useNow } from '../when'
 // is kept, so the operator can come back to it: re-copy the command any
 // time, watch the credential's budget, revoke it the moment it leaks, and
 // delete the row when it is spent.
-
-// Whether a payload's baked enrollment credential still lives: the render
-// refuses a dead one (revoked, spent, or expired -- the fetched artifact
-// could never enroll), so the picker says so instead of letting the submit
-// discover it. A credential-free build rides: it is the manual-mint shape
-// with its own delivery story.
-function deliverable(p: PayloadSummary): boolean {
-  if (!p.tokenId) return true
-  if (p.tokenMaxUses === 0) {
-    return p.tokenExpiresAt == null
-      || new Date(p.tokenExpiresAt).getTime() > Date.now()
-  }
-  return (
-    p.tokenRemainingUses != null
-    && p.tokenRemainingUses > 0
-    && (p.tokenExpiresAt == null || new Date(p.tokenExpiresAt).getTime() > Date.now())
-  )
-}
 
 // The redeem budgets an operator realistically picks. Single-use is the
 // default posture (one paste, one download); the wider budgets serve a
@@ -68,22 +51,6 @@ const LIFETIME_OPTIONS: { value: number; label: string }[] = [
   { value: 720, label: '12 hours' },
   { value: 1440, label: '24 hours' },
 ]
-
-function payloadLabel(p: PayloadSummary): string {
-  const target = p.target ?? p.language
-  return [
-    // The wire class reads as noise for the only implant class there is;
-    // the other kinds (a web-shell script) still stand out.
-    p.class === 'Implant' ? null : p.class,
-    target,
-    // The library's own identifier, at the same width the Payloads tab's
-    // Fingerprint column shows, so a picker entry matches its row there.
-    p.fingerprint ? p.fingerprint.slice(0, 16) : null,
-    new Date(p.builtAt).toLocaleString(),
-  ]
-    .filter(Boolean)
-    .join(' · ')
-}
 
 export function LaunchersView({
   engagementId,

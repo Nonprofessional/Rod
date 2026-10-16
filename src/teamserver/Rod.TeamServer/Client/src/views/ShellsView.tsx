@@ -1,5 +1,12 @@
 import { useCallback, useEffect, useState } from 'react'
-import { type ListenerSummary, type ShellSession, listListeners, listShells } from '../api'
+import {
+  type ListenerSummary,
+  type PayloadSummary,
+  type ShellSession,
+  listListeners,
+  listPayloads,
+  listShells,
+} from '../api'
 import { usePollIntervalMs } from '../clientPrefs'
 import { HelpHint } from '../components/HelpHint'
 import { Icon } from '../components/Icons'
@@ -26,6 +33,9 @@ export function ShellsView({
   const [shells, setShells] = useState<ShellSession[]>([])
   const [catchers, setCatchers] = useState<ListenerSummary[]>([])
   const [webListeners, setWebListeners] = useState<ListenerSummary[]>([])
+  // The console's upgrade picker: which builds exist and which can still
+  // enroll.
+  const [payloads, setPayloads] = useState<PayloadSummary[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   // The reconciliation poll's cadence, set per browser in Settings.
@@ -44,16 +54,21 @@ export function ShellsView({
     void refresh()
   }, [refresh, onlineTick])
 
-  // The shellcatch listeners (the catch one-liners' home) and the web
-  // listeners (the console's upgrade fetch fronts): loaded with the roster's
-  // tick rather than the slow poll -- listeners change rarely, and the
-  // surfaces that read them only need to exist, not to reconcile.
+  // The shellcatch listeners (the catch one-liners' home), the web listeners
+  // (the console's upgrade fetch fronts), and the payload library (what the
+  // upgrade can grow the shell into): loaded with the roster's tick rather
+  // than the slow poll -- all three change rarely, and the surfaces that
+  // read them only need to exist, not to reconcile.
   useEffect(() => {
     void (async () => {
       try {
-        const all = await listListeners(engagementId)
+        const [all, built] = await Promise.all([
+          listListeners(engagementId),
+          listPayloads(engagementId).catch(() => [] as PayloadSummary[]),
+        ])
         setCatchers(all.filter((l) => l.transport === 'shellcatch'))
         setWebListeners(all.filter((l) => ['http', 'https', 'mtls'].includes(l.transport)))
+        setPayloads(built)
       } catch {
         // A failed load leaves the hint generic; the roster above still works.
       }
@@ -163,6 +178,7 @@ export function ShellsView({
           engagementId={engagementId}
           shell={selected}
           webListeners={webListeners}
+          payloads={payloads}
           onEnded={onEnded}
         />
       )}

@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   ApiError,
   type ListenerSummary,
+  type PayloadSummary,
   type ShellSession,
   type ShellUpgrade,
   closeShell,
@@ -10,6 +11,8 @@ import {
   upgradeShell,
 } from '../api'
 import { launcherHint } from '../launcherFamilies'
+import { deliverable, payloadLabel } from '../payloads'
+import { parseTerminalOutput } from '../terminalText'
 import { useClaim } from '../useClaim'
 import { CopyButton } from './CopyButton'
 import { StatusBadge } from './StatusBadge'
@@ -28,11 +31,13 @@ export function ShellConsole({
   engagementId,
   shell,
   webListeners,
+  payloads,
   onEnded,
 }: {
   engagementId: string
   shell: ShellSession
   webListeners: ListenerSummary[]
+  payloads: PayloadSummary[]
   onEnded: () => void
 }) {
   const [transcript, setTranscript] = useState('')
@@ -41,6 +46,7 @@ export function ShellConsole({
   const [error, setError] = useState<string | null>(null)
   const [upgrade, setUpgrade] = useState<ShellUpgrade | null>(null)
   const [upgradeListenerId, setUpgradeListenerId] = useState('')
+  const [upgradePayloadId, setUpgradePayloadId] = useState('')
   const transcriptRef = useRef<HTMLPreElement>(null)
   // The output cursor survives re-renders; the console never re-reads what
   // it already holds.
@@ -91,7 +97,23 @@ export function ShellConsole({
     if (pre) pre.scrollTop = pre.scrollHeight
   }, [transcript])
 
+  // The raw stream reduced to styled lines: a shell under a pseudo-terminal
+  // speaks terminal control data (colors, title sets, shell-integration
+  // markers), and the console renders what is visible rather than dumping
+  // the control bytes.
+  const lines = useMemo(() => parseTerminalOutput(transcript), [transcript])
+
   const done = shell.status !== 'live'
+
+  // The upgrade grows the shell into an enrolled implant, so it needs a
+  // payload whose baked enrollment credential still lives -- the same gate
+  // the Launchers picker applies, said up front instead of discovered by
+  // the paste.
+  const upgradeBlockedReason = payloads.length === 0
+    ? 'No payload in this engagement yet -- build one under Build first'
+    : payloads.every((p) => !deliverable(p))
+      ? 'Every built payload\'s enrollment credential is dead (revoked, spent, or expired) -- build a fresh one'
+      : null
 
   const onSend = async (event: React.FormEvent) => {
     event.preventDefault()
@@ -139,7 +161,12 @@ export function ShellConsole({
     setBusy(true)
     try {
       setUpgrade(
-        await upgradeShell(engagementId, shell.sessionId, undefined, upgradeListenerId || undefined),
+        await upgradeShell(
+          engagementId,
+          shell.sessionId,
+          upgradePayloadId || undefined,
+          upgradeListenerId || undefined,
+        ),
       )
       setError(null)
     } catch (e) {
@@ -164,7 +191,12 @@ export function ShellConsole({
           </span>
         )}
         <span className="spacer">
-          <button className="ghost sm" onClick={() => void onUpgrade()} disabled={busy}>
+          <button
+            className="ghost sm"
+            onClick={() => void onUpgrade()}
+            disabled={busy || upgradeBlockedReason !== null}
+            title={upgradeBlockedReason ?? 'Render the paste-ready launchers that grow this shell into an enrolled implant'}
+          >
             Upgrade
           </button>
           <button
@@ -178,7 +210,27 @@ export function ShellConsole({
         </span>
       </div>
       <pre className="interact-transcript" ref={transcriptRef}>
-        {transcript || '—'}
+        {lines.length === 0 || (lines.length === 1 && lines[0].spans.length === 0)
+          ? '—'
+          : lines.map((line, i) => (
+              <div className="t-line" key={i}>
+                {line.spans.length === 0
+                  ? '\u200b'
+                  : line.spans.map((span, j) => (
+                      <span
+                        key={j}
+                        style={{
+                          color: span.color,
+                          fontWeight: span.bold ? 600 : undefined,
+                          opacity: span.dim ? 0.55 : undefined,
+                          textDecoration: span.underline ? 'underline' : undefined,
+                        }}
+                      >
+                        {span.text}
+                      </span>
+                    ))}
+              </div>
+            ))}
       </pre>
       <form className="task-form" onSubmit={onSend}>
         <span className="prompt" aria-hidden="true">
@@ -204,6 +256,27 @@ export function ShellConsole({
             Paste one of these into the shell to grow it into an enrolled implant. The credential is
             single-use and expires <time>{new Date(upgrade.tokenExpiresAt).toLocaleTimeString()}</time>.
           </p>
+          {/* The same picks the Launchers render form offers: which build the
+              fetch delivers, and which front serves it. */}
+          <div className="upgrade-launcher">
+            <code>deliver</code>
+            <select
+              value={upgradePayloadId}
+              onChange={(e) => setUpgradePayloadId(e.target.value)}
+              title="The payload the fetch delivers; the newest build stands in when unnamed. A dead credential cannot enroll the beacon it downloads, so those entries refuse."
+            >
+              <option value="">Newest build</option>
+              {payloads.map((p) => {
+                const dead = !deliverable(p)
+                return (
+                  <option key={p.artifactId} value={p.artifactId} disabled={dead}>
+                    {payloadLabel(p)}
+                    {dead ? ' — credential dead' : ''}
+                  </option>
+                )
+              })}
+            </select>
+          </div>
           {webListeners.length > 1 && (
             <div className="upgrade-launcher">
               <code>fetch via</code>
