@@ -998,7 +998,8 @@ a:hover {
 .status.completed,
 .status.online,
 .status.running,
-.status.active {
+.status.active,
+.status.live {
   color: var(--success);
   border-color: color-mix(in srgb, var(--success) 35%, transparent);
   background: var(--success-soft);

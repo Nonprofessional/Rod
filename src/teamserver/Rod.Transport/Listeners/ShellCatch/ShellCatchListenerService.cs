@@ -144,7 +144,7 @@ internal sealed class ShellCatchListenerService : BackgroundService
             {
                 await Task.Delay(NudgeDelay, stoppingToken);
                 if (shell.Output.LatestSequence == 0)
-                    await shell.WriteInputAsync(string.Empty, stoppingToken);
+                    await shell.WriteInputAsync("\n", stoppingToken);
             }
             catch (OperationCanceledException)
             {

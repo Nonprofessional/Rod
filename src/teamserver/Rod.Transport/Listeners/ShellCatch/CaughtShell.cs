@@ -51,14 +51,17 @@ public sealed class CaughtShell
             : Session.RemoteAddress;
 
     /// <summary>
-    /// Writes one operator input down the socket: the text then a newline,
-    /// the line discipline a dumb shell expects. Serialized across
-    /// concurrent operator submissions; returns false when the write failed
-    /// (the peer is gone and the pump will finish the ending).
+    /// Writes one operator input down the socket, verbatim: the caller sends
+    /// exactly the bytes it means -- a command line arrives with its own
+    /// newline, the interrupt byte arrives alone. Appending one here sent a
+    /// second line after every command and a stray Enter after every ^C.
+    /// Serialized across concurrent operator submissions; returns false when
+    /// the write failed (the peer is gone and the pump will finish the
+    /// ending).
     /// </summary>
     public async Task<bool> WriteInputAsync(string text, CancellationToken cancellationToken)
     {
-        var bytes = Encoding.UTF8.GetBytes(text + "\n");
+        var bytes = Encoding.UTF8.GetBytes(text);
         try
         {
             await _writeGate.WaitAsync(cancellationToken);

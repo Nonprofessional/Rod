@@ -180,7 +180,7 @@ public class ShellCatchTests
         var shell = await WaitForAsync(() => Task.FromResult(hub.List().SingleOrDefault()),
             found => found is not null, "the listener to catch the shell");
 
-        Assert.True(await shell!.WriteInputAsync("id", Timeout()));
+        Assert.True(await shell!.WriteInputAsync("id\n", Timeout()));
 
         var buffer = new byte[64];
         var read = await peer.GetStream().ReadAsync(buffer, Timeout());
@@ -239,10 +239,11 @@ public class ShellCatchTests
         Assert.NotNull(output);
         Assert.Contains("user@target:~$", string.Concat(output!.Chunks.Select(c => c.Text)));
 
-        // Operator input rides the operator API down the socket.
+        // Operator input rides the operator API down the socket, verbatim:
+        // the line arrives with its own newline the way the console sends it.
         var sent = await env.Http.PostAsJsonAsync(
             $"/engagements/{engagementId}/shells/{sessionId}:input",
-            new ShellInputDto("whoami"));
+            new ShellInputDto("whoami\n"));
         sent.EnsureSuccessStatusCode();
         var received = new StringBuilder();
         var buffer = new byte[64];

@@ -48,6 +48,10 @@ export function ShellConsole({
   const [upgradeListenerId, setUpgradeListenerId] = useState('')
   const [upgradePayloadId, setUpgradePayloadId] = useState('')
   const transcriptRef = useRef<HTMLPreElement>(null)
+  // A console's input is where the operator lands: focused when the console
+  // opens and re-focused after every submission, so Enter never strands the
+  // cursor outside the line.
+  const inputRef = useRef<HTMLInputElement>(null)
   // The output cursor survives re-renders; the console never re-reads what
   // it already holds.
   const cursorRef = useRef(0)
@@ -56,6 +60,7 @@ export function ShellConsole({
   useEffect(() => {
     setTranscript('')
     cursorRef.current = 0
+    inputRef.current?.focus()
   }, [shell.sessionId])
 
   // The output loop: one long poll in flight at a time; each answer's
@@ -127,6 +132,7 @@ export function ShellConsole({
       setError(String(e))
     } finally {
       setBusy(false)
+      inputRef.current?.focus()
     }
   }
 
@@ -142,6 +148,7 @@ export function ShellConsole({
       setError(String(e))
     } finally {
       setBusy(false)
+      inputRef.current?.focus()
     }
   }
 
@@ -238,6 +245,7 @@ export function ShellConsole({
         </span>
         <input
           className="wide"
+          ref={inputRef}
           placeholder={done ? 'shell ended' : locked ? `held by ${holderHandle}` : 'type a command'}
           value={line}
           disabled={done || busy || locked}
