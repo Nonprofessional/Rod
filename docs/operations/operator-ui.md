@@ -878,12 +878,14 @@ no payload row, so its revoke rides the same dialog.
 
 The engagement's caught reverse shells: every no-protocol connection a
 shellcatch listener accepted, with its status, remote address, and
-last-output stamp. Selecting a row opens the console, which renders the
-shell's output as a terminal rather than a byte dump: SGR colors,
-bold/dim/underline, carriage returns, backspaces, and tab stops render,
-while the invisible control data a pseudo-terminal shell emits -- window
-title sets, shell-integration markers, cursor moves -- is consumed. The
-typing half is claim-aware (see
+last-output stamp. Selecting a row opens the console, a real terminal
+emulator (xterm) wired straight to the held connection: keystrokes ride
+the input route as typed (Enter, ^C, and paste are the shell's line
+discipline's to interpret -- there is no form), output renders with its
+colors and cursor addressing, and full-screen programs (vim, top) work
+when the caught shell runs under a pty -- the socat catch shape sizes one
+(stty before the shell), the plain shapes have none. The typing half is
+claim-aware (see
 [Interaction ownership](#interaction-ownership)).
 
 **Upgrade** renders the same paste-ready launchers the Launchers tab cuts

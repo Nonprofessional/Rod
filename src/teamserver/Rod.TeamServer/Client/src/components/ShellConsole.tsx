@@ -1,4 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { FitAddon } from '@xterm/addon-fit'
+import { Terminal } from '@xterm/xterm'
+import '@xterm/xterm/css/xterm.css'
 import {
   ApiError,
   type ListenerSummary,
@@ -12,21 +15,21 @@ import {
 } from '../api'
 import { launcherHint } from '../launcherFamilies'
 import { deliverable, payloadLabel } from '../payloads'
-import { parseTerminalOutput } from '../terminalText'
 import { useClaim } from '../useClaim'
 import { CopyButton } from './CopyButton'
 import { StatusBadge } from './StatusBadge'
 
-// The caught-shell console, styled as a terminal: the held connection's
-// output read by cursor -- each read parks server-side until the next chunk,
-// so one request stays in flight instead of a spinning poll -- with typing
-// posted through the input route and the close route ending the shell as an
-// operator action. The input half is claim-aware (architecture.md Sec 4.5):
-// a shell another operator holds locks the input line and names the holder,
-// and this console's typing takes the claim on first post. The upgrade
-// button renders the paste-ready launchers that grow the shell into a real
-// implant (naming the web front the fetch rides when several exist); the
-// paste itself is the operator's, through this same input line.
+// The caught-shell console: a real terminal emulator (xterm, the VS Code
+// terminal's engine) wired straight to the held connection -- keystrokes ride
+// the input route as typed, output long-polls by cursor, and the rendering is
+// the terminal's own (colors, cursor addressing, full-screen programs on a
+// pty-backed shell). A transcript renderer could only show text; a shell that
+// runs vim needs the real thing.
+//
+// The typing half is claim-aware (architecture.md Sec 4.5): a shell another
+// operator holds blocks input and names the holder, and this console's typing
+// takes the claim on first key. The upgrade button renders the paste-ready
+// launchers that grow the shell into a real implant.
 export function ShellConsole({
   engagementId,
   shell,
@@ -40,48 +43,113 @@ export function ShellConsole({
   payloads: PayloadSummary[]
   onEnded: () => void
 }) {
-  const [transcript, setTranscript] = useState('')
-  const [line, setLine] = useState('')
-  const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [upgrade, setUpgrade] = useState<ShellUpgrade | null>(null)
   const [upgradeListenerId, setUpgradeListenerId] = useState('')
   const [upgradePayloadId, setUpgradePayloadId] = useState('')
-  const transcriptRef = useRef<HTMLPreElement>(null)
-  // A console's input is where the operator lands: focused when the console
-  // opens and re-focused after every submission, so Enter never strands the
-  // cursor outside the line.
-  const inputRef = useRef<HTMLInputElement>(null)
-  // The output cursor survives re-renders; the console never re-reads what
-  // it already holds.
-  const cursorRef = useRef(0)
+  const [busy, setBusy] = useState(false)
+  const terminalRef = useRef<HTMLDivElement>(null)
+  // The emulator and its write handle: one per shell session, owned by the
+  // effect below; the read pump reaches it through the ref.
+  const termRef = useRef<Terminal | null>(null)
   const { locked, holderHandle } = useClaim(engagementId, 'shell', shell.sessionId)
 
-  useEffect(() => {
-    setTranscript('')
-    cursorRef.current = 0
-    inputRef.current?.focus()
-  }, [shell.sessionId])
+  const done = shell.status !== 'live'
 
-  // The output loop: one long poll in flight at a time; each answer's
-  // chunks append to the transcript and advance the cursor. A 410 answer
-  // means the shell ended server-side -- the registry holds the record and
-  // the console stops reading.
+  // The roster state's current values, read by the emulator's input gate:
+  // the emulator itself must not rebuild when they move (the transcript
+  // would drop), so the gate reads through these instead of closing over
+  // the render's values.
+  const doneRef = useRef(done)
+  const lockedRef = useRef(locked)
+
+  // The emulator's lifecycle: created per shell session, themed off the
+  // console's own CSS tokens, focused on open (a console's surface is where
+  // the operator lands), resized with the window. Keystrokes ride the input
+  // route verbatim -- a shell's line discipline, not a form, decides what a
+  // key means (Enter, ^C, paste, everything).
+  useEffect(() => {
+    if (!terminalRef.current) return
+    const styles = getComputedStyle(document.documentElement)
+    const token = (name: string, fallback: string): string =>
+      styles.getPropertyValue(name).trim() || fallback
+    const term = new Terminal({
+      convertEol: false,
+      cursorBlink: true,
+      scrollback: 5000,
+      fontSize: 12,
+      fontFamily: token('--font-mono', 'monospace'),
+      theme: {
+        background: token('--terminal-bg', '#07090d'),
+        foreground: token('--terminal-text', '#c9d7e4'),
+        cursor: token('--accent', '#2fc6e8'),
+      },
+    })
+    const fit = new FitAddon()
+    term.loadAddon(fit)
+    term.open(terminalRef.current)
+    try {
+      fit.fit()
+    } catch {
+      // A hidden container cannot fit; the first visible layout will.
+    }
+    termRef.current = term
+    term.focus()
+
+    term.onData((data) => {
+      if (doneRef.current || lockedRef.current || data === '') return
+      void sendShellInput(engagementId, shell.sessionId, data).catch((e: unknown) => {
+        setError(String(e))
+      })
+    })
+
+    const onResize = () => {
+      try {
+        fit.fit()
+      } catch {
+        // Fit before layout is not fatal.
+      }
+    }
+    window.addEventListener('resize', onResize)
+    return () => {
+      window.removeEventListener('resize', onResize)
+      term.dispose()
+      termRef.current = null
+    }
+    // The roster state (done, locked) deliberately stays out of the deps:
+    // re-running this effect would rebuild the emulator and drop the
+    // transcript on every roster refresh. The refs below carry the current
+    // values into the input gate instead.
+  }, [engagementId, shell.sessionId])
+
+  // The claim and roster state move around the emulator's life; the input
+  // gate and the stdin lock follow them without rebuilding anything.
+  useEffect(() => {
+    doneRef.current = done
+    lockedRef.current = locked
+    if (termRef.current) termRef.current.options.disableStdin = done || locked
+  }, [done, locked])
+
+  // The output loop: one long poll in flight at a time; each answer's chunks
+  // land on the emulator and advance the cursor. A 410 answer means the shell
+  // ended server-side -- mark it in the surface and stop reading.
   useEffect(() => {
     let stopped = false
     const pump = async () => {
+      // The cursor never re-reads what the emulator already holds.
+      let cursor = 0
       while (!stopped) {
         try {
-          const output = await readShellOutput(engagementId, shell.sessionId, cursorRef.current)
+          const output = await readShellOutput(engagementId, shell.sessionId, cursor)
           if (stopped) return
           if (output.chunks.length > 0) {
-            cursorRef.current = output.latestSequence
-            setTranscript((current) => current + output.chunks.map((c) => c.text).join(''))
-            setError(null)
+            cursor = output.latestSequence
+            termRef.current?.write(output.chunks.map((c) => c.text).join(''))
           }
         } catch (e) {
           if (stopped) return
           if (e instanceof ApiError && e.status === 410) {
+            termRef.current?.write('\r\n\x1b[90m— shell ended —\x1b[0m\r\n')
             onEnded()
             return
           }
@@ -96,62 +164,6 @@ export function ShellConsole({
     }
   }, [engagementId, shell.sessionId, onEnded])
 
-  // Keep the newest output in view as the transcript grows.
-  useEffect(() => {
-    const pre = transcriptRef.current
-    if (pre) pre.scrollTop = pre.scrollHeight
-  }, [transcript])
-
-  // The raw stream reduced to styled lines: a shell under a pseudo-terminal
-  // speaks terminal control data (colors, title sets, shell-integration
-  // markers), and the console renders what is visible rather than dumping
-  // the control bytes.
-  const lines = useMemo(() => parseTerminalOutput(transcript), [transcript])
-
-  const done = shell.status !== 'live'
-
-  // The upgrade grows the shell into an enrolled implant, so it needs a
-  // payload whose baked enrollment credential still lives -- the same gate
-  // the Launchers picker applies, said up front instead of discovered by
-  // the paste.
-  const upgradeBlockedReason = payloads.length === 0
-    ? 'No payload in this engagement yet -- build one under Build first'
-    : payloads.every((p) => !deliverable(p))
-      ? 'Every built payload\'s enrollment credential is dead (revoked, spent, or expired) -- build a fresh one'
-      : null
-
-  const onSend = async (event: React.FormEvent) => {
-    event.preventDefault()
-    if (!line || busy || done) return
-    setBusy(true)
-    try {
-      await sendShellInput(engagementId, shell.sessionId, line + '\n')
-      setLine('')
-      setError(null)
-    } catch (e) {
-      setError(String(e))
-    } finally {
-      setBusy(false)
-      inputRef.current?.focus()
-    }
-  }
-
-  // The interrupt byte the way a real terminal sends it; on a dumb shell it
-  // is a byte the shell's foreground program reads or ignores -- the button
-  // carries no PTY promise a caught shell cannot keep.
-  const onInterrupt = async () => {
-    setBusy(true)
-    try {
-      await sendShellInput(engagementId, shell.sessionId, '\x03')
-      setError(null)
-    } catch (e) {
-      setError(String(e))
-    } finally {
-      setBusy(false)
-      inputRef.current?.focus()
-    }
-  }
-
   const onCloseShell = async () => {
     setBusy(true)
     try {
@@ -161,8 +173,19 @@ export function ShellConsole({
       setError(String(e))
     } finally {
       setBusy(false)
+      termRef.current?.focus()
     }
   }
+
+  // The upgrade grows the shell into an enrolled implant, so it needs a
+  // payload whose baked enrollment credential still lives -- the same gate
+  // the Launchers picker applies, said up front instead of discovered by
+  // the paste.
+  const upgradeBlockedReason = payloads.length === 0
+    ? 'No payload in this engagement yet -- build one under Build first'
+    : payloads.every((p) => !deliverable(p))
+      ? "Every built payload's enrollment credential is dead (revoked, spent, or expired) -- build a fresh one"
+      : null
 
   const onUpgrade = async () => {
     setBusy(true)
@@ -216,48 +239,14 @@ export function ShellConsole({
           </button>
         </span>
       </div>
-      <pre className="interact-transcript" ref={transcriptRef}>
-        {lines.length === 0 || (lines.length === 1 && lines[0].spans.length === 0)
-          ? '—'
-          : lines.map((line, i) => (
-              <div className="t-line" key={i}>
-                {line.spans.length === 0
-                  ? '\u200b'
-                  : line.spans.map((span, j) => (
-                      <span
-                        key={j}
-                        style={{
-                          color: span.color,
-                          fontWeight: span.bold ? 600 : undefined,
-                          opacity: span.dim ? 0.55 : undefined,
-                          textDecoration: span.underline ? 'underline' : undefined,
-                        }}
-                      >
-                        {span.text}
-                      </span>
-                    ))}
-              </div>
-            ))}
-      </pre>
-      <form className="task-form" onSubmit={onSend}>
-        <span className="prompt" aria-hidden="true">
-          ›
-        </span>
-        <input
-          className="wide"
-          ref={inputRef}
-          placeholder={done ? 'shell ended' : locked ? `held by ${holderHandle}` : 'type a command'}
-          value={line}
-          disabled={done || busy || locked}
-          onChange={(e) => setLine(e.target.value)}
-        />
-        <button className="primary sm" type="submit" disabled={busy || done || locked || !line}>
-          Send
-        </button>
-        <button className="ghost sm" type="button" onClick={() => void onInterrupt()} disabled={busy || done || locked}>
-          ^C
-        </button>
-      </form>
+      {/* The terminal surface: typing goes straight to the shell (^C is the
+          key, not a button); full-screen programs need the target shell under
+          a pty, which the socat catch shape provides. */}
+      <div
+        className="terminal-surface"
+        ref={terminalRef}
+        title={locked ? `held by ${holderHandle}` : undefined}
+      />
       {upgrade && (
         <div className="upgrade-panel">
           <p>

