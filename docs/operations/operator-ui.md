@@ -537,8 +537,11 @@ clicks and no dialogs.
 **Fronts** are the enrolled-fleet half (architecture.md Sec 8): attached
 redirectors render as indented sub-rows under their listener -- the
 primary badge first, the redirector's name, the endpoint it binds, and the
-address implants dial through it. Attaching a front (the form under the
-roster) names the listener (every payload-ingress family -- the web pair
+address implants dial through it. The create form and the attach form
+share one card slot as a two-entry tab strip (the settings page's strip
+shape; both keep their drafts across a switch), with the attach tab
+disabled until a frontable listener exists. Attaching a front (the
+*Attach a front* tab) names the listener (every payload-ingress family -- the web pair
 and the raw socket ride the TCP splice, the DNS family the redirector's
 datagram relay), a redirector from the fleet roster, the endpoint that
 redirector binds, and the public

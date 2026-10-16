@@ -122,6 +122,12 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
   // retype). Null when no row is editing.
   const [editing, setEditing] = useState<{ id: string; draft: string } | null>(null)
 
+  // The create and attach forms share one card slot as tabs (the settings
+  // page's strip shape): create leads, and attach stays a deliberate pick --
+  // it needs a listener to exist, so it disables until one does. Both forms'
+  // drafts live in this view's state, so a tab switch keeps what was typed.
+  const [formTab, setFormTab] = useState<'create' | 'attach'>('create')
+
   // The create form's working state. The transport select drives the default
   // port; the interface select is built from the host's reported interfaces
   // with the wildcard and a custom entry riding along.
@@ -393,6 +399,11 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
     }
   }
 
+  // A front attaches to an existing listener: with none frontable, the attach
+  // tab disables and the strip falls back to the create form.
+  const canAttach = frontable.length > 0
+  const shownTab = formTab === 'attach' && !canAttach ? 'create' : formTab
+
   return (
     <section className="view">
       <h2>
@@ -409,6 +420,29 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
       </h2>
       {error && <p className="error">{error}</p>}
 
+      <div className="inline-form">
+        <button
+          className={shownTab === 'create' ? 'primary sm' : 'ghost sm'}
+          onClick={() => setFormTab('create')}
+          title="Bind a new listener socket on this host and name the address implants dial."
+        >
+          Create a listener
+        </button>
+        <button
+          className={shownTab === 'attach' ? 'primary sm' : 'ghost sm'}
+          onClick={() => setFormTab('attach')}
+          disabled={!canAttach}
+          title={
+            canAttach
+              ? "Stand an enrolled redirector in front of one of this engagement's listeners."
+              : 'A front attaches to an existing listener — create one first.'
+          }
+        >
+          Attach a front
+        </button>
+      </div>
+
+      {shownTab === 'create' && (
       <div className="card">
         <h3>Create a listener</h3>
         {/* The same labeled-grid shape as the Build form: every field carries
@@ -586,7 +620,9 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
           </div>
         </form>
       </div>
+      )}
 
+      {shownTab === 'attach' && (
       <div className="card">
         {/* The enrolled-fleet half (architecture.md Sec 8): attach a front to
             one of the listeners below, fronted by a redirector from the
@@ -688,6 +724,7 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
           </div>
         </form>
       </div>
+      )}
 
       <div className="card">
         <div className="card-head">
@@ -865,11 +902,6 @@ export function ListenersView({ engagementId }: { engagementId: string }) {
             </tbody>
           </table>
         </div>
-
-        {/* The enrolled-fleet half (architecture.md Sec 8): attach a front to
-            one of the listeners above, fronted by a node from the roster. The
-            dns family waits on the node's datagram relay; the form's listener
-            list names the frontable transports only. */}
       </div>
     </section>
   )
