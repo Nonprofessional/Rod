@@ -80,7 +80,12 @@ export function ShellConsole({
     const token = (name: string, fallback: string): string =>
       styles.getPropertyValue(name).trim() || fallback
     const term = new Terminal({
-      convertEol: false,
+      // The plain catch shapes run the shell without a pty, so their output
+      // carries bare \n line endings; a strict terminal answers LF with a
+      // line feed alone and the transcript staircases off the column. EOL
+      // conversion renders those streams in place, and costs the pty shapes
+      // nothing (their \r\n just gains a redundant carriage return).
+      convertEol: true,
       cursorBlink: true,
       scrollback: 5000,
       cols: TERM_COLS,
