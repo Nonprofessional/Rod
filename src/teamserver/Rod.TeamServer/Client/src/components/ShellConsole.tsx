@@ -71,6 +71,14 @@ export function ShellConsole({
   // the render's values.
   const doneRef = useRef(done)
   const lockedRef = useRef(locked)
+  // The write queue's buffer and in-flight flag: keystrokes must land on the
+  // shell in the order they were struck, but each write is its own request
+  // and parallel requests carry no arrival guarantee. One write in flight at
+  // a time, with whatever strikes meanwhile coalescing into the next batch,
+  // keeps the sequence exact and spares the wire a request per character on
+  // bursts and pastes.
+  const pendingRef = useRef('')
+  const sendingRef = useRef(false)
 
   // The emulator's lifecycle: created per shell session, themed off the
   // console's own CSS tokens, focused on open (a console's surface is where
@@ -117,15 +125,30 @@ export function ShellConsole({
     termRef.current = term
     term.focus()
 
-    const send = (text: string): Promise<void> => {
-      if (doneRef.current || lockedRef.current || text === '') return Promise.resolve()
-      return sendShellInput(engagementId, shell.sessionId, text)
+    const flush = async (): Promise<void> => {
+      if (sendingRef.current) return
+      sendingRef.current = true
+      try {
+        while (pendingRef.current !== '') {
+          const batch = pendingRef.current
+          pendingRef.current = ''
+          if (doneRef.current || lockedRef.current) continue
+          try {
+            await sendShellInput(engagementId, shell.sessionId, batch)
+          } catch (e) {
+            setError(String(e))
+            break
+          }
+        }
+      } finally {
+        sendingRef.current = false
+      }
     }
 
     term.onData((data) => {
-      void send(data).catch((e: unknown) => {
-        setError(String(e))
-      })
+      if (doneRef.current || lockedRef.current || data === '') return
+      pendingRef.current += data
+      void flush()
     })
 
     // The terminal keyboard's copy/paste conventions, spelled out: ^C and
@@ -155,7 +178,12 @@ export function ShellConsole({
       if (paste) {
         void navigator.clipboard
           .readText()
-          .then((text) => send(text))
+          .then((text) => {
+            // Paste rides the same ordered queue as keystrokes: it is just
+            // a strike that happens to carry many characters.
+            pendingRef.current += text
+            void flush()
+          })
           .catch((e: unknown) => setError(String(e)))
         return false
       }
@@ -172,6 +200,9 @@ export function ShellConsole({
     return () => {
       term.textarea?.removeEventListener('focus', onFocus)
       term.textarea?.removeEventListener('blur', onBlur)
+      // A queued-but-unsent strike belongs to this session; it must not ride
+      // into whatever session the console opens next.
+      pendingRef.current = ''
       term.dispose()
       termRef.current = null
     }
