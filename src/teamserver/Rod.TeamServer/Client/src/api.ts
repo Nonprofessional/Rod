@@ -1823,6 +1823,10 @@ export interface ShellSession {
   lastInputAt: string | null
   lastOutputAt: string | null
   endedAt: string | null
+  // The codec both directions speak; null when the session has ended (the
+  // codec was the live connection's, and died with it) -- the console then
+  // shows the default.
+  encoding: string | null
 }
 
 export async function listShells(engagementId: string): Promise<ShellSession[]> {
@@ -1865,6 +1869,24 @@ export async function sendShellInput(
       body: JSON.stringify({ text }),
     }),
   )
+}
+
+// Repoints the session's codec: output decodes and input encodes with the
+// named encoding from the offered set. The answer is the server's canonical
+// name for what was set.
+export async function setShellEncoding(
+  engagementId: string,
+  sessionId: string,
+  encoding: string,
+): Promise<string> {
+  const answer = await jsonOrThrow<{ encoding: string }>(
+    await fetch(`engagements/${engagementId}/shells/${sessionId}:encoding`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ encoding }),
+    }),
+  )
+  return answer.encoding
 }
 
 export async function closeShell(engagementId: string, sessionId: string): Promise<void> {

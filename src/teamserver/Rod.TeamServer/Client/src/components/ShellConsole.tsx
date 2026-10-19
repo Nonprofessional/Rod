@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Terminal } from '@xterm/xterm'
+import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
 import {
   ApiError,
@@ -10,6 +11,7 @@ import {
   closeShell,
   readShellOutput,
   sendShellInput,
+  setShellEncoding,
   upgradeShell,
 } from '../api'
 import { launcherHint } from '../launcherFamilies'
@@ -77,6 +79,10 @@ export function ShellConsole({
   // would double every character.
   const [localEcho, setLocalEcho] = useState(false)
   const echoRef = useRef(false)
+  // The session's codec, as the server last reported it: the console starts
+  // from the roster's word and follows its own switches. A legacy-code-page
+  // target (a GBK cmd.exe box) is the reason this moves at all.
+  const [encoding, setEncoding] = useState(shell.encoding ?? 'utf-8')
   // Whether the emulator's textarea holds the keyboard focus -- the visible
   // answer to "where does my typing go", as an inset frame on the surface.
   const [focused, setFocused] = useState(false)
@@ -102,6 +108,40 @@ export function ShellConsole({
   // bursts and pastes.
   const pendingRef = useRef('')
   const sendingRef = useRef(false)
+  // The fit addon sizes the emulator to whatever the card currently shows;
+  // the Sync size control drives it and hands the target the same geometry.
+  const fitRef = useRef<FitAddon | null>(null)
+
+  // The ordered write pump (see pendingRef above): one batch in flight, the
+  // strikes that land meanwhile coalesce into the next. Body-level so every
+  // input path -- keystrokes, paste, the size sync -- shares one queue.
+  const flush = async (): Promise<void> => {
+    if (sendingRef.current) return
+    sendingRef.current = true
+    try {
+      while (pendingRef.current !== '') {
+        const batch = pendingRef.current
+        pendingRef.current = ''
+        if (doneRef.current || lockedRef.current) continue
+        try {
+          await sendShellInput(engagementId, shell.sessionId, batch)
+        } catch (e) {
+          setError(String(e))
+          break
+        }
+      }
+    } finally {
+      sendingRef.current = false
+    }
+  }
+
+  // One strike's worth of input, locally echoed when the switch is on: the
+  // single door keystrokes, pastes, and the size sync all go through.
+  const submitInput = (text: string) => {
+    pendingRef.current += text
+    void flush()
+    if (echoRef.current) termRef.current?.write(echoForEmulator(text))
+  }
 
   // The emulator's lifecycle: created per shell session, themed off the
   // console's own CSS tokens, focused on open (a console's surface is where
@@ -145,34 +185,15 @@ export function ShellConsole({
       },
     })
     term.open(terminalRef.current)
+    const fit = new FitAddon()
+    term.loadAddon(fit)
+    fitRef.current = fit
     termRef.current = term
     term.focus()
 
-    const flush = async (): Promise<void> => {
-      if (sendingRef.current) return
-      sendingRef.current = true
-      try {
-        while (pendingRef.current !== '') {
-          const batch = pendingRef.current
-          pendingRef.current = ''
-          if (doneRef.current || lockedRef.current) continue
-          try {
-            await sendShellInput(engagementId, shell.sessionId, batch)
-          } catch (e) {
-            setError(String(e))
-            break
-          }
-        }
-      } finally {
-        sendingRef.current = false
-      }
-    }
-
     term.onData((data) => {
       if (doneRef.current || lockedRef.current || data === '') return
-      pendingRef.current += data
-      void flush()
-      if (echoRef.current) term.write(echoForEmulator(data))
+      submitInput(data)
     })
 
     // The terminal keyboard's copy/paste conventions, spelled out: ^C and
@@ -205,9 +226,7 @@ export function ShellConsole({
           .then((text) => {
             // Paste rides the same ordered queue as keystrokes: it is just
             // a strike that happens to carry many characters.
-            pendingRef.current += text
-            void flush()
-            if (echoRef.current) term.write(echoForEmulator(text))
+            submitInput(text)
           })
           .catch((e: unknown) => setError(String(e)))
         return false
@@ -230,6 +249,7 @@ export function ShellConsole({
       pendingRef.current = ''
       term.dispose()
       termRef.current = null
+      fitRef.current = null
     }
     // The roster state (done, locked) deliberately stays out of the deps:
     // re-running this effect would rebuild the emulator and drop the
@@ -298,6 +318,35 @@ export function ShellConsole({
     }
   }
 
+  // Fit the emulator to the card, then hand the target the same geometry:
+  // the catch shapes bake 120x30 into the pty because the socket carries no
+  // resize channel, so a resized console and a fixed pty garble every
+  // full-screen redraw until stty brings them back together. The sync line
+  // rides the input route like any strike -- it claims the shell, and a dumb
+  // shell answers it with a harmless stty error.
+  const onSyncSize = () => {
+    const term = termRef.current
+    if (!term || !fitRef.current) return
+    fitRef.current.fit()
+    submitInput(`stty rows ${term.rows} cols ${term.cols}\n`)
+    term.focus()
+  }
+
+  const onEncodingChange = async (next: string) => {
+    const previous = encoding
+    setEncoding(next)
+    try {
+      const canonical = await setShellEncoding(engagementId, shell.sessionId, next)
+      setEncoding(canonical)
+      setError(null)
+    } catch (e) {
+      setEncoding(previous)
+      setError(String(e))
+    } finally {
+      termRef.current?.focus()
+    }
+  }
+
   // The upgrade grows the shell into an enrolled implant, so it needs a
   // payload whose baked enrollment credential still lives -- the same gate
   // the Launchers picker applies, said up front instead of discovered by
@@ -342,6 +391,23 @@ export function ShellConsole({
           </span>
         )}
         <span className="spacer">
+          <select
+            value={encoding}
+            disabled={done}
+            onChange={(e) => void onEncodingChange(e.target.value)}
+            title="The codec this session speaks, both directions: switch to GBK when the target is a cmd.exe box on a legacy Chinese code page and its output mojibakes"
+          >
+            <option value="utf-8">UTF-8</option>
+            <option value="gbk">GBK</option>
+          </select>
+          <button
+            className="ghost sm"
+            onClick={onSyncSize}
+            disabled={done || locked}
+            title="Fit this terminal to the card and set the target's pty to the same rows/cols (the catch shapes bake 120x30; run this after resizing the window so vim and friends redraw at the right width). A shell without a pty just answers a harmless stty error"
+          >
+            Sync size
+          </button>
           <button
             className={localEcho ? 'primary sm' : 'ghost sm'}
             aria-pressed={localEcho}
