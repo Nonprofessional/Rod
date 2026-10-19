@@ -345,7 +345,13 @@ export function ShellConsole({
           <button
             className={localEcho ? 'primary sm' : 'ghost sm'}
             aria-pressed={localEcho}
-            onClick={() => setLocalEcho((v) => !v)}
+            onClick={() => {
+              setLocalEcho((v) => !v)
+              // The toggle must not keep the keyboard: the operator flips
+              // this and keeps typing, so the strike focus goes straight
+              // back to the emulator.
+              termRef.current?.focus()
+            }}
             title="For shells caught without a pty (the nc and plain shapes), which never echo: the console writes your strikes here so typing is visible. A pty shell (python-pty, socat shapes) echoes itself — leave this off or every character doubles"
           >
             Local echo
