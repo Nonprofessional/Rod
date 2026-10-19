@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   type ListenerSummary,
   type PayloadSummary,
@@ -40,6 +40,15 @@ export function ShellsView({
   const [payloads, setPayloads] = useState<PayloadSummary[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  // The console slot: a long roster pushes the row the operator clicked far
+  // above the freshly opened console, so the open also scrolls the console
+  // into view.
+  const consoleRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (selectedId !== null) {
+      consoleRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }
+  }, [selectedId])
   // The reconciliation poll's cadence, set per browser in Settings.
   const pollMs = usePollIntervalMs()
 
@@ -206,13 +215,15 @@ export function ShellsView({
         </div>
       </div>
       {selected && (
-        <ShellConsole
-          engagementId={engagementId}
-          shell={selected}
-          webListeners={webListeners}
-          payloads={payloads}
-          onEnded={onEnded}
-        />
+        <div ref={consoleRef}>
+          <ShellConsole
+            engagementId={engagementId}
+            shell={selected}
+            webListeners={webListeners}
+            payloads={payloads}
+            onEnded={onEnded}
+          />
+        </div>
       )}
     </section>
   )

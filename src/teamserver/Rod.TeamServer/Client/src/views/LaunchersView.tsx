@@ -325,8 +325,14 @@ export function LaunchersView({
                     <Icon name={osIconFor(launcher.os)} className="wire-icon" />
                   </span>
                   <code>{launcher.id}</code>
-                  <span className="muted" title="What this shape gives on the wire">
-                    {launcher.note}
+                  {/* The shape's posture up front: which one-liners land a
+                      full-interactive pty shell and which land a dumb pipe
+                      decides which the operator pastes at all. */}
+                  <span
+                    className={`status shape-${launcher.kind}`}
+                    title={launcher.note}
+                  >
+                    {launcher.kind === 'pty' ? 'interactive' : 'dumb'}
                   </span>
                   <code className="upgrade-command">{launcher.command}</code>
                   <CopyButton text={launcher.command} />

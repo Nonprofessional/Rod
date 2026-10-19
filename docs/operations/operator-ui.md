@@ -607,10 +607,14 @@ python pty shape leads because it is the full-interactive catch: a real
 pty (via python's pty module -- the dependency most targets have) echoes
 typing, colors the prompt, turns ^C into SIGINT, and runs full-screen
 programs; the socat shape serves the same posture where socat exists.
+Every shape wears its posture as a chip -- *interactive* (green, a pty)
+or *dumb* (amber, a pipe) -- so the choice reads at a glance instead of
+from experience.
 The plain shapes run without a terminal -- their output is faithfully
 rendered, colorless and line-at-a-time (the console converts their
 bare-LF line endings so the transcript does not staircase), but typing
-has no echo and ^C is just a byte.
+has no echo and ^C is just a byte; the console's Local echo switch makes
+that typing visible.
 
 **Deliver a beacon** cuts the payload fetch command, so a target with any
 shell access beacons without a file landing first. The shell console's
@@ -886,20 +890,34 @@ no payload row, so its revoke rides the same dialog.
 
 The engagement's caught reverse shells: every no-protocol connection a
 shellcatch listener accepted, with its status, remote address, and
-last-output stamp. Selecting a row opens the console, a real terminal
+last-output stamp. Selecting a row opens the console -- scrolled into view
+with the row that opened it, so a long roster never hides the panel below
+the fold -- a real terminal
 emulator (xterm) wired straight to the held connection: keystrokes ride
 the input route as typed (Enter, ^C, and paste are the shell's line
 discipline's to interpret -- there is no form), output renders with its
 colors and cursor addressing, and full-screen programs (vim, top) work
-when the caught shell runs under a pty -- the socat catch shape sizes one
-and names its type before the shell runs (stty 120x30, TERM
-xterm-256color; the console mirrors that fixed geometry, since the catch
-socket carries no resize channel), the plain shapes have none. The typing half is
+when the caught shell runs under a pty -- the python-pty and socat catch
+shapes size one
+and name its type before the shell runs (stty 120x30, TERM
+xterm-256color; the console starts at that fixed geometry, since the catch
+socket carries no resize channel), the plain shapes have none. **Sync
+size** re-points that geometry after the window moves: it fits the
+emulator to the card and hands the target the same rows/cols over the
+input route, so full-screen programs redraw at the width the operator
+sees (a pty-less shell answers it with a harmless stty error). The typing half is
 claim-aware (see
 [Interaction ownership](#interaction-ownership)). Typing lands where the
 surface's inset frame sits: click the surface to focus, and the clipboard
 rides Ctrl+Shift+C / Ctrl+Shift+V (the Insert pair works too; native
 Ctrl+V pastes) while Ctrl+C stays the interrupt a terminal expects.
+Two header controls answer the plain shapes and the odd code page:
+**Local echo** writes the operator's own strikes to the emulator (caret
+notation for control bytes) for a pty-less shell that never echoes -- off
+by default, since a pty shell echoes itself and a second echo doubles
+every character -- and the encoding selector repoints the session's codec
+(UTF-8 default; GBK for a cmd.exe box on a legacy Chinese code page), both
+directions at once.
 **Disconnect** ends a
 live shell from the row or the console (two clicks from the row): the
 socket closes, the target-side one-liner exits with it, and the row's

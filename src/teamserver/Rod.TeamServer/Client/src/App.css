@@ -1015,6 +1015,21 @@ a:hover {
   color: var(--muted);
 }
 
+/* The catch one-liners' posture chips: which shapes land a pty shell (the
+   full-interactive catch) and which land a dumb pipe. The color answers
+   "should I paste this one" at a glance; the note rides the title. */
+.status.shape-pty {
+  color: var(--success);
+  border-color: color-mix(in srgb, var(--success) 35%, transparent);
+  background: var(--success-soft);
+}
+
+.status.shape-dumb {
+  color: var(--warn);
+  border-color: color-mix(in srgb, var(--warn) 35%, transparent);
+  background: var(--warn-soft);
+}
+
 .status.retired {
   color: var(--warn);
   border-color: color-mix(in srgb, var(--warn) 35%, transparent);

