@@ -31,6 +31,22 @@ import { StatusBadge } from './StatusBadge'
 // every full-screen redraw the target makes.
 const TERM_COLS = 120
 const TERM_ROWS = 30
+
+// What local echo shows for the bytes a strike carries: printable text as
+// struck, Enter as CRLF, Backspace as an erase, and the other control bytes
+// in caret notation -- the same rendering a pty's own echo would produce, so
+// a dumb shell under local echo reads like one.
+function echoForEmulator(text: string): string {
+  let out = ''
+  for (const ch of text) {
+    const code = ch.charCodeAt(0)
+    if (ch === '\r' || ch === '\n') out += '\r\n'
+    else if (code === 0x7f) out += '\b \b'
+    else if (code < 0x20) out += '^' + String.fromCharCode(code + 0x40)
+    else out += ch
+  }
+  return out
+}
 //
 // The typing half is claim-aware (architecture.md Sec 4.5): a shell another
 // operator holds blocks input and names the holder, and this console's typing
@@ -54,6 +70,13 @@ export function ShellConsole({
   const [upgradeListenerId, setUpgradeListenerId] = useState('')
   const [upgradePayloadId, setUpgradePayloadId] = useState('')
   const [busy, setBusy] = useState(false)
+  // Local echo: the console writes the operator's own strikes to the
+  // emulator. A shell caught without a pty (the nc and plain shapes) never
+  // echoes -- typing is invisible until Enter -- so the console can echo in
+  // its place. Off by default: a pty shell echoes itself, and a second echo
+  // would double every character.
+  const [localEcho, setLocalEcho] = useState(false)
+  const echoRef = useRef(false)
   // Whether the emulator's textarea holds the keyboard focus -- the visible
   // answer to "where does my typing go", as an inset frame on the surface.
   const [focused, setFocused] = useState(false)
@@ -149,6 +172,7 @@ export function ShellConsole({
       if (doneRef.current || lockedRef.current || data === '') return
       pendingRef.current += data
       void flush()
+      if (echoRef.current) term.write(echoForEmulator(data))
     })
 
     // The terminal keyboard's copy/paste conventions, spelled out: ^C and
@@ -183,6 +207,7 @@ export function ShellConsole({
             // a strike that happens to carry many characters.
             pendingRef.current += text
             void flush()
+            if (echoRef.current) term.write(echoForEmulator(text))
           })
           .catch((e: unknown) => setError(String(e)))
         return false
@@ -219,6 +244,12 @@ export function ShellConsole({
     lockedRef.current = locked
     if (termRef.current) termRef.current.options.disableStdin = done || locked
   }, [done, locked])
+
+  // The echo switch rides the same ref pattern: flipping it must not rebuild
+  // the emulator, so the input handler reads it through the ref.
+  useEffect(() => {
+    echoRef.current = localEcho
+  }, [localEcho])
 
   // The output loop: one long poll in flight at a time; each answer's chunks
   // land on the emulator and advance the cursor. A 410 answer means the shell
@@ -312,6 +343,14 @@ export function ShellConsole({
         )}
         <span className="spacer">
           <button
+            className={localEcho ? 'primary sm' : 'ghost sm'}
+            aria-pressed={localEcho}
+            onClick={() => setLocalEcho((v) => !v)}
+            title="For shells caught without a pty (the nc and plain shapes), which never echo: the console writes your strikes here so typing is visible. A pty shell (python-pty, socat shapes) echoes itself — leave this off or every character doubles"
+          >
+            Local echo
+          </button>
+          <button
             className="ghost sm"
             onClick={() => void onUpgrade()}
             disabled={busy || upgradeBlockedReason !== null}
@@ -331,7 +370,7 @@ export function ShellConsole({
       </div>
       {/* The terminal surface: typing goes straight to the shell (^C is the
           key, not a button); full-screen programs need the target shell under
-          a pty, which the socat catch shape provides. */}
+          a pty, which the python-pty and socat catch shapes provide. */}
       <div
         className={`terminal-surface${focused ? ' focused' : ''}`}
         ref={terminalRef}

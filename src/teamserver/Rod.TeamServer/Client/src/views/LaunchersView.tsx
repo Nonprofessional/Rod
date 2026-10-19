@@ -325,6 +325,9 @@ export function LaunchersView({
                     <Icon name={osIconFor(launcher.os)} className="wire-icon" />
                   </span>
                   <code>{launcher.id}</code>
+                  <span className="muted" title="What this shape gives on the wire">
+                    {launcher.note}
+                  </span>
                   <code className="upgrade-command">{launcher.command}</code>
                   <CopyButton text={launcher.command} />
                 </div>

