@@ -4,6 +4,7 @@ using System.Net.Sockets;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Rod.CoreState;
+using Rod.CoreState.Engagements;
 using Rod.CoreState.Implants;
 using Rod.CoreState.Listeners;
 using Rod.CoreState.Deployment;
@@ -374,9 +375,7 @@ public class ListenerRuntimeTests
         // withdrew them -- every https and doh listener stayed down after
         // every restart.
         var port = TestSupport.GetFreeTcpPort();
-        var definition = new ListenerDefinition(
-            Guid.NewGuid(), EngagementId.New(), "stored-https", "https",
-            $"127.0.0.1:{port}", $"https://127.0.0.1:{port}", DateTimeOffset.UtcNow);
+        var operatorPort = TestSupport.GetFreeTcpPort();
 
         var config = AuthenticatedHost.BuildConfig();
         using var host = TransportHost.CreateHostBuilder(
@@ -385,15 +384,28 @@ public class ListenerRuntimeTests
                 configuration: config)
             .ConfigureWebHost(webBuilder => webBuilder.UseRodListeners(new[]
             {
-                new ListenerConfig("operator-http", "http", $"127.0.0.1:{TestSupport.GetFreeTcpPort()}",
+                new ListenerConfig("operator-http", "http", $"127.0.0.1:{operatorPort}",
                     "http://localhost:5080"),
             }))
             .Build();
 
         // The store holds the definition before the start -- the state a
         // restart finds -- so the restore path runs inside this StartAsync.
+        // The definition names a real engagement (seeded through the
+        // repository, since the wire is not serving yet): the restore skips
+        // the listeners of retired or missing engagements, so a random id
+        // would never rebind.
+        var engagements = host.Services.GetRequiredService<IEngagementRepository>();
+        var clock = host.Services.GetRequiredService<TimeProvider>();
+        var engagement = Engagement.Create(
+            EngagementId.New(), "stored-definition-lab", OperatorId.New(), clock.GetUtcNow());
+        await engagements.SaveAsync(engagement);
+        var definitionId = Guid.NewGuid();
         var store = host.Services.GetRequiredService<IListenerStore>();
-        await store.SaveAsync(definition);
+        await store.SaveAsync(new ListenerDefinition(
+            definitionId, engagement.Id, "stored-https", "https",
+            $"127.0.0.1:{port}", $"https://127.0.0.1:{port}", DateTimeOffset.UtcNow));
+
         await host.StartAsync();
 
         // The restore rides the started callback asynchronously; the roster
@@ -403,7 +415,7 @@ public class ListenerRuntimeTests
         var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(10);
         while (DateTime.UtcNow < deadline)
         {
-            bound = await registry.FindAsync(new ListenerId(definition.Id));
+            bound = await registry.FindAsync(new ListenerId(definitionId));
             if (bound is not null && bound.State.ToString() == "Running")
                 break;
             await Task.Delay(100);

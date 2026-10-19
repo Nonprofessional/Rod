@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Rod.CoreState.Engagements;
 using Rod.CoreState.Listeners;
 
 namespace Rod.Transport.Listeners;
@@ -14,10 +15,16 @@ namespace Rod.Transport.Listeners;
 /// collides with a startup entry loses cleanly and is logged, not fatal: the
 /// roster reports what is actually listening, and the operator frees the port
 /// or deletes and recreates the listener.
+///
+/// A retired engagement's definitions are skipped: retirement tore their
+/// sockets down, and a restart must not resurrect ingress for a sealed
+/// engagement. The definitions themselves are kept in the store -- records
+/// survive retirement; sockets do not.
 /// </summary>
 internal sealed class ListenerRestoreService(
     IListenerStore definitions,
     ListenerManager manager,
+    IEngagementRepository engagements,
     IHostApplicationLifetime lifetime,
     ILogger<ListenerRestoreService> logger) : IHostedService
 {
@@ -41,6 +48,15 @@ internal sealed class ListenerRestoreService(
             var restored = 0;
             foreach (var definition in stored)
             {
+                var engagement = await engagements.FindAsync(definition.EngagementId, CancellationToken.None);
+                if (engagement is null || engagement.IsRetired)
+                {
+                    logger.LogInformation(
+                        "Stored listener {ListenerId} ({Name}) belongs to a retired or missing engagement; not rebound.",
+                        definition.Id, definition.Name);
+                    continue;
+                }
+
                 if (await manager.RestoreAsync(definition, CancellationToken.None) is not null)
                     restored++;
             }

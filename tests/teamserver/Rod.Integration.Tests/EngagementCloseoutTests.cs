@@ -1,12 +1,16 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Net.Sockets;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Rod.Audit;
 using Rod.CoreState;
 using Rod.CoreState.Engagements;
 using Rod.CoreState.Implants;
+using Rod.Transport;
 using Rod.Transport.Endpoints;
+using Rod.Transport.Listeners;
 using static Rod.Integration.Tests.EngagementSetup;
 
 namespace Rod.Integration.Tests;
@@ -202,5 +206,97 @@ public class EngagementCloseoutTests
             ImplantId.New(), new EngagementId(Guid.Parse(engagementId)), now.AddDays(30), ImplantClass.Implant, now);
         await implants.SaveAsync(implant);
         return implant;
+    }
+
+    [Fact]
+    public async Task Retirement_Releases_The_Engagements_Listener_Sockets()
+    {
+        await using var env = await ListenerHostEnv.StartAsync();
+        await AuthenticatedHost.LoginAsync(env.Http);
+        var engagementId = await CreateEngagementAsync(env.Http);
+
+        var port = TestSupport.GetFreeTcpPort();
+        var created = await env.Http.PostAsJsonAsync($"/engagements/{engagementId}/listeners",
+            new ListenerEndpoints.CreateListenerRequest(
+                Name: "retiring-catch",
+                Transport: "shellcatch",
+                BindAddress: $"127.0.0.1:{port}",
+                PublicEndpoint: $"10.0.0.5:{port}"));
+        created.EnsureSuccessStatusCode();
+
+        // The socket is really serving before the close-out: a peer connects.
+        using (var peer = new TcpClient())
+        {
+            await peer.ConnectAsync(IPAddress.Loopback, port);
+        }
+
+        var frozen = await env.Http.PostAsync($"/engagements/{engagementId}:freeze", null);
+        Assert.Equal(HttpStatusCode.OK, frozen.StatusCode);
+        var retired = await env.Http.PostAsync($"/engagements/{engagementId}:retire", null);
+        Assert.Equal(HttpStatusCode.OK, retired.StatusCode);
+
+        // The engagement's ingress came down with it: the roster reports
+        // nothing, and the port stops accepting.
+        var roster = await env.Http.GetFromJsonAsync<ListenerEndpoints.ListenerResponse[]>(
+            $"/engagements/{engagementId}/listeners");
+        Assert.NotNull(roster);
+        Assert.Empty(roster!);
+
+        var deadline = DateTimeOffset.UtcNow + TimeSpan.FromSeconds(15);
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            try
+            {
+                using var probe = new TcpClient();
+                await probe.ConnectAsync(IPAddress.Loopback, port);
+            }
+            catch (SocketException)
+            {
+                return; // refused: retirement released the socket.
+            }
+            await Task.Delay(250);
+        }
+
+        throw new Xunit.Sdk.XunitException(
+            $"Port {port} still accepts connections after the engagement was retired.");
+    }
+
+    // A host carrying the listener runtime (the manager, the restore path)
+    // beside the operator API, with no startup listeners of its own.
+    private sealed class ListenerHostEnv : IAsyncDisposable
+    {
+        public IHost Host { get; private set; } = null!;
+        public HttpClient Http { get; private set; } = null!;
+
+        public static async Task<ListenerHostEnv> StartAsync()
+        {
+            var env = new ListenerHostEnv();
+            var httpPort = TestSupport.GetFreeTcpPort();
+
+            var config = AuthenticatedHost.BuildConfig();
+            env.Host = TransportHost.CreateHostBuilder(
+                    configureServices: services => AuthenticatedHost.ComposeServices(services, config),
+                    mapEndpoints: endpoints => AuthenticatedHost.ComposeEndpoints(endpoints),
+                    configuration: config)
+                .ConfigureWebHost(webBuilder => webBuilder
+                    .UseRodListeners(new List<ListenerConfig>())
+                    .ConfigureKestrel(kestrel => kestrel.ListenLocalhost(httpPort)))
+                .Build();
+            await env.Host.StartAsync();
+
+            env.Http = new HttpClient(new CookieHandler(new HttpClientHandler()))
+            {
+                BaseAddress = new Uri($"http://127.0.0.1:{httpPort}"),
+            };
+            return env;
+        }
+
+        public async ValueTask DisposeAsync()
+        {
+            Http?.Dispose();
+            if (Host is not null)
+                await Host.StopAsync();
+            Host?.Dispose();
+        }
     }
 }

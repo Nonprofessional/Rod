@@ -5,6 +5,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Rod.CoreState;
 using Rod.CoreState.Engagements;
 using Rod.CoreState.Listeners;
 using Rod.CoreState.Pki;
@@ -283,6 +284,43 @@ public sealed class ListenerManager
         if (!_runtime.TryRemove(listener, out var entry))
             return false;
 
+        await TearDownAsync(entry.Listener.Id, entry, cancellationToken).ConfigureAwait(false);
+        await _definitions.RemoveAsync(listener.Value, cancellationToken).ConfigureAwait(false);
+        _logger.LogInformation(
+            "Runtime listener {ListenerId} ({Name}) removed.", listener, entry.Listener.Name);
+        return true;
+    }
+
+    /// <summary>
+    /// Unbinds every runtime listener an engagement owns -- retirement closes
+    /// the engagement's ingress for good, so its sockets come down with it.
+    /// The persisted definitions stay: retirement seals records, it does not
+    /// erase them, and the restore path skips a retired engagement's
+    /// definitions instead of rebinding them.
+    /// </summary>
+    public async Task<int> TearDownEngagementAsync(EngagementId engagement, CancellationToken cancellationToken = default)
+    {
+        var tornDown = 0;
+        foreach (var (id, entry) in _runtime.ToArray())
+        {
+            if (entry.Listener.EngagementId != engagement)
+                continue;
+            if (!_runtime.TryRemove(id, out _))
+                continue;
+            await TearDownAsync(id, entry, cancellationToken).ConfigureAwait(false);
+            tornDown++;
+            _logger.LogInformation(
+                "Runtime listener {ListenerId} ({Name}) torn down: engagement retired.", id, entry.Listener.Name);
+        }
+        return tornDown;
+    }
+
+    // The bind teardown shared by removal and retirement: stop the stream
+    // service (or withdraw the Kestrel endpoint -- Kestrel drains and unbinds
+    // on its own schedule, so the registry entry goes now to stop the roster
+    // reporting it), then drop it from the registry.
+    private async Task TearDownAsync(ListenerId id, RuntimeEntry entry, CancellationToken cancellationToken)
+    {
         if (entry.Service is not null)
         {
             await entry.Service.StopAsync(cancellationToken).ConfigureAwait(false);
@@ -300,14 +338,10 @@ public sealed class ListenerManager
             // The Kestrel reloader drains and unbinds the endpoint on its own
             // schedule (seconds); the registry entry goes now so the roster
             // stops reporting it immediately.
-            _endpoints.WithdrawEndpoint(KestrelEndpointProvider.EndpointKey(listener));
+            _endpoints.WithdrawEndpoint(KestrelEndpointProvider.EndpointKey(id));
         }
 
-        await _listeners.RemoveAsync(listener, cancellationToken).ConfigureAwait(false);
-        await _definitions.RemoveAsync(listener.Value, cancellationToken).ConfigureAwait(false);
-        _logger.LogInformation(
-            "Runtime listener {ListenerId} ({Name}) removed.", listener, entry.Listener.Name);
-        return true;
+        await _listeners.RemoveAsync(id, cancellationToken).ConfigureAwait(false);
     }
 
     // The persisted shape of a bound, engagement-scoped listener.

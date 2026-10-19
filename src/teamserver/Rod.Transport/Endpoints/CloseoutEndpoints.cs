@@ -11,6 +11,7 @@ using Rod.CoreState.Engagements;
 using Rod.CoreState.Implants;
 using Rod.CoreState.Operators;
 using Rod.CoreState.Tasks;
+using Rod.Transport.Listeners;
 
 namespace Rod.Transport.Endpoints;
 
@@ -234,6 +235,7 @@ public static class CloseoutEndpoints
         EngagementService service,
         IAuditStore audit,
         TimeProvider clock,
+        ListenerManager listeners,
         CancellationToken cancellationToken)
     {
         var (error, engagement) = await ResolveEngagementAsync(engagementId, engagements, cancellationToken);
@@ -254,6 +256,12 @@ public static class CloseoutEndpoints
             // or already retired.
             return Results.Conflict(new Problem(ex.Message));
         }
+
+        // Retirement is terminal for the engagement's ingress too: its
+        // listener sockets come down with it, so a retired engagement stops
+        // answering on the wire the moment it is sealed. The persisted
+        // definitions stay for the record; the startup restore skips them.
+        await listeners.TearDownEngagementAsync(retired.EngagementId, cancellationToken);
 
         // The retirement is recorded (architecture.md Sec 11): terminal, and
         // attributed like every engagement fact. The trail -- this event
