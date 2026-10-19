@@ -17,14 +17,17 @@ namespace Rod.Transport.Listeners.ShellCatch;
 ///
 /// Decoding is per-connection state: a shell emits a byte stream with no
 /// framing, so an incremental decoder carries partial characters across
-/// reads instead of mangling them at buffer edges. The v1 decoder is UTF-8
-/// with replacement -- a cmd.exe code page can still mojibake, which the
-/// fingerprint's Windows guess at least makes visible to the operator.
+/// reads instead of mangling them at buffer edges. The default decode is
+/// UTF-8 with replacement; a shell that speaks a legacy code page (a cmd.exe
+/// GBK box) switches the session's encoding from the console, and both
+/// directions -- the decode and the input encode -- follow it.
 /// </summary>
 public sealed class CaughtShell
 {
     private readonly Socket _socket;
-    private readonly Decoder _decoder = Encoding.UTF8.GetDecoder();
+    private readonly object _codecGate = new();
+    private Encoding _encoding = Encoding.UTF8;
+    private Decoder _decoder = Encoding.UTF8.GetDecoder();
     private readonly SemaphoreSlim _writeGate = new(1, 1);
     private volatile bool _closedByOperator;
 
@@ -44,6 +47,25 @@ public sealed class CaughtShell
     /// <summary>Whether an operator asked for this shell to close.</summary>
     public bool ClosedByOperator => _closedByOperator;
 
+    /// <summary>The wire name of the session's encoding ("utf-8" by default).</summary>
+    public string EncodingName => ShellEncodings.NameOf(_encoding);
+
+    /// <summary>
+    /// Repoints the session's codec: output decodes and input encodes with the
+    /// new encoding from here on. The decoder's partial-character state is
+    /// connection-wide and belongs to the old encoding, so a switch mid
+    /// multi-byte sequence drops that fragment -- bytes before the switch
+    /// keep the decoding they were read under.
+    /// </summary>
+    public void SetEncoding(Encoding encoding)
+    {
+        lock (_codecGate)
+        {
+            _encoding = encoding;
+            _decoder = encoding.GetDecoder();
+        }
+    }
+
     /// <summary>The remote endpoint, "host:port", for display.</summary>
     public string RemoteAddress
         => _socket.RemoteEndPoint is IPEndPoint endpoint
@@ -61,7 +83,14 @@ public sealed class CaughtShell
     /// </summary>
     public async Task<bool> WriteInputAsync(string text, CancellationToken cancellationToken)
     {
-        var bytes = Encoding.UTF8.GetBytes(text);
+        // Encode under the gate's snapshot: the encoding instance is itself
+        // safe to read concurrently, so only the swap needs the lock.
+        Encoding encoding;
+        lock (_codecGate)
+        {
+            encoding = _encoding;
+        }
+        var bytes = encoding.GetBytes(text);
         try
         {
             await _writeGate.WaitAsync(cancellationToken);
@@ -93,12 +122,18 @@ public sealed class CaughtShell
     /// <summary>
     /// Decodes raw socket bytes onto the output log. Kept here so the
     /// decoder state stays with the connection; returns the appended text.
+    /// The pump is the only caller, but an encoding switch can land between
+    /// reads, so the decode and the swap share the codec gate.
     /// </summary>
     public string Decode(byte[] buffer, int count, DateTimeOffset at)
     {
-        var chars = new char[Encoding.UTF8.GetMaxCharCount(count)];
-        var decoded = _decoder.GetChars(buffer, 0, count, chars, 0);
-        var text = new string(chars, 0, decoded);
+        string text;
+        lock (_codecGate)
+        {
+            var chars = new char[_encoding.GetMaxCharCount(count)];
+            var decoded = _decoder.GetChars(buffer, 0, count, chars, 0);
+            text = new string(chars, 0, decoded);
+        }
         if (text.Length > 0)
             Output.Append(text, at);
         return text;

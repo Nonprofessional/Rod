@@ -325,6 +325,14 @@ public enum AuditEventKind
     ShellSessionInput,
 
     /// <summary>
+    /// An operator switched a caught shell's session encoding (architecture.md
+    /// Sec 8): the codec both directions speak -- the console's answer to a
+    /// target on a legacy code page (a GBK cmd.exe box). The payload carries
+    /// the encoding's wire name; the outcome is the shell session id.
+    /// </summary>
+    ShellSessionEncodingChanged,
+
+    /// <summary>
     /// An operator registered a web-shell endpoint into the engagement
     /// (architecture.md Sec 5.2's Web-shell class): a script already placed
     /// in a target's web root, bound to the engagement by the register

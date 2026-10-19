@@ -307,14 +307,119 @@ public class ShellCatchTests
         Assert.Equal(HttpStatusCode.NotFound, foreignOutput.StatusCode);
     }
 
+    [Fact]
+    public async Task SessionEncoding_RepointsBothDirections()
+    {
+        await using var env = await TestEnv.StartAsync();
+        await AuthenticatedHost.LoginAsync(env.Http);
+        var engagementId = await CreateEngagementAsync(env.Http);
+        var port = TestSupport.GetFreeTcpPort();
+        var created = await env.Http.PostAsJsonAsync($"/engagements/{engagementId}/listeners",
+            new ListenerEndpoints.CreateListenerRequest(
+                Name: "runtime-shellcatch",
+                Transport: "shellcatch",
+                BindAddress: $"127.0.0.1:{port}",
+                PublicEndpoint: $"10.0.0.5:{port}"));
+        created.EnsureSuccessStatusCode();
+
+        using var peer = new TcpClient();
+        await peer.ConnectAsync(IPAddress.Loopback, port);
+        var peerPort = ((IPEndPoint)peer.Client.LocalEndPoint!).Port;
+
+        ShellDto[] listed;
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(15);
+        do
+        {
+            listed = await env.Http.GetFromJsonAsync<ShellDto[]>(
+                $"/engagements/{engagementId}/shells") ?? [];
+            await Task.Delay(50);
+        }
+        while (!listed.Any(s => s.RemoteAddress.EndsWith($":{peerPort}"))
+            && DateTime.UtcNow < deadline);
+        var sessionId = Assert.Single(listed, s => s.RemoteAddress.EndsWith($":{peerPort}")).SessionId;
+
+        // A legacy-code-page shell mojibakes under the default UTF-8 decode:
+        // these are the GBK bytes of the characters under test.
+        byte[] gbkZhong = [0xD6, 0xD0]; // "zhong" (middle)
+        byte[] gbkHao = [0xBA, 0xC3];   // "hao" (good)
+        byte[] gbkWen = [0xCE, 0xC4];   // "wen" (text)
+
+        // Default decode: the GBK pair reads as replacement characters, so
+        // the mojibake a GBK target shows under UTF-8 is pinned here.
+        await peer.GetStream().WriteAsync(gbkZhong);
+        var mojibake = await ReadOutputAsync(env.Http, engagementId, sessionId, deadline);
+        Assert.Contains('\uFFFD', mojibake);
+        Assert.DoesNotContain("\u4E2D", mojibake); // the real "zhong" never lands
+
+        // The roster names the default; the switch names the new codec and
+        // the roster follows it.
+        var beforeSwitch = await env.Http.GetFromJsonAsync<ShellDto[]>(
+            $"/engagements/{engagementId}/shells") ?? [];
+        Assert.Equal("utf-8", Assert.Single(beforeSwitch, s => s.SessionId == sessionId).Encoding);
+        var switched = await env.Http.PostAsJsonAsync(
+            $"/engagements/{engagementId}/shells/{sessionId}:encoding",
+            new ShellEncodingDto("gbk"));
+        Assert.Equal(HttpStatusCode.OK, switched.StatusCode);
+        var afterSwitch = await env.Http.GetFromJsonAsync<ShellDto[]>(
+            $"/engagements/{engagementId}/shells") ?? [];
+        Assert.Equal("gbk", Assert.Single(afterSwitch, s => s.SessionId == sessionId).Encoding);
+
+        // Bytes after the switch decode as the characters they carry...
+        await peer.GetStream().WriteAsync(gbkHao);
+        var decoded = await ReadOutputAsync(env.Http, engagementId, sessionId, deadline);
+        Assert.Contains("\u597D", decoded); // "hao" -- the decoded character
+
+        // ...and input encodes back the same way: the peer reads the GBK
+        // bytes of the character the operator submitted as text.
+        var sent = await env.Http.PostAsJsonAsync(
+            $"/engagements/{engagementId}/shells/{sessionId}:input",
+            new ShellInputDto("\u6587")); // "wen"
+        sent.EnsureSuccessStatusCode();
+        var received = new byte[2];
+        await peer.GetStream().ReadExactlyAsync(received);
+        Assert.Equal(gbkWen, received);
+
+        // An unoffered name is refused outright.
+        var refused = await env.Http.PostAsJsonAsync(
+            $"/engagements/{engagementId}/shells/{sessionId}:encoding",
+            new ShellEncodingDto("ebcdic"));
+        Assert.Equal(HttpStatusCode.BadRequest, refused.StatusCode);
+    }
+
+    // Drains the output log to its tip and returns everything readable.
+    private static async Task<string> ReadOutputAsync(
+        HttpClient http, string engagementId, string sessionId, DateTime deadline)
+    {
+        var text = new StringBuilder();
+        long cursor = 0;
+        while (DateTime.UtcNow < deadline)
+        {
+            var output = await http.GetFromJsonAsync<ShellOutputDto>(
+                $"/engagements/{engagementId}/shells/{sessionId}/output?after={cursor}");
+            if (output is { Chunks.Count: > 0 })
+            {
+                cursor = output.LatestSequence;
+                text.Append(string.Concat(output.Chunks.Select(c => c.Text)));
+                if (output.Chunks.Count < 512) break; // caught up to the tip
+            }
+            else
+            {
+                break; // long poll answered empty: quiet
+            }
+        }
+        return text.ToString();
+    }
+
     private sealed record ShellDto(
-        string SessionId, string Status, string Os, string RemoteAddress);
+        string SessionId, string Status, string Os, string RemoteAddress, string? Encoding);
 
     private sealed record ShellOutputDto(long LatestSequence, IReadOnlyList<ShellChunkDto> Chunks);
 
     private sealed record ShellChunkDto(long Sequence, DateTimeOffset At, string Text);
 
     private sealed record ShellInputDto(string Text);
+
+    private sealed record ShellEncodingDto(string Encoding);
 
     [Fact]
     public async Task UpgradeRoute_RendersFetchAndRunLaunchers_AgainstTheEngagementsWebListener()

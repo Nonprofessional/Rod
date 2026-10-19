@@ -139,6 +139,10 @@ public static class TransportHost
         // the caught reverse-shell registry, the anonymous-arrival sibling
         // of the implant session registry above; the in-memory default
         // pairs with a Postgres adapter when the durable host swaps in.
+        // The session encoding's legacy code pages (GBK) register with the
+        // shellcatch surface they belong to -- one composition point every
+        // host shape passes through.
+        Listeners.ShellCatch.ShellEncodings.EnsureProviderRegistered();
         services.AddSingleton<IShellSessionRegistry, InMemoryShellSessionRegistry>();
         // Web-shell endpoints (architecture.md Sec 5.2's Web-shell class):
         // the register use case and its profile store, anchored on

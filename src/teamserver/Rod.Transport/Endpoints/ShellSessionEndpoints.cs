@@ -60,6 +60,11 @@ public static class ShellSessionEndpoints
         group.MapPost("/{id}:upgrade", UpgradeAsync)
             .AddEndpointFilter(new EngagementAccessFilter(EngagementAccessRequirement.Write))
             .WithName(nameof(UpgradeAsync));
+        // The session encoding is the console's answer to a legacy-code-page
+        // target: it re-points the codec both directions speak.
+        group.MapPost("/{id}:encoding", SetEncodingAsync)
+            .AddEndpointFilter(new EngagementAccessFilter(EngagementAccessRequirement.Write))
+            .WithName(nameof(SetEncodingAsync));
 
         return endpoints;
     }
@@ -67,13 +72,18 @@ public static class ShellSessionEndpoints
     private static async Task<IResult> ListShellsAsync(
         string engagementId,
         IShellSessionRegistry sessions,
+        ShellCatchHub hub,
         CancellationToken cancellationToken)
     {
         if (!EngagementId.TryParse(engagementId, out var engagement))
             return Results.BadRequest(new Problem("Engagement id is not a valid identifier."));
 
         var listed = await sessions.ListByEngagementAsync(engagement, cancellationToken);
-        return Results.Ok(listed.Select(ShellSessionResponse.From).ToArray());
+        return Results.Ok(listed
+            .Select(session => ShellSessionResponse.From(
+                session,
+                live: hub.Find(session.Id)?.EncodingName))
+            .ToArray());
     }
 
     private static async Task<IResult> ReadOutputAsync(
@@ -243,6 +253,61 @@ public static class ShellSessionEndpoints
         return Results.Accepted();
     }
 
+    // The session encoding switch (architecture.md Sec 8): a shell speaking a
+    // legacy code page mojibakes under the default UTF-8 decode, and its
+    // non-ASCII input garbles on the way out too. The switch re-points both
+    // directions at once; bytes already on the log keep the decoding they
+    // were read under. Acting on the shell, so Write scope -- but it types
+    // nothing, so the claim is not taken.
+    private static async Task<IResult> SetEncodingAsync(
+        string engagementId,
+        string id,
+        ShellEncodingRequest body,
+        ClaimsPrincipal user,
+        IShellSessionRegistry sessions,
+        ShellCatchHub hub,
+        IAuditStore audit,
+        TimeProvider clock,
+        CancellationToken cancellationToken)
+    {
+        var (failure, scope) = await ResolveScopedShellAsync(engagementId, id, sessions, cancellationToken);
+        if (scope is null)
+            return failure!;
+
+        var operatorId = user.TryGetOperatorId();
+        if (operatorId is null)
+            return Results.Unauthorized();
+
+        var shell = hub.Find(scope.Session.Id);
+        if (shell is null)
+            return Results.Conflict(
+                new Problem("This shell has ended; its encoding can no longer move."));
+
+        var encoding = ShellEncodings.Find(body.Encoding ?? string.Empty);
+        if (encoding is null)
+            return Results.BadRequest(new Problem(
+                $"Encoding must be one of: {string.Join(", ", ShellEncodings.Offered)}."));
+
+        shell.SetEncoding(encoding);
+        var at = clock.GetUtcNow();
+        await audit.AppendAsync(
+            AuditEvent.Fact(
+                eventId: Guid.NewGuid(),
+                engagementId: scope.Session.EngagementId.Value,
+                operatorId: operatorId.Value.Value,
+                implantId: Guid.Empty,
+                taskId: Guid.Empty,
+                verb: "shell.session.encoding",
+                kind: AuditEventKind.ShellSessionEncodingChanged,
+                payload: $"encoding={ShellEncodings.NameOf(encoding)}",
+                output: null,
+                outcome: scope.Session.Id.ToString(),
+                at),
+            cancellationToken);
+
+        return Results.Ok(new { encoding = ShellEncodings.NameOf(encoding) });
+    }
+
     // The upgrade render (architecture.md Sec 5.2, Sec 6, Sec 8): a caught
     // shell is anonymous and unenrolled, and its value ends where a real
     // implant begins. The render is deliberately advisory -- the endpoint
@@ -342,9 +407,13 @@ public static class ShellSessionEndpoints
         DateTimeOffset OpenedAt,
         DateTimeOffset? LastInputAt,
         DateTimeOffset? LastOutputAt,
-        DateTimeOffset? EndedAt)
+        DateTimeOffset? EndedAt,
+        string? Encoding)
     {
-        public static ShellSessionResponse From(ShellSession session)
+        // The encoding is the live connection's codec -- it moves with the
+        // console's switch and dies with the session, so an ended shell
+        // answers null and the console falls back to the default.
+        public static ShellSessionResponse From(ShellSession session, string? live)
             => new(
                 session.Id.ToString(),
                 session.Status.ToString().ToLowerInvariant(),
@@ -353,7 +422,8 @@ public static class ShellSessionEndpoints
                 session.OpenedAt,
                 session.LastInputAt,
                 session.LastOutputAt,
-                session.EndedAt);
+                session.EndedAt,
+                live);
     }
 
     private sealed record ShellOutputResponse(long LatestSequence, IReadOnlyList<ShellChunkResponse> Chunks);
@@ -387,3 +457,9 @@ public sealed record ShellLauncherResponse(string Id, string Os, string Command)
 
 /// <summary>The submitted input for a caught shell: one line of operator text.</summary>
 public sealed record ShellInputRequest(string Text);
+
+/// <summary>
+/// The encoding a caught shell's session should speak: the wire name of a
+/// codec from <see cref="Listeners.ShellCatch.ShellEncodings"/>'s offered set.
+/// </summary>
+public sealed record ShellEncodingRequest(string Encoding);
