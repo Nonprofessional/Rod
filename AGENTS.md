@@ -139,9 +139,26 @@ authoritative statement.
   carriage, and C2 exfiltration into engagement-scoped artifact storage.
   Sec 13 itemizes it and draws the implant-core/plugin-domain line.
 - **Everything beyond it arrives through the module seams**: server-side
-  `CapabilityModule`s, the implant handler overlay, and the payload transform
-  chain each define their interface, registration, dispatch, and data model
-  there; concrete tradecraft is supplied as separate, opt-in modules the
-  operator deploys. The core ships no concrete evasion, exploit, or
-  collection tradecraft beyond the reference set.
+  `CapabilityModule`s, the implant handler overlay, and the payload
+  transform chain each define their interface, registration, dispatch, and
+  data model there. Implementations may ship in-tree as reference modules
+  or arrive through the module registry (architecture.md Sec 15); whatever
+  ships stays opt-in and disabled by default until a build profile enables
+  it.
 - All work here assumes an authorized-use context.
+
+## 8. Hard constraints (architecture.md Sec 15)
+
+- Deployment: the teamserver + PostgreSQL, nothing standing beside them --
+  no Prometheus, Redis, RabbitMQ, message bus, or container orchestration;
+  built-in features depend on PG or in-process facilities only.
+- Evidence and attribution are non-negotiable: hash-chained audit, every
+  action attributed to an operator, engagement isolation; mutable content
+  never enters the chain.
+- The wire protocol and build contract stay language-neutral.
+- Open is not on: sensitive capabilities default off, enabled explicitly
+  per build profile.
+- Breadth grows in the module layer (ATT&CK coverage is the yardstick);
+  the kernel keeps only what an engagement cannot run without.
+- Docs are a closed set: one topic per document, one fact in one place;
+  extend an existing doc before proposing a new one.

@@ -4,7 +4,8 @@
 > authorized-use red-team operations platform. The repository
 > holds the teamserver (the .NET control plane) and the Rust reference implant, with a Postgres persistence
 > layer; [todo.md](todo.md) tracks open work. Sections marked _(future)_ are
-> designed for but not yet implemented.
+> designed for but not yet implemented; Sec 15 records the program
+> decisions (ADR-001 through ADR-015) that the todo queue serves.
 
 ## 1. Overview
 
@@ -50,8 +51,8 @@ around "managed components". Each phase states what the platform must support.
    execution) stays outside Rod; either way the platform must **ingest the
    first callback** and correlate it to the engagement. The content of
    social engineering -- pretext, evasion-grade lures, credential-harvest
-   landing pages -- remains out-of-tree (Sec 13): the campaign carries the
-   link and the attribution, not the tradecraft.
+   landing pages -- is module-domain work (Sec 13, Sec 15): the campaign
+   carries the link and the attribution, not the tradecraft.
 5. **Beaconing / contact.** The implant calls in; the teamserver authenticates
    it, queues tasks, and accepts results. Async beacon and interactive session
    are distinct modes.
@@ -194,7 +195,7 @@ under, and a note on its current state are listed.
 | `Rod.Transport` | Listeners that terminate C2 transports and map core-state use cases onto the operator HTTP API and the implant beacon stream. Owns endpoint routing, TLS termination, and the mapping of use-case failures to wire status codes. | Layer 2 -- may depend on `Rod.CoreState`, `Rod.Protocol`, `Rod.Audit`, `Rod.BuildPipeline`. | Implemented. HTTP(S), DNS, and raw-TCP listeners with the bind decoupled from the public endpoint (a repoint swaps a burned redirector without touching the socket); the full operator API (engagements, deploy tokens, implants with notes and retirement, tasks with queued-task cancellation, artifacts, audit, timeline/report, payloads) and the beacon stream with bounded frames, capped exfil reassembly, and atomic task dispatch (Sec 8, Sec 10.3, Sec 11); the browser hook's mint and guid-gated serving edge with the Origin-only CORS posture (Sec 5.2, Sec 8); the delivery-campaign surface (Sec 11.5) -- per-recipient lure builds through the build pipeline, the SMTP send engine, and the lure-serving public edge. The task, audit, and artifact listings are paged (limit + opaque cursor, newest window first) so a long engagement never grows a listing response without bound; the operator UI walks pages. |
 | `Rod.BuildPipeline` | Drives the external, per-language build units to compile polyglot implants on demand through the uniform build contract, fingerprinting and recording each artifact (Sec. 6). | Layer 3 -- may depend on `Rod.CoreState`. | Implemented. `RustBuildUnit` -- the sole in-tree unit (the .NET unit is deleted with the .NET implant) -- compiles the Rust reference implant in a per-build hermetic staging copy (the build target mapped onto a cargo triple; the retired stager class refused with the fix named at parse time), baking the profile (contact mode, beacon parameters, class verb set) without any key material; loader-tier requests compile the no_std loader crate beside it instead, baked with fetch constants and the delivery seal (Sec 6); the built bytes land in the payload store for operator download (Sec 6). |
 | `Rod.Operators` | Multiplayer operator sessions over the operator API: shared live engagement state, task ownership and attribution, and real-time push to the operator UI. | Layer 4 -- may depend on `Rod.CoreState`, `Rod.Audit`. | Implemented. Cookie-authenticated operator sessions (login/logout/me; the bootstrap-seeded admin of Sec 4.5; hash-only credential port) and the per-engagement SSE live-event bus, with the automation engine (Sec 10.4) and the webhook forwarder (Sec 4.4) beside it as the bus's engine-side consumers. Cookies were chosen over JWT (no client-side token store for a same-origin SPA); ASP.NET Core Identity was rejected (its own user/role tables conflict with the layered stores). Access is the membership model of Sec 4.5 (per-engagement reader/writer tiers granted by the owner) beside the deployment-role split of the account machinery (bootstrap admin, console-created members); the exclusive interaction claims and activity presence mark who drives what; a per-handle login throttle slows brute force. The layer also owns the two agent-facing surfaces the operator front carries: the MCP server (`/mcp`, Streamable HTTP, stateless -- the read-only toolset an external agent client drives through an operator API token; runbook [operations/mcp.md](operations/mcp.md)) and the opt-in OpenAI-compatible LLM triage client behind `Microsoft.Extensions.AI`'s `IChatClient` (Sec 11.3; runbook [operations/llm.md](operations/llm.md)), plus the external recon workbench (Sec 11.4; runbook [operations/recon.md](operations/recon.md)) -- the pre-foothold lookups and scan whose findings land as task-less engagement artifacts. |
-| `Rod.Tradecraft` | Pluggable post-exploitation capability modules, including the evasion/exploit category contracts (Sec. 10, Sec. 13). Concrete tradecraft is out-of-tree; this layer holds the contract, the registration path, and the gate only. | Layer 6 -- may depend on `Rod.CoreState`, `Rod.Audit`. | Implemented. The capability contract (`ICapabilityModule`, a registration-only contract: a descriptor, no execution surface -- Sec 10.2), the registry, and the registry-backed task-issuance resolver and sensitive-verb policy; every framework verb ships as a placeholder descriptor carrying its OPSEC attributes, and `GET /capabilities` exposes the catalog to the UI. Sensitive behavior stays out-of-tree (Sec 10.2, Sec 13). |
+| `Rod.Tradecraft` | Pluggable post-exploitation capability modules, including the evasion/exploit category contracts (Sec. 10, Sec. 13). Concrete implementations arrive as modules -- in-tree reference modules or registry modules (Sec 15) -- over the contract, registration path, and gate this layer holds; the program renames the project `Rod.Capabilities` as it gains the in-tree module host. | Layer 6 -- may depend on `Rod.CoreState`, `Rod.Audit`. | Implemented. The capability contract (`ICapabilityModule`, a registration-only contract: a descriptor, no execution surface -- Sec 10.2), the registry, and the registry-backed task-issuance resolver and sensitive-verb policy; every framework verb ships as a placeholder descriptor carrying its OPSEC attributes, and `GET /capabilities` exposes the catalog to the UI. Sensitive behavior arrives as modules and stays disabled by default (Sec 10.2, Sec 13, Sec 15). |
 | `Rod.Persistence` | **Not a layer.** The durable PostgreSQL adapters behind the core-state and audit ports (operators, operator credentials, engagements, implants, sessions, tasks, deploy tokens, audit, artifacts), swapped in at the composition root when `ConnectionStrings:Postgres` is set (Sec 12.1). | Not a layer -- may depend on `Rod.CoreState` and `Rod.Audit`; wired only at the composition root, never by transport. | Implemented. EF Core 10 over Npgsql behind a context factory (singleton-safe), migrations, and the full adapter pair; absent the connection string the in-memory adapters stay registered. |
 | `Rod.TeamServer` | **Not a layer.** The single runnable .NET process and composition root: it wires `Rod.Transport`'s services and endpoints, binds the listeners, and serves the built React operator UI same-origin with an SPA fallback. It is where the layers are assembled for `dotnet run`; the layer dependency tests do not constrain it. | Not a layer -- the composition root; depends inward on `Rod.Transport`, `Rod.Operators`, `Rod.Tradecraft`, and `Rod.Persistence` (transport itself cannot reference the outer layers). | Implemented. Wires the layers, binds the configured listeners, and serves the built operator UI same-origin with hardening headers; the build runs the npm bundle first when it is missing (Sec 4.2). |
 
@@ -543,7 +544,7 @@ Implants differ by purpose, not by a "managed device flavor":
   key, not a password) and the universal one-liner eval family (the
   classic `@eval($_POST[...])` shape every manager drives; scripts placed
   by hand or by another tool answer it because the one-liner itself is
-  universal) -- and leaves any other family to out-of-tree tradecraft
+  universal) -- and leaves any other family to module-domain tradecraft
   (Sec 13).
 - **Ephemeral** -- a short-lived, TTL'd implant from a one-liner bootstrap; for
   one-off execution and temporary access.
@@ -606,8 +607,8 @@ browser carries exactly the hook set -- `browser.fingerprint`,
 `browser.cookies`, `browser.dom`, `browser.screenshot`, `browser.redirect`,
 `browser.prompt` (Sec 10.1) -- the read-and-steer verbs a hooked page
 justifies, with everything past them (input capture, browser-exploit
-chaining) arriving as out-of-tree capability contracts exactly like the
-evasion and exploit families (Sec 13). No class but Implant carries a
+chaining) arriving as capability modules exactly like the evasion and
+exploit families (Sec 13, Sec 15). No class but Implant carries a
 recon, lateral, persist, collect, or exfil
 verb. The set is the server's authority for what a class
 may do: task issuance gates on it in core state (a verb outside the set is
@@ -616,11 +617,11 @@ each artifact so a generated payload is self-describing.
 
 Admission is not execution: a verb may be class-admissible (the class gate
 does not refuse it) yet ship no built-in handler, running only when an
-operator supplies an out-of-tree module. The `evasion` and `exploit`
+operator supplies a module (Sec 15). The `evasion` and `exploit`
 categories in their entirety follow this shape (Sec 10.2); they are listed
 in the capability catalog but carry no in-repo handler -- ungated contract
 verbs the bake carries alongside the class set (Sec 5.3), so an artifact
-compiled with an out-of-tree handler for one advertises it at handshake.
+compiled with a module's handler for one advertises it at handshake.
 
 A capable implant can deploy another class on the same host (e.g. a web-shell
 deriving a full implant) via a deployment verb; the child enrols into the same
@@ -649,8 +650,8 @@ compile-time -- no runtime library loading for *handler plugins* (a Rust
 dylib boundary is not stable across compiler versions, and the capability
 set is
 decided per class at build time, so runtime discovery buys nothing).
-Out-of-tree handlers are the crate fork -- the build unit pointed at the
-operator's own tree (Sec 6, extending/tradecraft.md) -- with the C-ABI
+Handlers beyond the compiled tree are the crate fork -- the build unit
+pointed at the operator's own tree (Sec 6, extending/tradecraft.md) -- with the C-ABI
 plugin seam (Sec 5.4) as the in-process follow-on: per-engagement modules
 that load on demand over the task channel, after deployment, inside the
 artifact that never compiled them.
@@ -686,8 +687,9 @@ sources from each staging copy -- did not carry into the Rust unit: the
 crate compiles one lean handler set per platform (the sensitive three
 behind `cfg(windows)`), and per-class tailoring rides the baked verb list
 instead, because the handler code is tens of kilobytes against a carriage
-that dominates the artifact's size. Out-of-tree handlers are the crate
-fork (extending/tradecraft.md) and the C-ABI plugin seam (Sec 5.4); the
+that dominates the artifact's size. Handlers beyond the compiled tree
+arrive through the crate fork (extending/tradecraft.md) and the C-ABI
+plugin seam (Sec 5.4); the
 plugin domain is the long tail -- recon sweeps, lateral
 movement, persistence, credential and screen collection -- while the
 channel verbs and the file/exec core stay compiled, because a plugin
@@ -868,7 +870,7 @@ recorded.**
   transport profile, and beacon parameters (mode, sleep, jitter, kill date).
   They are produced at request time so each artifact is unique -- this is
   essential for OPSEC. No key material crosses the build contract (Sec 5.1).
-- **The implant-side out-of-tree seam is the crate fork.** The overlay the
+- **The implant-side extension seam is the crate fork.** The overlay the
   .NET unit once compiled (`Build:ImplantExtensionDirectory`, a directory of
   `.cs` handler sources) retired with the .NET implant it compiled. The Rust
   seam is the source tree itself: an operator points the unit at a fork that
@@ -1056,6 +1058,12 @@ OPSEC is a design axis, not a feature flag. The architecture bakes in:
   whatever carriage it holds, so no pipe exists to name). The frozen wire
   contract keeps the QUIC-only frame kinds reserved; a community unit
   reviving a family registers a provider against the same contracts.
+  _(future)_ The program (Sec 15.3) reopens two of the retired families
+  as **in-tree optional transports** behind a provider abstraction
+  (`ITransportProvider`): mTLS returns and WireGuard joins, both
+  default-disabled and enabled per build profile -- the retirement was a
+  defaults decision, and an opt-in provider keeps the default while
+  reopening the choice.
   Transport choice is a profile/deployment concern; the protocol semantics
   are transport-independent. The web family additionally serves the
   WebSocket beacon (`GET /implants/beacon/stream`,
@@ -1741,7 +1749,7 @@ verb on its own grammar, so the addition costs a Tier 0 implant nothing
 | **module** | `module.load`, `module.unload`, `module.list` | The implant-side plugin seam's own verbs (Sec 5.4): `module.load` delivers an SDK module's bytes as the task's staged content and the implant's loader registers its verbs -- memfd and exec on Linux, the manual PE map on Windows -- `module.unload` retracts one best-effort, and `module.list` reports what is loaded. Implant-class gated (module support is the long-haul class's), and `module.load` carries `executes-code` so automation never fires it unattended (Sec 10.4). |
 | **evasion** | `evasion.avoid`, `evasion.unload` *(contract only)*; `inject.shellcode` | Detection-evasion hooks. `evasion.avoid`/`evasion.unload` are contract and dispatch only; `inject.shellcode` is the category's in-tree exception -- Implant-class gated with a Windows reference handler (the classic VirtualAllocEx/WriteProcessMemory/CreateRemoteThread pattern), carrying `modifies-defenses` and `executes-code`. |
 | **exploit** | `exploit.invoke`, `exploit.module` *(contract only)* | PoC/exploit integration point. Contract and dispatch only. |
-| **browser** | `browser.fingerprint`, `browser.cookies`, `browser.dom`, `browser.screenshot`, `browser.redirect`, `browser.prompt` | The Browser class's hook set (Sec 5.2): the read-and-steer verbs a hooked page justifies. `browser.fingerprint` reports the navigator facts; `browser.cookies` reads the current origin's `document.cookie` (non-HttpOnly only -- the browser's own boundary, documented rather than worked around); `browser.dom` returns `outerHTML`, optionally narrowed by a CSS selector argument, truncated at 1 MiB; `browser.screenshot` rasterizes the DOM (the SVG foreignObject shape, cross-origin imagery stripped) into a PNG artifact through the exfil-chunk path (Sec 11); `browser.redirect` navigates the tab (the hook dies with the page it left); `browser.prompt` returns what the user answered, carrying `reads-input` so automation never fires it unattended (Sec 10.4). Input capture (keylogging, form-field harvesting) and browser-exploit chaining are not core verbs -- they arrive as out-of-tree capability contracts (Sec 13). |
+| **browser** | `browser.fingerprint`, `browser.cookies`, `browser.dom`, `browser.screenshot`, `browser.redirect`, `browser.prompt` | The Browser class's hook set (Sec 5.2): the read-and-steer verbs a hooked page justifies. `browser.fingerprint` reports the navigator facts; `browser.cookies` reads the current origin's `document.cookie` (non-HttpOnly only -- the browser's own boundary, documented rather than worked around); `browser.dom` returns `outerHTML`, optionally narrowed by a CSS selector argument, truncated at 1 MiB; `browser.screenshot` rasterizes the DOM (the SVG foreignObject shape, cross-origin imagery stripped) into a PNG artifact through the exfil-chunk path (Sec 11); `browser.redirect` navigates the tab (the hook dies with the page it left); `browser.prompt` returns what the user answered, carrying `reads-input` so automation never fires it unattended (Sec 10.4). Input capture (keylogging, form-field harvesting) and browser-exploit chaining are not core verbs -- they arrive as capability modules (Sec 13, Sec 15). |
 
 The recon verbs are registered through the tradecraft layer as first-class
 descriptors (`Rod.Tradecraft.Recon.ReconCapabilities`, category `Recon`); their
@@ -1866,7 +1874,7 @@ attribute, since each alters the target's defensive or monitoring posture
 (Sec 7). Unlike the recon, lateral, persist, collect, and exfil verbs they are
 **not** gated to a class in `ImplantClassCapabilities` (Sec 5.2): the pair is
 contract and dispatch only -- which class an evasion module runs on is decided
-when an operator deploys the out-of-tree module, not by a baked-in class rule.
+when an operator deploys the module, not by a baked-in class rule.
 Their concrete behavior is operator-supplied tradecraft (Sec 10.2, Sec 13):
 the core ships no bypass techniques or weaponized code, so each runs only
 when an operator supplies a module for it. `inject.shellcode` is the
@@ -1882,7 +1890,7 @@ The exploit verbs are registered the same way
 since each actively attacks a target to gain or widen access (Sec 7). Like the
 evasion verbs they are **not** gated to a class in `ImplantClassCapabilities`
 (Sec 5.2): exploit is contract and dispatch only -- which class an exploit
-module runs on is decided when an operator deploys the out-of-tree module, not by
+module runs on is decided when an operator deploys the module, not by
 a baked-in class rule. Their concrete behavior is operator-supplied tradecraft
 (Sec 10.2, Sec 13): the core ships no
 weaponized exploit code or proof-of-concepts, so each verb runs only when an
@@ -1892,14 +1900,15 @@ operator supplies a module for it.
 
 `evasion` and `exploit` are first-class in the capability model -- they have
 defined interfaces, registration, dispatch, and data shapes. Their **concrete
-behavior is intentionally not part of the core**: the core provides the contract
-and the plumbing; the tradecraft is supplied as separate, opt-in, out-of-tree
-`CapabilityModule`s. See Sec. 13.
+behavior is not the core's**: the core provides the contract and the plumbing;
+the tradecraft is supplied as separate, opt-in `CapabilityModule`s --
+in-tree reference modules or registry modules (Sec 15), every sensitive one
+disabled by default until a build profile enables it (Sec 7). See Sec. 13.
 
 Every built-in verb is registered in the default registry, contract-only ones
 included: a contract-only verb is a real `PlaceholderCapabilityModule` that
 satisfies the registry and the task gate until an operator supplies a module.
-That makes the out-of-tree path a *registration*, not a schema change -- a
+That makes the module path a *registration*, not a schema change -- a
 module registered for `evasion.avoid` or `exploit.invoke` replaces the
 placeholder (last-registration-wins) and is taskable through the same UI and
 gate as any built-in verb. [extending/tradecraft.md](extending/tradecraft.md)
@@ -1959,7 +1968,7 @@ verb a class set carries to another class -- and it is the
 path that opens dispatch for the contract-and-dispatch-only categories (Sec
 10.2): the evasion and exploit verbs are not class-gated, so they are admitted
 when the registry holds a module for them (the built-in placeholder, or an
-operator-supplied out-of-tree override). A verb outside both the class set and
+operator-supplied module). A verb outside both the class set and
 the registry is refused before the task is queued. Verb execution itself stays
 on the implant: the teamserver resolves the gate, hands the verb to the beacon
 stream, and captures the result.
@@ -2143,7 +2152,7 @@ authoritative implementation is registry-backed -- a verb whose descriptor
 sits in the evasion/exploit categories or carries the OPSEC attributes that
 mean "never unattended" (`reads-input`, `reads-memory`, `executes-code`,
 `modifies-defenses`) is sensitive, so every registered verb, the
-framework's or an out-of-tree module's, acquires its automation posture at
+framework's or a module's, acquires its automation posture at
 registration and no parallel list exists to drift. A static floor (the
 Windows-sensitive three, Sec 12.2, and the unregistered
 evasion/exploit namespaces) stays loaded underneath and the registry may
@@ -2380,7 +2389,7 @@ not the task history.
 hosts group from implant enrollments, pivot links from the parentage the
 child-enrollment path records (Sec 5.2), and observed hosts and ports from
 completed recon task outputs parsed at read time. The recon verbs'
-handlers are out-of-tree (Sec 13), so the parse targets a documented
+handlers are module-domain (Sec 13), so the parse targets a documented
 output contract the handler authors write for -- JSON lines, one finding
 per line ([extending/tradecraft.md](extending/tradecraft.md)) -- and a
 line that does not parse is not a finding: unparseable output stays in
@@ -2638,9 +2647,9 @@ campaigns, a landing page behind the lure, and a test-send to a
 lab address are the natural widenings -- each touches the template, the
 engine's send step, and nothing else. A landing page that captures
 credentials would follow the standard store's collection posture
-(Sec 13), and evasion-grade social engineering stays out-of-tree
-regardless: the campaign carries delivery and attribution, never the
-lure's content tradecraft.
+(Sec 13), and evasion-grade social engineering stays module-domain
+regardless (Sec 15): the campaign carries delivery and attribution,
+never the lure's content tradecraft.
 
 ## 12. Technology stack and language boundaries
 
@@ -2749,14 +2758,18 @@ the product's own, not a community add-on).
 
 Rod's capability surface is governed by **contracts, not by a technique
 allowlist**. The core defines the interfaces, registration, dispatch, and data
-models for every capability family; concrete implementations arrive either
-in-tree (the reference set the framework ships with) or as opt-in modules
-through the extension seams (server-side modules, the crate fork, the
-transform chain). Nothing in this repository maintains a list of which
+models for every capability family; concrete implementations are
+**capability modules** -- reference modules shipped in-tree (the standard,
+documented surface the framework maintains) or community modules through
+the extension seams and the module registry (server-side modules, the
+crate fork, the plugin seam, the transform chain; Sec 15). Nothing in
+this repository maintains a list of which
 technique kinds may exist -- an operator building for an authorized engagement
 composes the surface they need from the reference set plus their own modules,
 and the discipline that governs that work is the authorized-use premise below,
-not a taxonomy curated here.
+not a taxonomy curated here. Openness governs what may enter the repository,
+never what a build carries: sensitive modules ship disabled and are enabled
+explicitly per build profile (Sec 7, Sec 15).
 
 The reference implant draws its own line the same way: the compiled core is
 the machinery no plugin could own -- the carriages, the session and channel
@@ -2765,14 +2778,15 @@ with the staged and chunked arms, filesystem listing, process termination,
 cadence retuning, and the tunnel pair -- plus the Windows-gated sensitive
 set, while the long tail (recon sweeps, lateral movement, persistence,
 credential and screen collection) is plugin-domain work for the C-ABI seam,
-composed per engagement rather than compiled into every artifact. The
-families beyond them -- QUIC above all -- come back as out-of-tree units
-against the same frozen contracts when an engagement names the need.
+composed per engagement rather than compiled into every artifact. Transport
+families beyond them -- QUIC above all -- return as optional providers
+(in-tree or registry, Sec 15.3) against the same frozen contracts when an
+engagement names the need.
 
 The browser hook draws its line the same way: its compiled-in set is the
 read-and-steer six (Sec 10.1), while input capture in a hooked page
 (keylogging, form-field harvesting) and browser-exploit chaining are
-out-of-tree capability contracts, never core verbs -- the boundary Sec 5.2
+capability modules, never core verbs -- the boundary Sec 5.2
 carries in the class set itself.
 
 - All use assumes an authorized context; see [SECURITY.md](../SECURITY.md).
@@ -2801,7 +2815,8 @@ with -- and aim to surpass -- what established platforms offer in that area.
 - **Evasion** -- the platform must provide the contracts, hooks, and per-implant
   tuning (profiles, jitter, kill dates, malleable transports, per-command OPSEC
   metadata) that let operators keep a low profile; concrete tradecraft is
-  out-of-tree, but the substrate must be best-in-class.
+  opt-in module work, off by default (Sec 15), but the substrate must be
+  best-in-class.
 - **Exploitation integration** -- a clean, extensible integration point for
   external exploit and payload modules, so new tradecraft plugs in without core
   changes.
@@ -2813,10 +2828,304 @@ with -- and aim to surpass -- what established platforms offer in that area.
 
 When a capability area falls short of this bar, the right response is to raise
 the design, not to lower the bar. Concrete evasion techniques and exploit code
-remain out-of-tree modules (Sec. 13); the bar above concerns the platform's
-capability substrate, not bundled tradecraft. The bar has one hard boundary it
+remain opt-in modules, disabled by default (Sec. 13, Sec 15); the bar above
+concerns the platform's capability substrate, not what any build carries on
+by default. The bar has one hard boundary it
 may never cross: it applies to the teamserver substrate and the contract's
 quality, never to the implant-side minimum. Capability reach grows in the
 server, the tradecraft modules, and the build pipeline -- an addition that
 would put mandatory new work on every implant's task path fails this bar
 outright, whatever it adds (see [extending/implants.md](extending/implants.md)).
+
+## 15. Open capabilities and the module ecosystem
+
+> **Status:** Decided direction; [todo.md](todo.md) holds the queue. This
+> section records the program decisions (ADR-001 through ADR-015), absorbed
+> from the retired plan that first carried them. Unshipped pieces read as
+> _(future)_.
+
+Rod drew its capability boundary by sensitivity: the repository shipped
+contracts, placeholders, and a benign reference set, and concrete tradecraft
+lived out-of-tree in module repositories operators supplied. **That
+boundary is cancelled.** The measured gap against Mythic and Sliver is not the
+kernel -- the layered monolith, the hash-chained audit, engagement tenancy,
+and the single-process deployment are already the stronger design -- but
+ecosystem openness and interface surface, and that is where the program
+spends itself. The bar is **full functional replacement of Mythic and
+Sliver at the lightest deployment shape in the field**; the deployment
+shape itself never moves: the teamserver process and PostgreSQL, nothing
+else standing -- no Prometheus, Redis, RabbitMQ, message bus, or container
+orchestration; observability, full-text search, and realtime push are PG
+and in-process concerns, always.
+
+Opening the repository does not open the defaults. Openness changes what
+may sit in the tree, not what a build carries: sensitive capabilities stay
+disabled by default and are enabled explicitly at build through profiles
+(Sec 7's posture), and trust moves from physical separation (separate
+repositories) to module signatures and registry governance.
+
+### 15.1 Kernel narrow, module layer wide (ADR-001)
+
+Cancelling the boundary leaves a layering question in its place: with any
+capability allowed in-tree, what still belongs to the kernel? The test:
+**take the capability away -- if an engagement can still run from delivery
+to report with the audit chain intact, it is not kernel.** Everything else
+grows in the module layer, and breadth (the ATT&CK ambition, ADR-007) is a
+property of that layer, never of the kernel.
+
+- **Kernel**: engagement isolation, operators and permissions, the audit
+  hash chain, the task queue, `Rod.Protocol`, transport providers, the
+  build pipeline, the module seams themselves, API/SSE/MCP, the report
+  engine, the recon workbench, the SMTP campaign, and the browser and
+  web-shell class-and-protocol support. These are slow-changing or deeply
+  coupled to audit and engagement state -- keeping them in the kernel is
+  the cheaper maintenance answer.
+- **Module layer** (behind the contracts, growing slowly): the
+  post-exploitation verb long tail (the bulk of ATT&CK coverage), browser
+  hook scripts and lure assets, phishing templates and lure generators,
+  task output renderers, payload wrappers. Browser-hook assets chase
+  browser versions and phishing assets chase the SMTP ecosystem -- exactly
+  the churn the module layer exists to absorb.
+
+`Rod.Tradecraft` evolves into **`Rod.Capabilities`**: the same contract
+registry plus the in-tree module host. Reference modules live under
+`modules/` (server-side) and `implant/modules/` (implant-side) and load
+through **exactly the path external modules load through** -- the seams
+stay the public, stable contract, and the tree eats its own dogfood. A
+kernel PR must answer *why it cannot be a module*.
+
+### 15.2 The module ecosystem: registry, manifest, CLI (ADR-002, ADR-003, ADR-009)
+
+The ecosystem ports Mythic's play -- independent module repositories,
+dynamic install, a browsable catalog -- onto the constraint Mythic's
+implementation breaks: **zero standing components**. Mythic's carrier is
+Docker containers and a RabbitMQ bus; Rod's is a **static git index
+repository** (`rod-registry`) in the Homebrew-tap shape -- no server, no
+database, an optional GitHub Pages mirror -- plus signed manifests and a
+CLI. The contribution threshold is one git repository and one manifest;
+the trust chain is signatures, not platform vouching. Both of Mythic's
+decoupling axes survive in Rod's own shape: transport providers and
+implant languages are independent seams.
+
+**Three extension points, one manifest, one CLI.** Server-side capability
+modules (the `ICapabilityModule` contract), implant-side modules (the
+C-ABI symbol family on Windows, the musl stdio byte protocol on Linux,
+Sec 5.4), and build units (new implant languages) share the manifest shape
+and the `rod mod` commands. A developer runs `rod mod init` (a template
+repository), implements, signs, and `rod mod publish` (a pull request
+against the index); an operator runs `rod mod search` and
+`rod mod install name@version`, with signature and compatibility verified
+at install and a lock file recording what landed. OPSEC metadata ("lands
+on disk" / "memory only") shows at search and install, carrying the
+per-verb OPSEC labeling into the catalog. Open until P0 closes: the
+index's governance model (personal tap or organization) and the
+signing-key management story.
+
+**The manifest** (`rod-module.toml`): name, version, a compatibility
+matrix (implant class / platform / arch, minimum teamserver version),
+OPSEC metadata, ATT&CK mapping, the entry kind (server module, implant
+module, or build unit), license, and signature.
+
+**The contract trilogy** (ADR-003) is what makes a from-zero ecosystem
+coherent -- Mythic's cross-agent consistency, re-implemented as contract
+completeness instead of implementation uniformity:
+
+1. **Verb parameter schemas.** Every verb declares its parameter types
+   (enum, string, file, boolean, array, ...); the operator UI renders the
+   tasking form generically from the schema, knowing nothing about the
+   module behind it. The wire shape is untouched -- task arguments stay
+   the opaque string of Sec 10, parsed by the verb's own handler; the
+   schema is descriptor metadata for rendering and validation, not a new
+   contract boundary.
+2. **Structured output taxonomy.** Task results declare what they
+   produced (credential, file, process list, screenshot, enumeration
+   structure, plain text); the credential store, file browser, and process
+   views are generic panels over any module's output. A module that types
+   its output poorly degrades to plain text -- the UI keeps working, the
+   module just earns no panels.
+3. **Version compatibility.** The manifest declares the minimum
+   teamserver version it runs against (checked at install and upgrade,
+   ADR-009), and verbs carry module-scoped versions so modules iterate
+   independently.
+
+There is **no carry-over from existing ecosystems**: no BOF/COFF execution
+layer, no Armory migration. The ecosystem accumulates from zero, quality
+before quantity -- slowly, but every new module pays interest into the
+contracts. The trilogy's acceptance bar: a module the framework never
+anticipated goes from `rod mod init` to full UI interaction
+(schema-rendered form, structured products landing in the right stores)
+with **zero framework changes**.
+
+**Cold start.** The tree ships seed modules -- the absorbed out-of-tree
+candidates plus the common enumeration, credential, and tunneling sets --
+so the registry is not an empty shelf on day one.
+
+**Naming and license discipline.** Ecosystem components carry the `rod-`
+prefix and avoid existing product names: the index repository is
+`rod-registry` (Armory and Arsenal name Sliver's ecosystem factually,
+never borrowed). Sliver is GPLv3; its code is never copied or ported under
+any circumstance. Mythic-ecosystem agent repositories are licensed
+variously -- each is checked before any code reference. Benchmarking takes
+product and interaction conclusions only (ADR-012).
+
+### 15.3 Platform widenings (ADR-004 through ADR-008, ADR-010)
+
+Where the program touches the existing layers:
+
+| Layer | Evolution |
+|-------|--------------|
+| `Rod.CoreState` | Verbs gain the ATT&CK technique mapping (ADR-007); comment and chat aggregates (ADR-005). |
+| `Rod.Audit` | Chain semantics tighten: mutable content never enters the chain (ADR-005). |
+| `Rod.Protocol` | Frame-negotiation fields for the optional transports (ADR-004). |
+| `Rod.Transport` | `ITransportProvider` abstraction; the four in-tree families become the reference implementations; optional mTLS and WireGuard, default-disabled (ADR-004). |
+| `Rod.BuildPipeline` | The build contract gains a transport-enable-set parameter; a Go build unit joins the community slots. |
+| `Rod.Operators` | Collaboration metadata APIs (ADR-005); MCP read-write under token scopes; OpenAPI contract generation (ADR-006). |
+| `Rod.Tradecraft` → `Rod.Capabilities` | Contract registry + in-tree module host (ADR-001). |
+| `Rod.Persistence` | `tsvector` full-text indexes; comment and chat tables (ADR-005). |
+| `Rod.TeamServer` | Mounts the new components; the built-in diagnostics endpoint (ADR-008). |
+| `rod-cli` (new) | `rod mod init/search/info/install/verify/publish` (ADR-002, ADR-009). |
+
+- **Optional transports** (ADR-004). mTLS returns and WireGuard joins as
+  in-tree optional transports behind `ITransportProvider`, disabled by
+  default and enabled per build profile; the listener configuration model
+  learns enable/disable per family. The v1 retirement of mTLS, gRPC, QUIC,
+  and SMB was a defaults decision, and an opt-in provider keeps the
+  default while reopening the choice -- the two decisions do not conflict.
+  WireGuard's dependency tree (Rust implementation size, the cross
+  compilation matrix) gets a PoC before its queue slot is fixed.
+- **Collaboration metadata** (ADR-005). Mutable process knowledge is
+  modeled apart from the immutable evidence: **comments** (on tasks,
+  implants, artifacts, files, engagements, and operators, editable within
+  a window), engagement-scoped **chat** channels, and **task references**
+  -- `@task-<id>` and credential placeholders in comments and task input,
+  resolved server-side at publish so the placeholder plaintext never
+  lands. **Global search** covers task output, comments, artifact
+  metadata, credentials, and chat through PG `tsvector` + GIN indexes; no
+  external search engine. Comments and chat ride the timeline as ordinary
+  events but **never enter the hash chain** -- the chain carries
+  operational facts, and mutable content would break its semantics.
+- **Versioned API and SDKs** (ADR-006). `/api/v1` is contract-first with
+  the OpenAPI 3.1 spec as its source; official Python and Go SDKs publish
+  against it; tokens carry scopes (read / operate / admin); SSE stays.
+  MCP widens from read-only to read-write under the same scopes, every
+  write entering the audit chain like an operator's action. This is the
+  replacement for Mythic's scripting and Sliver's gRPC client libraries --
+  the integration hard floor.
+- **ATT&CK coverage matrix** (ADR-007). The verb-to-technique mapping
+  becomes first-class data (a data file; modules declare coverage through
+  the manifest, so community contributions extend it), and the platform
+  gains a **coverage matrix view** -- technique x platform x
+  implementation status, naming the verb, module, and implant class that
+  carry each technique -- with known gaps reading as the work queue. Two
+  faces, one source: report exports carry the ATT&CK Navigator layer
+  proving *what was done*, and the matrix shows operators *what can be
+  done*, both from the same mapping data. Coverage advances module by
+  module, ordered by real engagement need -- the matrix is a dashboard,
+  not a completion deadline.
+- **Built-in observability** (ADR-008). No Prometheus. A diagnostics
+  endpoint and a UI stats page over PG and in-process counters: beacon
+  latency distribution, task queue depth, SSE connection count, build
+  durations, module load state. Export, if an engagement ever demands it,
+  arrives as a module -- never as a standing component.
+- **Resumable transfers** (ADR-010). The chunked staged pull gains
+  byte-offset resume and both-side hash verification, and the DNS degraded
+  path carries the same capability.
+
+### 15.4 Product disciplines (ADR-011 through ADR-015)
+
+- **Benchmark-first** (ADR-012). Every major functional domain starts with
+  a benchmark note at `docs/benchmarks/<domain>.md`: which tools are
+  mainstream here, what to adopt, what to skip, why -- conclusions at the
+  product and interaction layer only, never code. First batch: C2 tasking
+  and implant management (Sliver, Mythic, Cobalt Strike, Havoc), recon
+  (nmap, masscan, Amass, Maltego), phishing campaigns (GoPhish), and
+  browser hook (BeEF). "Because X has it" is not an argument; the kernel
+  test of Sec 15.1 still gates every adoption.
+- **UI information architecture** (ADR-013). Navigation organizes by
+  engagement and lifecycle stage -- overview / recon / delivery / action /
+  assets / report / admin, seven slots treated as a scarce resource: a new
+  domain answers *which slot it enters* before it exists. The timeline is
+  the main screen -- the audited event stream, filterable by entity,
+  operator, and stage. Master-detail covers every entity listing; a
+  command palette (reusing the search index), keyboard-first tasking, and
+  a table density toggle keep the console fast; every entity detail page
+  carries a related-entities sidebar (source campaign, parent implant,
+  produced credentials); a Maltego-style topology view ships as an
+  optional render module. Tables, details, timelines, and matrices are
+  **generic components** driven by Sec 15.2's schema and output taxonomy
+  -- the UI, like the framework, knows no specific capability, so a new
+  domain lands without touching navigation.
+- **Unified entity model.** Integration runs through one entity model, one
+  timeline, and references -- never point-to-point feature APIs. The
+  first-class entities: Engagement, Operator, ReconAsset, Campaign and
+  Recipient, Implant (parentage and the browser/web-shell classes
+  included), Task, Artifact, Credential, Listener/Front -- linked by
+  explicit foreign keys (never implicit strings), every entity carrying
+  `engagement_id` and `operator_id` (Sec 2's rule). The load-bearing
+  links: recon assets select directly as campaign targets; recipient
+  events chain to implants through deploy tokens (shipped); implant
+  parentage draws the lateral-movement tree (shipped); task products land
+  as credentials and artifacts, reusable through task references
+  (ADR-005); a browser hook session *is* a browser-class implant -- form
+  capture lands in the same credential store, command history in the same
+  timeline.
+- **Domain granularity** (ADR-014). Function ships at three granularities:
+  **domain** (a navigation entry, first-class entities, its own workflow),
+  **module** (a capability package behind the contract), **verb** (the
+  atomic command, the ATT&CK mount point). A new domain passes the **four
+  tests** -- *entity* (it introduces a first-class entity other domains
+  reference) and *stage* (a distinct lifecycle stage with its own working
+  mode) mandatory together, *authorization* (distinct ROE gating
+  semantics) and *benchmark* (a tool category to benchmark against)
+  weighted. What fails lands as an in-domain provider (a new data source
+  is not a domain), a channel extension inside a domain (SMS phishing is a
+  campaign channel, not a domain), a verb or module (a new operation on an
+  existing entity), or a transport provider (a new carriage, ADR-004).
+  Anti-patterns, each a documented death: a domain per tool, a domain per
+  ATT&CK tactic (the matrix is a lens, not an org chart), and the god
+  domain. Every major version re-reviews the domain list in both
+  directions: a module that never produces cross-domain entities demotes;
+  a provider that grows them promotes.
+- **Documentation discipline** (ADR-015). `docs/` is a **closed set**:
+  README (one page), architecture.md (this file, the single architecture
+  truth), glossary.md, todo.md, one guide per extension seam under
+  `extending/` (implants, tradecraft, transports), one runbook per
+  operations concern, and
+  `benchmarks/<domain>.md`. A new document must first answer which
+  existing one cannot hold it, and why. One fact is defined in one place
+  and linked everywhere else. Docs carry what / why / how to deploy;
+  usage detail lives in the tool's own help. Stale content is deleted or
+  merged, never archived beside its replacement. Doc changes ride the
+  code PR they belong to.
+- **Repository organization** (ADR-011). The GitHub organization is
+  created early (the name checked against existing products), and the main
+  repository moves in with history intact. The platform -- teamserver,
+  UI, protocol, reference implant, loader, redirector, plugin SDK, docs --
+  stays a **monorepo**; the bus-factor answer is the ecosystem, not
+  repository sprawl. Splits happen only along contract seams -- both sides
+  talking solely through versioned contracts, each independently
+  releasable -- in order: `rod-registry` (naturally independent), then
+  community module repositories, then third-party build units, then
+  `rod-implant-rust` (once `Rod.Protocol` freezes 1.0), then redirector
+  and UI (later, or never). No split happens before `Rod.Protocol` and
+  the module contracts ship as semver-versioned releases.
+
+### 15.5 Decision index
+
+| ADR | Decision | Folded into |
+|-----|----------|-------------|
+| 001 | Capability modules fully in-tree; `Rod.Capabilities` | Sec 15.1 |
+| 002 | Ecosystem: git index registry + signed manifests + `rod mod` CLI | Sec 15.2 |
+| 003 | Ecosystem from zero; capability contract first-class (schema, output taxonomy, versions) | Sec 15.2 |
+| 004 | Transport provider abstraction; optional mTLS/WireGuard, default off | Sec 8, Sec 15.3 |
+| 005 | Collaboration metadata modeled apart from the audit chain | Sec 15.3 |
+| 006 | Versioned `/api/v1`, OpenAPI, Python/Go SDKs, scoped tokens, MCP read-write | Sec 15.3 |
+| 007 | ATT&CK coverage matrix as the capability north star | Sec 15.3 |
+| 008 | Built-in observability, no external dependencies | Sec 15.3 |
+| 009 | Module package format and trust chain (`rod-module.toml`) | Sec 15.2 |
+| 010 | Resumable file transfer (byte offset + both-side hashes) | Sec 15.3 |
+| 011 | GitHub org, platform monorepo, splits only along contract seams | Sec 15.4 |
+| 012 | Benchmark note before every functional domain | Sec 15.4 |
+| 013 | UI: lifecycle navigation, timeline main screen, contract-driven rendering | Sec 15.4 |
+| 014 | Domain open/close discipline: three granularities, four tests | Sec 15.4 |
+| 015 | Closed documentation set, one topic per document | Sec 15.4 |
