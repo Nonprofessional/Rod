@@ -43,7 +43,7 @@ public class OperatorApiTokenTests
         var me = await bearer.GetAsync("/operators/me");
         Assert.Equal(HttpStatusCode.OK, me.StatusCode);
         var meBody = await me.Content.ReadFromJsonAsync<MeBody>();
-        Assert.Equal(operatorId.Value, meBody!.Id);
+        Assert.Equal(operatorId.ToString(), meBody!.Id);
 
         // The listing carries the token's identity without the secret.
         var listed = await bearer.GetFromJsonAsync<TokenBody[]>($"/operators/{operatorId}/tokens");
@@ -61,7 +61,7 @@ public class OperatorApiTokenTests
 
         // The cookie session never depended on the token: it still works.
         var cookieStill = await env.Http.GetFromJsonAsync<MeBody>("/operators/me");
-        Assert.Equal(operatorId.Value, cookieStill!.Id);
+        Assert.Equal(operatorId.ToString(), cookieStill!.Id);
     }
 
     [Fact]
@@ -104,7 +104,9 @@ public class OperatorApiTokenTests
 
     private sealed class MeBody
     {
-        public Guid Id { get; set; }
+        // The compact "N" wire form every Rod id serializes as -- the
+        // built-in Guid converter refuses it, so the body reads a string.
+        public string Id { get; set; } = "";
     }
 
     /// <summary>

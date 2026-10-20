@@ -26,15 +26,17 @@ public class OperatorDeploymentRoleTests
     private const string TargetHandle = "colleague";
     private const string TargetPassword = "target-p@ss";
 
+    // Ids ride in the compact "N" wire form, which System.Text.Json's
+    // built-in Guid converter refuses; the bodies read them as strings.
     private sealed record AccountBody(
-        Guid Id,
+        string Id,
         string Handle,
         DateTimeOffset CreatedAt,
         bool HasCredential,
         bool Disabled,
         string Role);
 
-    private sealed record MeBody(Guid Id, string Handle, string Role);
+    private sealed record MeBody(string Id, string Handle, string Role);
 
     private sealed record MintedTokenBody(string TokenId, string Token, DateTimeOffset CreatedAt);
 

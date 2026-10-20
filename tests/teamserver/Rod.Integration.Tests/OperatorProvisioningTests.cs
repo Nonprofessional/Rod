@@ -22,8 +22,11 @@ public class OperatorProvisioningTests
     private const string Handle = "alice";
     private const string Password = "initial-p@ss";
 
+    // The id rides in the compact "N" wire form (the same one every Rod id
+    // serializes as), which System.Text.Json's built-in Guid converter
+    // refuses -- so the body reads it as the string it is.
     private sealed record AccountBody(
-        Guid Id,
+        string Id,
         string Handle,
         DateTimeOffset CreatedAt,
         bool HasCredential,
