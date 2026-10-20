@@ -33,9 +33,6 @@ Phase P0 -- the replacement threshold (architecture.md Sec 15):
 - **GitHub organization + main-repository move** (Sec 15.4, ADR-011).
   _AC:_ organization and repository names checked against existing
   products; CI and doc links follow the move.
-- **Benchmark-note mechanism + first four notes** -- C2, recon, phishing,
-  browser hook (Sec 15.4, ADR-012). _AC:_ four notes under
-  `docs/benchmarks/`, each with its adopt / skip / why list.
 - **Domain open/close rules** -- the four tests and the anti-pattern list,
   then a pass over the existing domains (Sec 15.4, ADR-014). _AC:_ the
   checklist lands in `docs/benchmarks/README`; every existing domain is
