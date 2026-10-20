@@ -195,7 +195,7 @@ under, and a note on its current state are listed.
 | `Rod.Transport` | Listeners that terminate C2 transports and map core-state use cases onto the operator HTTP API and the implant beacon stream. Owns endpoint routing, TLS termination, and the mapping of use-case failures to wire status codes. | Layer 2 -- may depend on `Rod.CoreState`, `Rod.Protocol`, `Rod.Audit`, `Rod.BuildPipeline`. | Implemented. HTTP(S), DNS, and raw-TCP listeners with the bind decoupled from the public endpoint (a repoint swaps a burned redirector without touching the socket); the full operator API (engagements, deploy tokens, implants with notes and retirement, tasks with queued-task cancellation, artifacts, audit, timeline/report, payloads) and the beacon stream with bounded frames, capped exfil reassembly, and atomic task dispatch (Sec 8, Sec 10.3, Sec 11); the browser hook's mint and guid-gated serving edge with the Origin-only CORS posture (Sec 5.2, Sec 8); the delivery-campaign surface (Sec 11.5) -- per-recipient lure builds through the build pipeline, the SMTP send engine, and the lure-serving public edge. The task, audit, and artifact listings are paged (limit + opaque cursor, newest window first) so a long engagement never grows a listing response without bound; the operator UI walks pages. |
 | `Rod.BuildPipeline` | Drives the external, per-language build units to compile polyglot implants on demand through the uniform build contract, fingerprinting and recording each artifact (Sec. 6). | Layer 3 -- may depend on `Rod.CoreState`. | Implemented. `RustBuildUnit` -- the sole in-tree unit (the .NET unit is deleted with the .NET implant) -- compiles the Rust reference implant in a per-build hermetic staging copy (the build target mapped onto a cargo triple; the retired stager class refused with the fix named at parse time), baking the profile (contact mode, beacon parameters, class verb set) without any key material; loader-tier requests compile the no_std loader crate beside it instead, baked with fetch constants and the delivery seal (Sec 6); the built bytes land in the payload store for operator download (Sec 6). |
 | `Rod.Operators` | Multiplayer operator sessions over the operator API: shared live engagement state, task ownership and attribution, and real-time push to the operator UI. | Layer 4 -- may depend on `Rod.CoreState`, `Rod.Audit`. | Implemented. Cookie-authenticated operator sessions (login/logout/me; the bootstrap-seeded admin of Sec 4.5; hash-only credential port) and the per-engagement SSE live-event bus, with the automation engine (Sec 10.4) and the webhook forwarder (Sec 4.4) beside it as the bus's engine-side consumers. Cookies were chosen over JWT (no client-side token store for a same-origin SPA); ASP.NET Core Identity was rejected (its own user/role tables conflict with the layered stores). Access is the membership model of Sec 4.5 (per-engagement reader/writer tiers granted by the owner) beside the deployment-role split of the account machinery (bootstrap admin, console-created members); the exclusive interaction claims and activity presence mark who drives what; a per-handle login throttle slows brute force. The layer also owns the two agent-facing surfaces the operator front carries: the MCP server (`/mcp`, Streamable HTTP, stateless -- the read-only toolset an external agent client drives through an operator API token; runbook [operations/mcp.md](operations/mcp.md)) and the opt-in OpenAI-compatible LLM triage client behind `Microsoft.Extensions.AI`'s `IChatClient` (Sec 11.3; runbook [operations/llm.md](operations/llm.md)), plus the external recon workbench (Sec 11.4; runbook [operations/recon.md](operations/recon.md)) -- the pre-foothold lookups and scan whose findings land as task-less engagement artifacts. |
-| `Rod.Capabilities` | Pluggable post-exploitation capability modules, including the evasion/exploit category contracts (Sec. 10, Sec. 13). Concrete implementations arrive as modules -- in-tree reference modules or registry modules (Sec 15) -- over the contract, registration path, and gate this layer holds; the program renames the project `Rod.Capabilities` as it gains the in-tree module host. | Layer 6 -- may depend on `Rod.CoreState`, `Rod.Audit`. | Implemented. The capability contract (`ICapabilityModule`, a registration-only contract: a descriptor, no execution surface -- Sec 10.2), the registry, and the registry-backed task-issuance resolver and sensitive-verb policy; every framework verb ships as a placeholder descriptor carrying its OPSEC attributes, and `GET /capabilities` exposes the catalog to the UI. Sensitive behavior arrives as modules and stays disabled by default (Sec 10.2, Sec 13, Sec 15). |
+| `Rod.Capabilities` | Pluggable post-exploitation capability modules, including the evasion/exploit category contracts (Sec. 10, Sec. 13). Concrete implementations arrive as modules -- in-tree reference modules (`modules/`, loaded through the same path external modules take) or registry modules (Sec 15) -- over the contract, registration path, and gate this layer holds. | Layer 6 -- may depend on `Rod.CoreState`, `Rod.Audit`. | Implemented. The capability contract (`ICapabilityModule`, a registration-only contract: a descriptor, no execution surface -- Sec 10.2), the registry, and the registry-backed task-issuance resolver and sensitive-verb policy; every framework verb ships as a placeholder descriptor carrying its OPSEC attributes, and `GET /capabilities` exposes the catalog to the UI. The in-tree module host (Sec 15.1) is in place: reference modules deploy beside the binary by the teamserver build and load through the `Capabilities:Modules` config path exactly like external ones. Sensitive behavior arrives as modules and stays disabled by default (Sec 10.2, Sec 13, Sec 15). |
 | `Rod.Persistence` | **Not a layer.** The durable PostgreSQL adapters behind the core-state and audit ports (operators, operator credentials, engagements, implants, sessions, tasks, deploy tokens, audit, artifacts), swapped in at the composition root when `ConnectionStrings:Postgres` is set (Sec 12.1). | Not a layer -- may depend on `Rod.CoreState` and `Rod.Audit`; wired only at the composition root, never by transport. | Implemented. EF Core 10 over Npgsql behind a context factory (singleton-safe), migrations, and the full adapter pair; absent the connection string the in-memory adapters stay registered. |
 | `Rod.TeamServer` | **Not a layer.** The single runnable .NET process and composition root: it wires `Rod.Transport`'s services and endpoints, binds the listeners, and serves the built React operator UI same-origin with an SPA fallback. It is where the layers are assembled for `dotnet run`; the layer dependency tests do not constrain it. | Not a layer -- the composition root; depends inward on `Rod.Transport`, `Rod.Operators`, `Rod.Capabilities`, and `Rod.Persistence` (transport itself cannot reference the outer layers). | Implemented. Wires the layers, binds the configured listeners, and serves the built operator UI same-origin with hardening headers; the build runs the npm bundle first when it is missing (Sec 4.2). |
 
@@ -651,7 +651,7 @@ dylib boundary is not stable across compiler versions, and the capability
 set is
 decided per class at build time, so runtime discovery buys nothing).
 Handlers beyond the compiled tree are the crate fork -- the build unit
-pointed at the operator's own tree (Sec 6, extending/tradecraft.md) -- with the C-ABI
+pointed at the operator's own tree (Sec 6, extending/modules.md) -- with the C-ABI
 plugin seam (Sec 5.4) as the in-process follow-on: per-engagement modules
 that load on demand over the task channel, after deployment, inside the
 artifact that never compiled them.
@@ -688,7 +688,7 @@ crate compiles one lean handler set per platform (the sensitive three
 behind `cfg(windows)`), and per-class tailoring rides the baked verb list
 instead, because the handler code is tens of kilobytes against a carriage
 that dominates the artifact's size. Handlers beyond the compiled tree
-arrive through the crate fork (extending/tradecraft.md) and the C-ABI
+arrive through the crate fork (extending/modules.md) and the C-ABI
 plugin seam (Sec 5.4); the
 plugin domain is the long tail -- recon sweeps, lateral
 movement, persistence, credential and screen collection -- while the
@@ -815,7 +815,7 @@ applies (Sec 10.2).
 recon, lateral, persist, collect, exfil -- is class-admissible for the
 Implant class already (Sec 5.2), so it tasks with no server-side ceremony.
 A module carrying a novel namespace pairs with a server-side descriptor
-module (`ICapabilityModule`, extending/tradecraft.md) that widens the
+module (`ICapabilityModule`, extending/modules.md) that widens the
 issuance gate -- the two halves of a capability the extending guide
 teaches, now met by a real implant-side half instead of a fork. The
 reference module in-tree (`src/implant/rust/modules/hostenum/`) is the
@@ -876,7 +876,7 @@ recorded.**
   seam is the source tree itself: an operator points the unit at a fork that
   carries the extra handlers (`Build:RustSourceDirectory` names the tree on
   an installed teamserver), coupled to the teamserver only by the wire
-  contracts -- no fork of the teamserver ([extending/tradecraft.md](extending/tradecraft.md)).
+  contracts -- no fork of the teamserver ([extending/modules.md](extending/modules.md)).
   The C-ABI plugin module (Sec 5.4) is the follow-on that drops the rebuild.
 - **The bake names the transport each build dials.** The egress walk the
   profile bakes names URL shapes, and the implant picks its contact client
@@ -960,7 +960,7 @@ recorded.**
   in-tree transform ships: the empty chain is the seam, exactly like the
   capability placeholders, and transforms arrive through the explicit
   `Build:Transforms` list (the same loading shape as `Capabilities:Modules`,
-  [extending/tradecraft.md](extending/tradecraft.md)). A shellcode-form
+  [extending/modules.md](extending/modules.md)). A shellcode-form
   transform (turning a built artifact into position-independent bytes for
   the loaders that want them) is the seam's canonical occupant.
 - **Artifact tracking.** Every generated artifact is fingerprinted and recorded
@@ -1911,7 +1911,7 @@ satisfies the registry and the task gate until an operator supplies a module.
 That makes the module path a *registration*, not a schema change -- a
 module registered for `evasion.avoid` or `exploit.invoke` replaces the
 placeholder (last-registration-wins) and is taskable through the same UI and
-gate as any built-in verb. [extending/tradecraft.md](extending/tradecraft.md)
+gate as any built-in verb. [extending/modules.md](extending/modules.md)
 is the worked guide for module authors: both halves of a capability, the
 registration paths, and the seams' current limits. The one runtime loader is config-listed and narrowly
 bounded: the `Capabilities:Modules` section names each module as a
@@ -2391,7 +2391,7 @@ child-enrollment path records (Sec 5.2), and observed hosts and ports from
 completed recon task outputs parsed at read time. The recon verbs'
 handlers are module-domain (Sec 13), so the parse targets a documented
 output contract the handler authors write for -- JSON lines, one finding
-per line ([extending/tradecraft.md](extending/tradecraft.md)) -- and a
+per line ([extending/modules.md](extending/modules.md)) -- and a
 line that does not parse is not a finding: unparseable output stays in
 the transcript instead of erroring the view. The external recon
 workbench (Sec 11.4) lands its findings as engagement artifacts under
@@ -2492,7 +2492,7 @@ fallback. `recon:subdomains` queries the configured
 certificate-transparency mirror for names under a domain and normalizes
 the deduplicated name set into a JSON-lines artifact -- one
 `{"host": name}` per line, the documented recon grammar
-(extending/tradecraft.md), so the topology projection (Sec 11.2) parses
+(extending/modules.md), so the topology projection (Sec 11.2) parses
 the findings like any recon output. `recon:resolve` is the census's
 follow-up -- which of the enumerated names live: names (one or a bounded
 list) resolve through the configured DNS-over-HTTPS resolver, and an IP
@@ -2887,12 +2887,15 @@ property of that layer, never of the kernel.
   browser versions and phishing assets chase the SMTP ecosystem -- exactly
   the churn the module layer exists to absorb.
 
-`Rod.Capabilities` evolves into **`Rod.Capabilities`**: the same contract
-registry plus the in-tree module host. Reference modules live under
-`modules/` (server-side) and `implant/modules/` (implant-side) and load
-through **exactly the path external modules load through** -- the seams
-stay the public, stable contract, and the tree eats its own dogfood. A
-kernel PR must answer *why it cannot be a module*.
+`Rod.Capabilities` is the contract registry plus the in-tree module host
+(ADR-001; the rename from `Rod.Tradecraft` shipped with the host). Reference
+modules live under `modules/` (server-side) and
+`src/implant/rust/modules/` (implant-side) and load through **exactly the
+path external modules load through** -- an assembly beside the binary plus
+an entry under `Capabilities:Modules` in the shipped configuration; nothing
+in the tree compile-references them, and the architecture tests hold that
+line. The seams stay the public, stable contract, and the tree eats its own
+dogfood. A kernel PR must answer *why it cannot be a module*.
 
 ### 15.2 The module ecosystem: registry, manifest, CLI (ADR-002, ADR-003, ADR-009)
 
@@ -2980,7 +2983,7 @@ Where the program touches the existing layers:
 | `Rod.Transport` | `ITransportProvider` abstraction; the four in-tree families become the reference implementations; optional mTLS and WireGuard, default-disabled (ADR-004). |
 | `Rod.BuildPipeline` | The build contract gains a transport-enable-set parameter; a Go build unit joins the community slots. |
 | `Rod.Operators` | Collaboration metadata APIs (ADR-005); MCP read-write under token scopes; OpenAPI contract generation (ADR-006). |
-| `Rod.Capabilities` | Contract registry + in-tree module host (ADR-001; the rename from `Rod.Tradecraft` has shipped). |
+| `Rod.Capabilities` | Contract registry + in-tree module host (ADR-001; shipped, with the first reference module under `modules/`). |
 | `Rod.Persistence` | `tsvector` full-text indexes; comment and chat tables (ADR-005). |
 | `Rod.TeamServer` | Mounts the new components; the built-in diagnostics endpoint (ADR-008). |
 | `rod-cli` (new) | `rod mod init/search/info/install/verify/publish` (ADR-002, ADR-009). |

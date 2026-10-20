@@ -1,16 +1,21 @@
-# Rod -- Writing out-of-tree tradecraft
+# Rod -- Writing capability modules
 
-How a third party adds capabilities to Rod without touching the core tree --
-including the sensitive categories (evasion, exploit), which exist in the
-platform as **contracts only**: the core ships their interfaces, registration,
-dispatch, and data shapes, and supplies no concrete techniques
-([architecture.md Sec 13](../architecture.md)).
-What a module does on the target is the module author's responsibility and
-must stay within the authorization the operator holds.
+How a capability joins Rod as a module -- server-side gate and catalog,
+implant-side execution -- through one loading path, whether the module ships
+in the tree or arrives from outside it. The sensitive categories (evasion,
+exploit) exist in the platform as **contracts only**: the core ships their
+interfaces, registration, dispatch, and data shapes, and supplies no concrete
+techniques ([architecture.md Sec 13](../architecture.md)). What a module does
+on the target is the module author's responsibility and must stay within the
+authorization the operator holds.
 
 The design goal is that adding a capability is **registration, never
 modification**: no core edits, no composition-root changes, no protocol
-changes.
+changes. In-tree reference modules obey the same rule as external ones --
+the tree's own modules live under `modules/` (server-side) and
+`src/implant/rust/modules/` (implant-side), load through exactly the path an
+operator's module takes, and a kernel change must answer *why it cannot be a
+module* ([architecture.md Sec 15.1](../architecture.md)).
 
 ## The two halves of a capability
 
@@ -33,7 +38,7 @@ Implement `ICapabilityModule` -- a registration-only contract carrying exactly
 one `CapabilityDescriptor`:
 
 ```csharp
-using Rod.Capabilities.Capabilities;
+using Rod.Capabilities;
 using Rod.Capabilities.Modules;
 
 public sealed class MyPingModule : ICapabilityModule
@@ -50,16 +55,21 @@ public sealed class MyPingModule : ICapabilityModule
 }
 ```
 
-Build it, drop `MyTradecraft.dll` next to the teamserver binary, and list the
+Build it, drop `MyModules.dll` next to the teamserver binary, and list the
 type under `Capabilities:Modules` in `appsettings.json`:
 
 ```json
 {
-  "Tradecraft": {
-    "Modules": [ "MyTradecraft.MyPingModule, MyTradecraft" ]
+  "Capabilities": {
+    "Modules": [ "MyModules.MyPingModule, MyModules" ]
   }
 }
 ```
+
+The in-tree reference module `modules/hostenum` took this exact path: the
+teamserver's build deploys its assembly beside the binary and the shipped
+configuration names it, so it loads through the same config list your module
+lands in -- being in-tree changes nothing about the path.
 
 That is the whole server-side integration:
 
@@ -123,9 +133,11 @@ the operator's console reads a module verb exactly like a built-in one.
 `module.list` reports what is loaded, and `module.unload sweep` retracts
 it (best-effort: routes drop immediately, a running handler finishes).
 
-The reference module in-tree (`src/implant/rust/modules/hostenum/`) is the
-worked example to copy: `recon.hostenum` against the SDK, benign and
-readable.
+The reference pair in-tree is the worked example to copy: the server-side
+half at `modules/hostenum/` and the implant-side half at
+`src/implant/rust/modules/hostenum/` -- `recon.hostenum` against the SDK,
+benign and readable, one verb string declared on both sides and nothing
+shared between them.
 
 The rules the loader enforces, all reported on the load task itself:
 

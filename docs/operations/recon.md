@@ -135,7 +135,7 @@ and every attempt in the trail:
   instead (artifact `recon.whois:{domain}`, text/plain) and the event's
   lookup name reads `rdap>whois`.
 - `recon:subdomains` -- JSON lines, one `{"host": name}` per name, the
-  documented recon grammar (extending/tradecraft.md), artifact
+  documented recon grammar (extending/modules.md), artifact
   `recon.subdomains:{domain}`, event `ReconLookupCompleted`. The names join
   the topology projection as observed hosts; wildcard certificate literals
   name no concrete host and are not findings.

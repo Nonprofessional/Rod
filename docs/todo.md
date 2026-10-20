@@ -33,9 +33,6 @@ Phase P0 -- the replacement threshold (architecture.md Sec 15):
 - **GitHub organization + main-repository move** (Sec 15.4, ADR-011).
   _AC:_ organization and repository names checked against existing
   products; CI and doc links follow the move.
-- **`Rod.Capabilities` in-tree host + module absorption** (Sec 15.1,
-  ADR-001). _AC:_ in-tree modules load through the same path as external
-  ones; architecture tests pass.
 - **`rod mod` CLI suite + signing** (Sec 15.2, ADR-002, ADR-009). _AC:_
   the full flow -- template repository through publish to install -- runs
   end to end.

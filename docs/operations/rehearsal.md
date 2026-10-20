@@ -410,7 +410,7 @@ The base walk settles the carrier and lifecycle surface; the operator
 surface has since grown four families it never exercised -- the recon
 workbench ([recon.md](recon.md)), the MCP endpoint ([mcp.md](mcp.md)),
 the LLM summarize client ([llm.md](llm.md)), and the Linux module load
-(extending/tradecraft.md). These legs ran all four against a live
+(extending/modules.md). These legs ran all four against a live
 engagement on the same single-host shape: a fresh engagement in the
 standing rehearsal database, one Https listener direct on loopback (no
 redirectors -- fronting was the base walk's question, not this one's),

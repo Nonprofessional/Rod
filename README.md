@@ -24,7 +24,8 @@
 > and networks you own or are **expressly authorized** to test.
 > Unauthorized use is illegal in most jurisdictions.
 
-> **Status: implemented; sensitive tradecraft is out-of-tree.** The
+> **Status: implemented; sensitive capabilities arrive as modules and stay
+> off by default.** The
 > teamserver, reference implant, build pipeline, operator UI, and durable
 > state are in place. The reference implant runs the compiled core (shell
 > execution one-shot and interactive, file transfer both ways, directory
@@ -33,8 +34,10 @@
 > sensitive trio: shellcode injection, LSASS minidump, input capture), while
 > the long tail (recon sweeps, lateral movement, persistence, credential
 > and screen collection) and the exploit/evasion categories arrive through
-> the extension seams as separate opt-in modules
-> ([architecture.md Sec 13](docs/architecture.md)). Operator-side, the
+> the extension seams as opt-in modules -- in-tree reference modules and
+> external ones load through the same path
+> ([architecture.md Sec 13, Sec 15](docs/architecture.md)). Operator-side,
+> the
 > external recon workbench ships pre-foothold scoping -- passive
 > RDAP/CT/DoH/whois lookups and an ROE-gated port scan whose findings land
 > as engagement artifacts
@@ -73,9 +76,10 @@
   the in-tree `rod-plugin-sdk` crate load into an already-deployed artifact
   over the sealed task channel (`module.load`), join the dispatch table,
   and read in the console exactly like built-in verbs; Linux stages them in
-  a memfd and execs them -- nothing on disk. The in-tree `hostenum` module
-  is the worked example to copy
-  ([docs/extending/tradecraft.md](docs/extending/tradecraft.md)).
+  a memfd and execs them -- nothing on disk. The in-tree `hostenum` pair
+  (server half under `modules/`, implant half under
+  `src/implant/rust/modules/`) is the worked example to copy
+  ([docs/extending/modules.md](docs/extending/modules.md)).
 - **Pre-foothold recon on the teamserver.** An engagement-scoped workbench
   runs passive RDAP registration lookups, certificate-transparency
   subdomain censuses, and DoH resolution (whois as the fallback behind the
@@ -238,10 +242,11 @@ headline sections:
 
 The rest live only in the reference table: `Sessions:Staleness` and
 `Webhooks` (engine timing and notification forwarding),
-`Capabilities:Modules` and `Build:Transforms` (the out-of-tree extension
-points), `Llm` (the opt-in triage client), and `Recon` (the workbench's
-egress endpoints and scan origin) -- each an OPSEC decision the runbook
-next to it documents.
+`Capabilities:Modules` and `Build:Transforms` (the module and transform
+extension points -- the in-tree reference modules ship listed, external
+ones join the same list), `Llm` (the opt-in triage client), and `Recon`
+(the workbench's egress endpoints and scan origin) -- each an OPSEC
+decision the runbook next to it documents.
 
 ## Documentation
 
@@ -252,7 +257,7 @@ The doc tree, by what you came for:
 | The design -- lifecycle, engagement model, kernel layers, implants and profiles, build pipeline, OPSEC, transports, the sensitive-capability boundary | [docs/architecture.md](docs/architecture.md) |
 | A from-scratch implant against the wire contract | [docs/extending/implants.md](docs/extending/implants.md) |
 | A new C2 carrier, in-tree or out | [docs/extending/transports.md](docs/extending/transports.md) |
-| An out-of-tree capability module against the plugin seam | [docs/extending/tradecraft.md](docs/extending/tradecraft.md) |
+| A capability module against the seams -- in-tree reference or external, one loading path | [docs/extending/modules.md](docs/extending/modules.md) |
 | Stand-up, configuration, and the production runbook | [docs/operations/teamserver.md](docs/operations/teamserver.md) |
 | The operator console's panels and fields | [docs/operations/operator-ui.md](docs/operations/operator-ui.md) |
 | Redirector build, deploy, and rotation | [docs/operations/redirectors.md](docs/operations/redirectors.md) |
@@ -264,14 +269,15 @@ The doc tree, by what you came for:
 | The opt-in LLM triage client | [docs/operations/llm.md](docs/operations/llm.md) |
 | Open work, terminology, vulnerability reporting | [docs/todo.md](docs/todo.md), [docs/glossary.md](docs/glossary.md), [SECURITY.md](SECURITY.md) |
 
-## Sensitive tradecraft stays out of the core
+## Sensitive capabilities stay off by default
 
 Exploit behavior, detection evasion, LSASS dumping, and input capture are
 **pluggable capability contracts**: the core defines their interfaces and
-dispatch and ships no concrete techniques or in-the-wild PoCs. The
-boundary rule -- standard, documented techniques in-tree; novel
-tradecraft out-of-tree -- is spelled out in
-[architecture.md Sec 13](docs/architecture.md).
+dispatch and ships no concrete techniques or in-the-wild PoCs. Concrete
+behavior arrives as modules -- in-tree reference modules or external ones,
+both through the same loading path -- and every sensitive one stays
+disabled until a build profile enables it
+([architecture.md Sec 7, Sec 13, Sec 15](docs/architecture.md)).
 
 Delivery (phishing, host interaction) is likewise out of scope: Rod
 ingests the first callback and correlates it to the engagement. Rod
