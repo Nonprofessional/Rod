@@ -103,6 +103,58 @@ Re-review runs in both directions at every major version: a module that
 never produces cross-domain entities demotes; a provider that grows them
 promotes.
 
+## The current domain list, reviewed
+
+The first pass over the shipped surface against the checklist above.
+Every shipped domain passes the mandatory pair; the weighted tests are
+recorded where they apply. The four linked domains carry their
+first-batch notes; the rest take theirs when design work reopens them.
+
+| Domain | Entity (1) | Stage (2) | Authorization (3) | Benchmark (4) | Verdict |
+|--------|-----------|-----------|-------------------|---------------|---------|
+| Engagement management | Engagement, membership -- every entity carries `engagement_id` (Sec 2) | planning and close-out | membership tiers beside deployment roles (Sec 4.5) | -- | Open: the tenancy root |
+| Recon | findings land as artifacts today; ReconAsset is the unified-model landing (Sec 15.4) | pre-foothold scoping, its own egress decisions | distinctive: passive lookups ungated by design, the scan target-gated (Sec 11.4) | [recon.md](recon.md) | Open |
+| Delivery | Campaign, Recipient -- recipient events chain to implants through deploy tokens (Sec 11.5) | generation and the lure-to-enrollment workflow | launch and revoke are writer acts | [phishing.md](phishing.md) | Open; Build, Payloads, and Launchers are its preparation half (Sec 2 item 3) |
+| Action | Implant, Task -- referenced by everything downstream | tasking | ROE verb and implant gates, the sensitive-verb policy (Sec 10) | [c2.md](c2.md) | Open |
+| Assets | Artifact shipped; Credential typed as loot today, first-class in the unified model (Sec 15.4) | the what-we-hold inventory | reads audit as `ArtifactViewed`; the reader tier sees | -- | Open; today spread across the Loot board and task rows |
+| Evidence and report | the hash-chained trail itself | close-out and debrief | sealed records, chain verification | -- | Open; the Timeline and Artifacts tabs already retired into it |
+| Deployment admin | operator accounts, redirector nodes, runtime settings | deployment-level, outside engagements | the admin/member split (Sec 4.5) | -- | Open |
+| Engagement infrastructure | Listener, Front -- baked into builds, fronts campaigns and hook mints | stand-up (Sec 2 item 2) | engagement writer state | -- | Passes; the slot is the ADR-013 rework's call -- every front serves delivery and action both, and the deployment fleet (redirectors) already lives under admin |
+
+Reviewed the other way -- surfaces checked and confirmed **not**
+domains, each landing inside one that exists:
+
+- **Browser hook** -- a Browser-class implant in action (Sec 5.2): no
+  entity of its own, the session riding the implant row.
+  [browser-hook.md](browser-hook.md) reaches the same verdict at the
+  benchmark layer.
+- **Caught shells, web shells** -- roster views in action: connections
+  and registered URLs, upgrading into enrollment when they do.
+- **Automation, notifications** -- panels over the tasking lifecycle
+  and the event bus (Sec 10.4, Sec 4.4); their rules and channels
+  reference nothing cross-domain.
+- **Intel** -- the read projection over fleet, loot, and recon findings
+  (Sec 11.2): a view of assets and action, not a workflow of its own.
+- **Handoff digest** -- a window mode of the audit panel (Sec 11.1).
+
+Anti-pattern audit:
+
+- **A domain per tool: clean.** The recon panel runs four tools'
+  workflows over one findings grammar; no tool owns a panel.
+- **A domain per tactic: clean.** Verbs carry no navigation, modules
+  ride the implant menu, and the future coverage matrix is data
+  (ADR-007), not an org chart.
+- **The god domain: contained, consolidation pending.** Action is the
+  natural gravity well, and the shipped navigation carries sixteen
+  engagement tabs -- the pre-rework shape. This pass is the input the
+  ADR-013 rework (P1) consolidates against: the sixteen collapse into
+  the domains above (action 5, delivery 4, evidence 2, and one each
+  for recon, assets, infrastructure, and engagement management), and
+  the top-level surfaces already read as overview and admin.
+
+The next re-review rides the next major version; the ADR-013 rework
+consumes this pass as its consolidation input.
+
 ## Notes
 
 | Note | Domain | One-line verdict |

@@ -33,10 +33,6 @@ Phase P0 -- the replacement threshold (architecture.md Sec 15):
 - **GitHub organization + main-repository move** (Sec 15.4, ADR-011).
   _AC:_ organization and repository names checked against existing
   products; CI and doc links follow the move.
-- **Domain open/close rules** -- the four tests and the anti-pattern list,
-  then a pass over the existing domains (Sec 15.4, ADR-014). _AC:_ the
-  checklist lands in `docs/benchmarks/README`; every existing domain is
-  reviewed against it.
 - **`Rod.Capabilities` in-tree host + module absorption** (Sec 15.1,
   ADR-001). _AC:_ in-tree modules load through the same path as external
   ones; architecture tests pass.
