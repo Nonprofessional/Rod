@@ -13,7 +13,7 @@ namespace Rod.BuildPipeline.PayloadBuild;
 /// the application order, so an operator composes the chain by composing the
 /// list. Adding a transform is a deploy-time config entry, never a
 /// composition-root edit -- the same explicit-list shape as
-/// <c>Tradecraft:Modules</c>.
+/// <c>Capabilities:Modules</c>.
 /// </summary>
 /// <remarks>
 /// <para>

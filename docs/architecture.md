@@ -195,9 +195,9 @@ under, and a note on its current state are listed.
 | `Rod.Transport` | Listeners that terminate C2 transports and map core-state use cases onto the operator HTTP API and the implant beacon stream. Owns endpoint routing, TLS termination, and the mapping of use-case failures to wire status codes. | Layer 2 -- may depend on `Rod.CoreState`, `Rod.Protocol`, `Rod.Audit`, `Rod.BuildPipeline`. | Implemented. HTTP(S), DNS, and raw-TCP listeners with the bind decoupled from the public endpoint (a repoint swaps a burned redirector without touching the socket); the full operator API (engagements, deploy tokens, implants with notes and retirement, tasks with queued-task cancellation, artifacts, audit, timeline/report, payloads) and the beacon stream with bounded frames, capped exfil reassembly, and atomic task dispatch (Sec 8, Sec 10.3, Sec 11); the browser hook's mint and guid-gated serving edge with the Origin-only CORS posture (Sec 5.2, Sec 8); the delivery-campaign surface (Sec 11.5) -- per-recipient lure builds through the build pipeline, the SMTP send engine, and the lure-serving public edge. The task, audit, and artifact listings are paged (limit + opaque cursor, newest window first) so a long engagement never grows a listing response without bound; the operator UI walks pages. |
 | `Rod.BuildPipeline` | Drives the external, per-language build units to compile polyglot implants on demand through the uniform build contract, fingerprinting and recording each artifact (Sec. 6). | Layer 3 -- may depend on `Rod.CoreState`. | Implemented. `RustBuildUnit` -- the sole in-tree unit (the .NET unit is deleted with the .NET implant) -- compiles the Rust reference implant in a per-build hermetic staging copy (the build target mapped onto a cargo triple; the retired stager class refused with the fix named at parse time), baking the profile (contact mode, beacon parameters, class verb set) without any key material; loader-tier requests compile the no_std loader crate beside it instead, baked with fetch constants and the delivery seal (Sec 6); the built bytes land in the payload store for operator download (Sec 6). |
 | `Rod.Operators` | Multiplayer operator sessions over the operator API: shared live engagement state, task ownership and attribution, and real-time push to the operator UI. | Layer 4 -- may depend on `Rod.CoreState`, `Rod.Audit`. | Implemented. Cookie-authenticated operator sessions (login/logout/me; the bootstrap-seeded admin of Sec 4.5; hash-only credential port) and the per-engagement SSE live-event bus, with the automation engine (Sec 10.4) and the webhook forwarder (Sec 4.4) beside it as the bus's engine-side consumers. Cookies were chosen over JWT (no client-side token store for a same-origin SPA); ASP.NET Core Identity was rejected (its own user/role tables conflict with the layered stores). Access is the membership model of Sec 4.5 (per-engagement reader/writer tiers granted by the owner) beside the deployment-role split of the account machinery (bootstrap admin, console-created members); the exclusive interaction claims and activity presence mark who drives what; a per-handle login throttle slows brute force. The layer also owns the two agent-facing surfaces the operator front carries: the MCP server (`/mcp`, Streamable HTTP, stateless -- the read-only toolset an external agent client drives through an operator API token; runbook [operations/mcp.md](operations/mcp.md)) and the opt-in OpenAI-compatible LLM triage client behind `Microsoft.Extensions.AI`'s `IChatClient` (Sec 11.3; runbook [operations/llm.md](operations/llm.md)), plus the external recon workbench (Sec 11.4; runbook [operations/recon.md](operations/recon.md)) -- the pre-foothold lookups and scan whose findings land as task-less engagement artifacts. |
-| `Rod.Tradecraft` | Pluggable post-exploitation capability modules, including the evasion/exploit category contracts (Sec. 10, Sec. 13). Concrete implementations arrive as modules -- in-tree reference modules or registry modules (Sec 15) -- over the contract, registration path, and gate this layer holds; the program renames the project `Rod.Capabilities` as it gains the in-tree module host. | Layer 6 -- may depend on `Rod.CoreState`, `Rod.Audit`. | Implemented. The capability contract (`ICapabilityModule`, a registration-only contract: a descriptor, no execution surface -- Sec 10.2), the registry, and the registry-backed task-issuance resolver and sensitive-verb policy; every framework verb ships as a placeholder descriptor carrying its OPSEC attributes, and `GET /capabilities` exposes the catalog to the UI. Sensitive behavior arrives as modules and stays disabled by default (Sec 10.2, Sec 13, Sec 15). |
+| `Rod.Capabilities` | Pluggable post-exploitation capability modules, including the evasion/exploit category contracts (Sec. 10, Sec. 13). Concrete implementations arrive as modules -- in-tree reference modules or registry modules (Sec 15) -- over the contract, registration path, and gate this layer holds; the program renames the project `Rod.Capabilities` as it gains the in-tree module host. | Layer 6 -- may depend on `Rod.CoreState`, `Rod.Audit`. | Implemented. The capability contract (`ICapabilityModule`, a registration-only contract: a descriptor, no execution surface -- Sec 10.2), the registry, and the registry-backed task-issuance resolver and sensitive-verb policy; every framework verb ships as a placeholder descriptor carrying its OPSEC attributes, and `GET /capabilities` exposes the catalog to the UI. Sensitive behavior arrives as modules and stays disabled by default (Sec 10.2, Sec 13, Sec 15). |
 | `Rod.Persistence` | **Not a layer.** The durable PostgreSQL adapters behind the core-state and audit ports (operators, operator credentials, engagements, implants, sessions, tasks, deploy tokens, audit, artifacts), swapped in at the composition root when `ConnectionStrings:Postgres` is set (Sec 12.1). | Not a layer -- may depend on `Rod.CoreState` and `Rod.Audit`; wired only at the composition root, never by transport. | Implemented. EF Core 10 over Npgsql behind a context factory (singleton-safe), migrations, and the full adapter pair; absent the connection string the in-memory adapters stay registered. |
-| `Rod.TeamServer` | **Not a layer.** The single runnable .NET process and composition root: it wires `Rod.Transport`'s services and endpoints, binds the listeners, and serves the built React operator UI same-origin with an SPA fallback. It is where the layers are assembled for `dotnet run`; the layer dependency tests do not constrain it. | Not a layer -- the composition root; depends inward on `Rod.Transport`, `Rod.Operators`, `Rod.Tradecraft`, and `Rod.Persistence` (transport itself cannot reference the outer layers). | Implemented. Wires the layers, binds the configured listeners, and serves the built operator UI same-origin with hardening headers; the build runs the npm bundle first when it is missing (Sec 4.2). |
+| `Rod.TeamServer` | **Not a layer.** The single runnable .NET process and composition root: it wires `Rod.Transport`'s services and endpoints, binds the listeners, and serves the built React operator UI same-origin with an SPA fallback. It is where the layers are assembled for `dotnet run`; the layer dependency tests do not constrain it. | Not a layer -- the composition root; depends inward on `Rod.Transport`, `Rod.Operators`, `Rod.Capabilities`, and `Rod.Persistence` (transport itself cannot reference the outer layers). | Implemented. Wires the layers, binds the configured listeners, and serves the built operator UI same-origin with hardening headers; the build runs the npm bundle first when it is missing (Sec 4.2). |
 
 The dependency column is not aspirational: it is the rule the architecture tests
 enforce. `LayerDependencyTests.cs` checks namespace usage, and
@@ -228,7 +228,7 @@ Comments in the source tree still cite the ids, so they resolve here:
 One consequence of the layer rule: an endpoint backed by data in an outer layer
 is exposed by that layer itself and mapped at the composition root, not hosted
 in transport. `Rod.Operators` does this for its SSE
-stream and `Rod.Tradecraft` for `GET /capabilities` (the capability catalog):
+stream and `Rod.Capabilities` for `GET /capabilities` (the capability catalog):
 transport may depend on neither, so each owns its endpoint the way it owns its
 data. The catalog is a process-global read of the loaded module set -- registry
 metadata, not engagement-scoped domain state -- so it earns no CoreState port
@@ -959,7 +959,7 @@ recorded.**
   and the `PayloadBuilt` audit event names every applied transform. No
   in-tree transform ships: the empty chain is the seam, exactly like the
   capability placeholders, and transforms arrive through the explicit
-  `Build:Transforms` list (the same loading shape as `Tradecraft:Modules`,
+  `Build:Transforms` list (the same loading shape as `Capabilities:Modules`,
   [extending/tradecraft.md](extending/tradecraft.md)). A shellcode-form
   transform (turning a built artifact into position-independent bytes for
   the loaders that want them) is the seam's canonical occupant.
@@ -1752,21 +1752,21 @@ verb on its own grammar, so the addition costs a Tier 0 implant nothing
 | **browser** | `browser.fingerprint`, `browser.cookies`, `browser.dom`, `browser.screenshot`, `browser.redirect`, `browser.prompt` | The Browser class's hook set (Sec 5.2): the read-and-steer verbs a hooked page justifies. `browser.fingerprint` reports the navigator facts; `browser.cookies` reads the current origin's `document.cookie` (non-HttpOnly only -- the browser's own boundary, documented rather than worked around); `browser.dom` returns `outerHTML`, optionally narrowed by a CSS selector argument, truncated at 1 MiB; `browser.screenshot` rasterizes the DOM (the SVG foreignObject shape, cross-origin imagery stripped) into a PNG artifact through the exfil-chunk path (Sec 11); `browser.redirect` navigates the tab (the hook dies with the page it left); `browser.prompt` returns what the user answered, carrying `reads-input` so automation never fires it unattended (Sec 10.4). Input capture (keylogging, form-field harvesting) and browser-exploit chaining are not core verbs -- they arrive as capability modules (Sec 13, Sec 15). |
 
 The recon verbs are registered through the tradecraft layer as first-class
-descriptors (`Rod.Tradecraft.Recon.ReconCapabilities`, category `Recon`); their
+descriptors (`Rod.Capabilities.Recon.ReconCapabilities`, category `Recon`); their
 concrete behavior runs on an artifact that carries a handler for them and is
 captured as task output over the beacon stream (Sec 10.3). Recon is a
 long-haul activity, so the four verbs are gated to the Implant class at task
 issuance -- a non-Implant class is refused before the task is queued (Sec 5.2).
 
 The process verbs close the same operational gap from both ends
-(`Rod.Tradecraft.Core.CoreCapabilities` carries `proc.kill` -- an in-repo
+(`Rod.Capabilities.Core.CoreCapabilities` carries `proc.kill` -- an in-repo
 reference handler that ends one pid through the standard kill path -- while
 `recon.ps`, the local process listing over the documented OS process APIs,
 rides the recon set's long-tail posture). Both are Implant-class gated like
 their recon kin.
 
 The lateral verbs are registered the same way
-(`Rod.Tradecraft.Lateral.LateralCapabilities`, category `Lateral`):
+(`Rod.Capabilities.Lateral.LateralCapabilities`, category `Lateral`):
 `lateral.move` carries a `derives-child` attribute and is the deployment verb
 that means "derive a child implant"; `lateral.token` and `lateral.exec_remote`
 carry `touches-credential` and `touches-network` attributes respectively. Like
@@ -1785,7 +1785,7 @@ Windows, SSH on Linux) document the administration channels every mainstream
 C2 exposes; the reference crate compiles none of them.
 
 The persistence verbs are registered the same way
-(`Rod.Tradecraft.Persist.PersistCapabilities`, category `Persist`):
+(`Rod.Capabilities.Persist.PersistCapabilities`, category `Persist`):
 `persist.install` and `persist.remove` carry `writes-to-disk` attributes
 (install additionally carries `persists`), and `persist.list` is a read that
 carries no such flag, like the host-local `recon.hostenum`. Like recon and
@@ -1799,8 +1799,8 @@ like the recon set: the reference crate compiles none, so the verbs task
 against an artifact whose tree carries them.
 
 The collection and exfiltration verbs are registered the same way
-(`Rod.Tradecraft.Collect.CollectCapabilities`, category `Collect`, and
-`Rod.Tradecraft.Exfil.ExfilCapabilities`, category `Exfil`): `collect.cred`
+(`Rod.Capabilities.Collect.CollectCapabilities`, category `Collect`, and
+`Rod.Capabilities.Exfil.ExfilCapabilities`, category `Exfil`): `collect.cred`
 carries a `reads-credential` attribute, `collect.keylog` carries
 `reads-input` and `persists` (it installs a resident input-capture hook), and
 `collect.screenshot` carries `reads-screen` (it captures what the target's
@@ -1828,7 +1828,7 @@ capture; on every platform the Rust build does not gate them in, each runs
 only when an operator supplies a module for the verb.
 
 The tunnel verbs are registered the same way
-(`Rod.Tradecraft.Tunnel.TunnelCapabilities`, category `Tunnel`):
+(`Rod.Capabilities.Tunnel.TunnelCapabilities`, category `Tunnel`):
 `tunnel.forward` and `tunnel.socks` each carry a `touches-network` attribute,
 since each opens network connections from the target. Unlike the categories
 above they are gated to two classes: Implant (tunneling is a core operation,
@@ -1868,7 +1868,7 @@ so an unmodified tool reaches third hosts with zero operator API calls per
 byte and the whole flow stays attributed to the task.
 
 The evasion verbs are registered the same way
-(`Rod.Tradecraft.Evasion.EvasionCapabilities`, category `Evasion`):
+(`Rod.Capabilities.Evasion.EvasionCapabilities`, category `Evasion`):
 `evasion.avoid` and `evasion.unload` each carry a `modifies-defenses`
 attribute, since each alters the target's defensive or monitoring posture
 (Sec 7). Unlike the recon, lateral, persist, collect, and exfil verbs they are
@@ -1885,7 +1885,7 @@ reference handler on the Rust implant -- remote-process injection through the
 documented classic pattern, `<pid> <base64>` arguments.
 
 The exploit verbs are registered the same way
-(`Rod.Tradecraft.Exploit.ExploitCapabilities`, category `Exploit`): both
+(`Rod.Capabilities.Exploit.ExploitCapabilities`, category `Exploit`): both
 `exploit.invoke` and `exploit.module` carry an `exploits-target` attribute,
 since each actively attacks a target to gain or widen access (Sec 7). Like the
 evasion verbs they are **not** gated to a class in `ImplantClassCapabilities`
@@ -1914,7 +1914,7 @@ placeholder (last-registration-wins) and is taskable through the same UI and
 gate as any built-in verb. [extending/tradecraft.md](extending/tradecraft.md)
 is the worked guide for module authors: both halves of a capability, the
 registration paths, and the seams' current limits. The one runtime loader is config-listed and narrowly
-bounded: the `Tradecraft:Modules` section names each module as a
+bounded: the `Capabilities:Modules` section names each module as a
 `Namespace.Type, AssemblyName` string, the assembly is resolved by that name
 alone (already loaded, or a same-named dll in the application directory), and
 the type is instantiated at startup and registered against the DI-resolved
@@ -1961,7 +1961,7 @@ a session it no longer holds.
 Task issuance gates the verb through a capability resolver
 (`ITaskCapabilityResolver`). The per-class reduced verb set (Sec 5.2) is the
 primary authority; the composition root swaps in a registry-backed resolver
-(`CapabilityRegistryTaskResolver` in `Rod.Tradecraft`) so a verb no class set
+(`CapabilityRegistryTaskResolver` in `Rod.Capabilities`) so a verb no class set
 gates is still dispatchable when a capability module is registered for it. The
 registry only widens the gate -- it never narrows it, and it never re-gates a
 verb a class set carries to another class -- and it is the
@@ -2673,7 +2673,7 @@ provider, with all persistence code isolated in a dedicated `Rod.Persistence`
 project that depends inward on `Rod.CoreState` and `Rod.Audit` only. The inner
 ring (`Rod.CoreState`, `Rod.Audit`) is zero-package, so the EF/Npgsql dependency
 cannot live there; `Rod.Persistence` is the structural answer, the same reason
-`Rod.Operators` and `Rod.Tradecraft` are separate projects wired at the
+`Rod.Operators` and `Rod.Capabilities` are separate projects wired at the
 composition root. The domain model stays persistence-ignorant -- no EF
 attributes, no concurrency fields on entities -- and ids map to Postgres `uuid`
 through per-id value converters; enums are stored as `int` to keep the audit
@@ -2887,7 +2887,7 @@ property of that layer, never of the kernel.
   browser versions and phishing assets chase the SMTP ecosystem -- exactly
   the churn the module layer exists to absorb.
 
-`Rod.Tradecraft` evolves into **`Rod.Capabilities`**: the same contract
+`Rod.Capabilities` evolves into **`Rod.Capabilities`**: the same contract
 registry plus the in-tree module host. Reference modules live under
 `modules/` (server-side) and `implant/modules/` (implant-side) and load
 through **exactly the path external modules load through** -- the seams
@@ -2980,7 +2980,7 @@ Where the program touches the existing layers:
 | `Rod.Transport` | `ITransportProvider` abstraction; the four in-tree families become the reference implementations; optional mTLS and WireGuard, default-disabled (ADR-004). |
 | `Rod.BuildPipeline` | The build contract gains a transport-enable-set parameter; a Go build unit joins the community slots. |
 | `Rod.Operators` | Collaboration metadata APIs (ADR-005); MCP read-write under token scopes; OpenAPI contract generation (ADR-006). |
-| `Rod.Tradecraft` → `Rod.Capabilities` | Contract registry + in-tree module host (ADR-001). |
+| `Rod.Capabilities` | Contract registry + in-tree module host (ADR-001; the rename from `Rod.Tradecraft` has shipped). |
 | `Rod.Persistence` | `tsvector` full-text indexes; comment and chat tables (ADR-005). |
 | `Rod.TeamServer` | Mounts the new components; the built-in diagnostics endpoint (ADR-008). |
 | `rod-cli` (new) | `rod mod init/search/info/install/verify/publish` (ADR-002, ADR-009). |

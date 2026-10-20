@@ -33,7 +33,7 @@ namespace Rod.Transport.Endpoints;
 public static class TopologyEndpoints
 {
     // The recon verbs whose output the projection parses. Transport cannot
-    // reference the tradecraft layer that owns the names (the layer rule), so
+    // reference the capabilities layer that owns the names (the layer rule), so
     // the strings stand here with the capability catalog as their authority
     // and the grammar as the contract.
     private const string PortscanVerb = "recon.portscan";

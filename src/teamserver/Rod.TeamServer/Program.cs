@@ -5,7 +5,7 @@ using Rod.Operators.Auth;
 using Rod.Operators.Mcp;
 using Rod.Persistence;
 using Rod.TeamServer;
-using Rod.Tradecraft;
+using Rod.Capabilities;
 using Rod.Transport;
 using Rod.Transport.Listeners;
 
@@ -42,22 +42,22 @@ builder.Services.AddRodTransport(builder.Configuration);
 // cannot reference Rod.Operators (architecture test
 // LayerDependencyTests), so the composition root assembles it here.
 builder.Services.AddRodOperators(builder.Configuration);
-// Wire the tradecraft layer onto the live task path (architecture.md Sec 10.3):
+// Wire the capabilities layer onto the live task path (architecture.md Sec 10.3):
 // the capability registry and the registry-backed task resolver that replaces
 // core state's strict class-table default, plus any out-of-tree capability
-// modules listed under Tradecraft:Modules (Sec 10.2) -- each replaces the
+// modules listed under Capabilities:Modules (Sec 10.2) -- each replaces the
 // placeholder for its verb, so adding one never edits this composition root.
-// Transport cannot reference Rod.Tradecraft (architecture test
+// Transport cannot reference Rod.Capabilities (architecture test
 // LayerDependencyTests), so the composition root assembles it here -- the same
 // reason as AddRodOperators.
-builder.Services.AddRodTradecraft(builder.Configuration);
+builder.Services.AddRodCapabilities(builder.Configuration);
 // Wire the durable PostgreSQL store (architecture.md Sec 12, ADR 0003):
 // when ConnectionStrings:Postgres is set, this registers the EF Core
 // DbContext and replaces the in-memory core-state ports whose durable adapters
 // are implemented with the Postgres-backed pair, so state survives a restart.
 // Rod.Persistence cannot be referenced by Rod.Transport (architecture test
 // LayerDependencyTests), so the composition root assembles it here -- the same
-// reason as AddRodOperators/AddRodTradecraft above. Absent the connection
+// reason as AddRodOperators/AddRodCapabilities above. Absent the connection
 // string, it registers nothing and the in-memory adapters stay in place.
 builder.Services.AddRodPersistence(builder.Configuration);
 // Layer in operator authentication (architecture.md Sec 4): the cookie
@@ -172,9 +172,9 @@ app.MapOperatorAuthEndpoints();
 // from the composition root because the stamp is a property of this executable,
 // not of any layer.
 app.MapBuildStampEndpoints();
-// The tradecraft layer's capability catalog: mapped from the
-// composition root for the same layer-separation reason as AddRodTradecraft --
-// transport cannot reference Rod.Tradecraft, so the catalog endpoint is exposed
+// The capabilities layer's capability catalog: mapped from the
+// composition root for the same layer-separation reason as AddRodCapabilities --
+// transport cannot reference Rod.Capabilities, so the catalog endpoint is exposed
 // from the layer that owns the registry. Lets the operator UI surface every
 // capability category as tasking from the registry rather than a hardcoded verb
 // table.

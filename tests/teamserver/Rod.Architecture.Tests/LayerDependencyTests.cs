@@ -5,7 +5,7 @@ using Rod.BuildPipeline.Layers;
 using Rod.CoreState.Layers;
 using Rod.Operators.Layers;
 using Rod.Persistence.Layers;
-using Rod.Tradecraft.Layers;
+using Rod.Capabilities.Layers;
 using Rod.Transport.Layers;
 using Rod.V1;
 
@@ -15,7 +15,7 @@ namespace Rod.Architecture.Tests;
 /// Encodes the teamserver layer dependency rules (architecture.md Sec 4.1,
 /// AGENTS.md Sec 5). Dependencies point inward only: core state and audit depend
 /// on nothing in-house; transport and build pipeline depend on core state;
-/// operators, tradecraft, and persistence depend on core state and audit. The
+/// operators, capabilities, and persistence depend on core state and audit. The
 /// transport layer additionally depends on Rod.Protocol: Protocol is the
 /// language-neutral wire contract (architecture.md Sec 8/9) that the transport
 /// speaks, so mapping outcomes to wire status codes belongs in transport.
@@ -29,7 +29,7 @@ public class LayerDependencyTests
     private static readonly Assembly Transport = typeof(TransportLayer).Assembly;
     private static readonly Assembly BuildPipeline = typeof(BuildPipelineLayer).Assembly;
     private static readonly Assembly Operators = typeof(OperatorsLayer).Assembly;
-    private static readonly Assembly Tradecraft = typeof(TradecraftLayer).Assembly;
+    private static readonly Assembly Capabilities = typeof(CapabilitiesLayer).Assembly;
     private static readonly Assembly Persistence = typeof(PersistenceLayer).Assembly;
     // Rod.Protocol ships only generated bindings (package rod.v1 -> namespace
     // Rod.V1), so the anchor type is a generated message, not a Layers marker.
@@ -41,7 +41,7 @@ public class LayerDependencyTests
     {
         "Rod.Audit", "Rod.BuildPipeline", "Rod.CoreState",
         "Rod.Operators", "Rod.Persistence", "Rod.Protocol",
-        "Rod.Tradecraft", "Rod.Transport"
+        "Rod.Capabilities", "Rod.Transport"
     };
 
     // Inner ring: the layer may use only itself. Any reference to another
@@ -93,19 +93,19 @@ public class LayerDependencyTests
     public void BuildPipeline_Dependencies_PointInwardOnly()
         => AssertOnlyDependsOn(BuildPipeline, nameof(BuildPipeline), "Rod.BuildPipeline", "Rod.CoreState");
 
-    // Operators and tradecraft may depend on core state and audit only.
+    // Operators and capabilities may depend on core state and audit only.
     [Fact]
     public void Operators_Dependencies_PointInwardOnly()
         => AssertOnlyDependsOn(Operators, nameof(Operators), "Rod.Operators", "Rod.CoreState", "Rod.Audit");
 
     [Fact]
-    public void Tradecraft_Dependencies_PointInwardOnly()
-        => AssertOnlyDependsOn(Tradecraft, nameof(Tradecraft), "Rod.Tradecraft", "Rod.CoreState", "Rod.Audit");
+    public void Capabilities_Dependencies_PointInwardOnly()
+        => AssertOnlyDependsOn(Capabilities, nameof(Capabilities), "Rod.Capabilities", "Rod.CoreState", "Rod.Audit");
 
     // Persistence (ADR 0003) implements the Rod.CoreState and
     // Rod.Audit persistence ports against Postgres, so it may depend inward on
     // those two layers only. It is wired at the composition root, never by
-    // transport, so -- like operators and tradecraft -- it never touches the
+    // transport, so -- like operators and capabilities -- it never touches the
     // build pipeline, the protocol, or another outer layer.
     [Fact]
     public void Persistence_Dependencies_PointInwardOnly()

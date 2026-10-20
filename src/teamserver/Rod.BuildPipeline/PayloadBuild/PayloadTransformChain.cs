@@ -12,7 +12,7 @@ namespace Rod.BuildPipeline.PayloadBuild;
 /// empty chain is the seam, exactly like the capability placeholders), and
 /// out-of-tree transforms arrive only through the config-listed loader
 /// (<c>Build:Transforms</c>, the same explicit-list shape as
-/// <c>Tradecraft:Modules</c>).
+/// <c>Capabilities:Modules</c>).
 /// </summary>
 public sealed class PayloadTransformChain
 {

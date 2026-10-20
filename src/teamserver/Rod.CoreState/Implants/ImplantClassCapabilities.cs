@@ -19,7 +19,7 @@ namespace Rod.CoreState.Implants;
 /// </summary>
 /// <remarks>
 /// The values live in core state -- the inner ring both the build pipeline and
-/// the tradecraft layer may depend on -- so the rule is defined once and read by
+/// the capabilities layer may depend on -- so the rule is defined once and read by
 /// every layer that needs it, without a cross-layer dependency. The standard,
 /// documented categories run concrete handlers on the reference implant; the
 /// sensitive categories (Sec 13) stay contract-only in this repository.

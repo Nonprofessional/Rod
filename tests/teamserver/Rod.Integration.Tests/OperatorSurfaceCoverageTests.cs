@@ -10,10 +10,9 @@ using Rod.CoreState.Engagements;
 using Rod.CoreState.Implants;
 using Rod.CoreState.Operators;
 using Rod.Operators;
-using Rod.Tradecraft;
-using Rod.Tradecraft.Capabilities;
-using Rod.Tradecraft.Evasion;
-using Rod.Tradecraft.Exploit;
+using Rod.Capabilities;
+using Rod.Capabilities.Evasion;
+using Rod.Capabilities.Exploit;
 using Rod.Transport;
 using Rod.Transport.Endpoints;
 using Rod.Transport.Listeners;
@@ -43,15 +42,15 @@ namespace Rod.Integration.Tests;
 /// </remarks>
 public class OperatorSurfaceCoverageTests
 {
-    // A host that layers the tradecraft layer, the operator + auth layers,
+    // A host that layers the capabilities layer, the operator + auth layers,
     // and the capability-catalog endpoint onto the transport core -- the
     // same composition the teamserver host performs. Mirrors the fixture in
-    // TradecraftTaskPathTests; the additions over the authenticated host are
-    // AddRodTradecraft and MapCapabilityEndpoints.
+    // CapabilityTaskPathTests; the additions over the authenticated host are
+    // AddRodCapabilities and MapCapabilityEndpoints.
     private static (HttpClient Client, IHost Host) CreateClient()
     {
         var (client, host, _) = AuthenticatedHost.Create(
-            configureServices: services => services.AddRodTradecraft(),
+            configureServices: services => services.AddRodCapabilities(),
             mapEndpoints: endpoints => endpoints.MapCapabilityEndpoints());
         // Every test drives the operator API, so establish the session up front.
         AuthenticatedHost.LoginAsync(client).GetAwaiter().GetResult();
@@ -247,7 +246,7 @@ public class OperatorSurfaceCoverageTests
     }
 
     // --- Local DTO mirrors for ReadFromJsonAsync. The endpoint DTOs are public
-    //     sealed records under Rod.Transport.Endpoints / Rod.Tradecraft.Endpoints;
+    //     sealed records under Rod.Transport.Endpoints / Rod.Capabilities.Endpoints;
     //     these anonymous-shaped records keep the test's JSON deserialization
     //     independent of those types' exact property order while the assertions
     //     above use the real endpoint records where they already fit. ---

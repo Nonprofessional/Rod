@@ -238,7 +238,7 @@ headline sections:
 
 The rest live only in the reference table: `Sessions:Staleness` and
 `Webhooks` (engine timing and notification forwarding),
-`Tradecraft:Modules` and `Build:Transforms` (the out-of-tree extension
+`Capabilities:Modules` and `Build:Transforms` (the out-of-tree extension
 points), `Llm` (the opt-in triage client), and `Recon` (the workbench's
 egress endpoints and scan origin) -- each an OPSEC decision the runbook
 next to it documents.

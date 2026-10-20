@@ -8,16 +8,16 @@
     constrain it. As the composition root it references the layers it assembles:
     transport, plus the operator layer, whose SSE event stream and live bus are
     wired here (transport itself cannot reference Rod.Operators). It also
-    references Rod.Tradecraft, whose capability registry is wired here so the
+    references Rod.Capabilities, whose capability registry is wired here so the
     live task path resolves verbs through it (transport itself cannot reference
-    Rod.Tradecraft either), and Rod.Persistence, whose Postgres-backed adapters
+    Rod.Capabilities either), and Rod.Persistence, whose Postgres-backed adapters
     swap in for the in-memory ports when ConnectionStrings:Postgres is set
     (ADR 0003).
   -->
   <ItemGroup>
     <ProjectReference Include="..\Rod.Transport\Rod.Transport.csproj" />
     <ProjectReference Include="..\Rod.Operators\Rod.Operators.csproj" />
-    <ProjectReference Include="..\Rod.Tradecraft\Rod.Tradecraft.csproj" />
+    <ProjectReference Include="..\Rod.Capabilities\Rod.Capabilities.csproj" />
     <ProjectReference Include="..\Rod.Persistence\Rod.Persistence.csproj" />
   </ItemGroup>
 
@@ -62,5 +62,4 @@
     <Exec Condition="'$(_RodNpmProbe)' == '0'" Command="npm run build" WorkingDirectory="Client" ConsoleToMSBuild="true" />
     <Message Condition="'$(_RodNpmProbe)' != '0'" Importance="high" Text="Operator UI bundle not found (wwwroot/index.html) and npm is not on PATH; the server will run API-only. Build it with npm ci &amp;&amp; npm run build in src/teamserver/Rod.TeamServer/Client." />
   </Target>
-
 </Project>

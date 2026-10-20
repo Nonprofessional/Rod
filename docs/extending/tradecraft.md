@@ -20,7 +20,7 @@ the opaque argument string -- nothing else.
 
 | Half | Lives in | Decides |
 |------|----------|---------|
-| Gate + catalog | teamserver, `Rod.Tradecraft` | whether an operator may issue the verb; what the UI shows |
+| Gate + catalog | teamserver, `Rod.Capabilities` | whether an operator may issue the verb; what the UI shows |
 | Execution | implant, handler registry | what the verb actually does |
 
 The teamserver never executes tradecraft (architecture.md Sec 10.2): it gates,
@@ -33,8 +33,8 @@ Implement `ICapabilityModule` -- a registration-only contract carrying exactly
 one `CapabilityDescriptor`:
 
 ```csharp
-using Rod.Tradecraft.Capabilities;
-using Rod.Tradecraft.Modules;
+using Rod.Capabilities.Capabilities;
+using Rod.Capabilities.Modules;
 
 public sealed class MyPingModule : ICapabilityModule
 {
@@ -51,7 +51,7 @@ public sealed class MyPingModule : ICapabilityModule
 ```
 
 Build it, drop `MyTradecraft.dll` next to the teamserver binary, and list the
-type under `Tradecraft:Modules` in `appsettings.json`:
+type under `Capabilities:Modules` in `appsettings.json`:
 
 ```json
 {
@@ -262,7 +262,7 @@ transform's output feeding the next:
 ```
 
 The loader resolves assemblies only by that explicit list -- the same bounded
-shape as `Tradecraft:Modules` -- and a wrong entry fails startup loudly. The
+shape as `Capabilities:Modules` -- and a wrong entry fails startup loudly. The
 chain runs after the build unit and before anything is recorded, so the
 stored fingerprint covers exactly the transformed bytes and the
 `PayloadBuilt` audit event names every applied transform (with its metadata

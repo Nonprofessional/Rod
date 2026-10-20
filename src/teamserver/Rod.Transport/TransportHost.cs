@@ -318,16 +318,16 @@ public static class TransportHost
         // operator-free.
         services.AddSingleton<ILiveEventBus, NullLiveEventBus>();
 
-        // Task-verb gate -> the class-table default. The tradecraft layer
-        // replaces this with the registry-backed resolver via AddRodTradecraft
+        // Task-verb gate -> the class-table default. The capabilities layer
+        // replaces this with the registry-backed resolver via AddRodCapabilities
         // (the same replace-the-default shape as the bus above). Registering
         // the default also lets the container construct TaskService through
         // its fullest constructor -- the one that carries the dispatch wake --
-        // in hosts that never opt into the tradecraft layer.
+        // in hosts that never opt into the capabilities layer.
         services.AddSingleton<ITaskCapabilityResolver, ClassTableCapabilityResolver>();
 
         // Sensitivity gate -> the static-floor default (the sensitive three
-        // and the evasion/exploit namespaces). AddRodTradecraft replaces this
+        // and the evasion/exploit namespaces). AddRodCapabilities replaces this
         // with the registry-backed policy so the judgment rides each verb's
         // OPSEC metadata; hosts without the layer keep the floor.
         services.AddSingleton<ISensitiveVerbPolicy, DefaultSensitiveVerbPolicy>();
@@ -429,7 +429,7 @@ public static class TransportHost
         services.AddSingleton<IBuildUnitRegistry>(buildUnits);
         // The post-build transform chain (architecture.md Sec 6, the transform
         // seam): config-listed out-of-tree transforms under Build:Transforms,
-        // the same explicit-list loading shape as Tradecraft:Modules. A
+        // the same explicit-list loading shape as Capabilities:Modules. A
         // missing section is the empty chain -- no in-tree transform ships,
         // the empty chain is the seam. A bad entry fails startup loudly: an
         // operator must never believe wrapped bytes are stored when the raw

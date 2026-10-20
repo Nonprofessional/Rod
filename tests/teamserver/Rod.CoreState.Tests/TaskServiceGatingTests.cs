@@ -245,7 +245,7 @@ public class TaskServiceGatingTests
         // The default capability resolver (architecture.md Sec 5.2/10.3) is the
         // per-class reduced verb set alone -- it admits no contract-and-dispatch-
         // only verb (evasion, exploit) on its own. That path opens when the
-        // tradecraft layer wires a registry-backed resolver in (architecture.md
+        // capabilities layer wires a registry-backed resolver in (architecture.md
         // Sec 10.2); core state alone stays strict, so this test host and the
         // core-state unit tests keep the behavior they had before .
         var implants = new InMemoryImplantRepository();
@@ -287,7 +287,7 @@ public class TaskServiceGatingTests
     }
 
     // A resolver that admits exactly one verb regardless of class -- the
-    // stand-in for the registry-backed resolver the tradecraft layer supplies
+    // stand-in for the registry-backed resolver the capabilities layer supplies
     // when a module is registered for a no-class-gate verb.
     private sealed class AllowingResolver : ITaskCapabilityResolver
     {

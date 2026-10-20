@@ -11,14 +11,14 @@ namespace Rod.CoreState.Implants;
 /// The default, in-process behavior is the per-class reduced verb set
 /// (<see cref="ClassTableCapabilityResolver"/> reading
 /// <see cref="ImplantClassCapabilities"/>, Sec 5.2): the inner ring both the
-/// build pipeline and the tradecraft layer read. This port lets a later layer
-/// widen that decision without core state depending on it: the tradecraft layer
+/// build pipeline and the capabilities layer read. This port lets a later layer
+/// widen that decision without core state depending on it: the capabilities layer
 /// supplies an adapter that additionally admits a verb a registered capability
 /// module handles (architecture.md Sec 10.2 -- the evasion and exploit
 /// categories are contract and dispatch only, not class-gated), and the
 /// composition root swaps that adapter in. Core state stays inward-only: the
 /// port is defined here, the tradecraft-backed implementation lives in
-/// <c>Rod.Tradecraft</c>.
+/// <c>Rod.Capabilities</c>.
 /// </para>
 /// <para>
 /// The class table is the primary authority. An implementation that consults the

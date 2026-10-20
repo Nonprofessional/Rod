@@ -7,7 +7,7 @@
     <Project Path="src/teamserver/Rod.Persistence/Rod.Persistence.csproj" />
     <Project Path="src/teamserver/Rod.Protocol/Rod.Protocol.csproj" />
     <Project Path="src/teamserver/Rod.TeamServer/Rod.TeamServer.csproj" />
-    <Project Path="src/teamserver/Rod.Tradecraft/Rod.Tradecraft.csproj" />
+    <Project Path="src/teamserver/Rod.Capabilities/Rod.Capabilities.csproj" />
     <Project Path="src/teamserver/Rod.Transport/Rod.Transport.csproj" />
   </Folder>
   <Folder Name="/tests/teamserver/">
@@ -19,7 +19,7 @@
     <Project Path="tests/teamserver/Rod.Integration.Tests/Rod.Integration.Tests.csproj" />
     <Project Path="tests/teamserver/Rod.Operators.Tests/Rod.Operators.Tests.csproj" />
     <Project Path="tests/teamserver/Rod.Protocol.Tests/Rod.Protocol.Tests.csproj" />
-    <Project Path="tests/teamserver/Rod.Tradecraft.Tests/Rod.Tradecraft.Tests.csproj" />
+    <Project Path="tests/teamserver/Rod.Capabilities.Tests/Rod.Capabilities.Tests.csproj" />
   </Folder>
   <Folder Name="/src/" />
   <!-- The reference redirector (ADR 0009/0011): a standalone Native AOT forwarder

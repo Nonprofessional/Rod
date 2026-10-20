@@ -12,7 +12,7 @@ namespace Rod.CoreState.Implants;
 /// The port lives in core state (the inner ring every layer may reach) and
 /// ships with a static fallback default, <see cref="DefaultSensitiveVerbPolicy"/>.
 /// The authoritative implementation is registry-backed and lives in the
-/// tradecraft layer, where each verb's descriptor carries its OPSEC metadata;
+/// capabilities layer, where each verb's descriptor carries its OPSEC metadata;
 /// the composition root swaps it in. Registry-backed implementations may only
 /// widen the sensitive set relative to the fallback, never narrow it -- the
 /// same one-direction rule the registry-backed capability resolver follows on

@@ -35,7 +35,7 @@ public sealed record WebShellRequest(
 /// manager drives -- a script placed by hand or by another tool answers
 /// it because the one-liner itself is universal); adapters for
 /// closed-source tools' protocols arrive out-of-tree through the
-/// tradecraft layer's registration path.
+/// capabilities layer's registration path.
 /// </summary>
 public interface IWebShellProtocolAdapter
 {
@@ -112,7 +112,7 @@ public interface IWebShellProtocolAdapter
 /// the transport provider registry: an adapter added later registers
 /// itself rather than an enumeration growing an arm. In-tree adapters
 /// register here at startup; out-of-tree adapters register through the
-/// tradecraft layer's module path.
+/// capabilities layer's module path.
 /// </summary>
 public static class WebShellAdapters
 {
