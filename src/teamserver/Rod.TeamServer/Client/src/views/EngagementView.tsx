@@ -209,7 +209,7 @@ export function EngagementView({
       {tab === 'launchers' && <LaunchersView engagementId={engagementId} onlineTick={tick} />}
       {tab === 'campaigns' && <CampaignsView engagementId={engagementId} onlineTick={tick} />}
       {tab === 'build' && <PayloadBuildView engagementId={engagementId} />}
-      {tab === 'payloads' && <PayloadsView engagementId={engagementId} />}
+      {tab === 'payloads' && <PayloadsView engagementId={engagementId} onlineTick={tick} />}
     </LiveContext.Provider>
   )
 }

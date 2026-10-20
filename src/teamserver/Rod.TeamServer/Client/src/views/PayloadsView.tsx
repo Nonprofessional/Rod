@@ -40,7 +40,13 @@ function kindLabel(klass: string): string {
   return klass
 }
 
-export function PayloadsView({ engagementId }: { engagementId: string }) {
+export function PayloadsView({
+  engagementId,
+  onlineTick,
+}: {
+  engagementId: string
+  onlineTick: number
+}) {
   const [payloads, setPayloads] = useState<PayloadSummary[]>([])
   const [listeners, setListeners] = useState<ListenerSummary[]>([])
   // The filter commits on Enter or the Search button, like every text search
@@ -66,9 +72,13 @@ export function PayloadsView({ engagementId }: { engagementId: string }) {
     }
   }, [engagementId])
 
+  // The live tick rides along: a credential's remaining uses and liveness
+  // move server-side (a paste spends it, a revoke kills it), and the roster
+  // needs to re-read them without a manual refresh -- the same cadence every
+  // other live tab follows.
   useEffect(() => {
     void refresh()
-  }, [refresh])
+  }, [refresh, onlineTick])
 
   const onRevokeToken = async (tokenId: string) => {
     if (
