@@ -11,9 +11,9 @@ namespace Rod.Capabilities.Core;
 /// framework set without committing any in-process tradecraft.
 /// </summary>
 /// <remarks>
-/// One instance carries one verb. An operator-supplied out-of-tree module
+/// One instance carries one verb. A module
 /// registered for the same verb replaces the placeholder (last registration
-/// wins), which is the whole out-of-tree path: a registration, never a schema
+/// wins), which is the whole module path: a registration, never a schema
 /// change or a composition-root edit (architecture.md Sec 10.2, AGENTS.md Sec 7).
 /// </remarks>
 public sealed class PlaceholderCapabilityModule : ICapabilityModule

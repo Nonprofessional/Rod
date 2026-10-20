@@ -15,14 +15,14 @@ namespace Rod.Capabilities.Modules;
 /// network, and credentials actually exist. A module therefore carries exactly
 /// the declaration the server needs: the descriptor it registers under.
 ///
-/// This repository ships only the contract, the registration path, and the gate
-/// (AGENTS.md Sec 7, architecture.md Sec 13). Concrete tradecraft -- recon,
-/// lateral movement, persistence, collection, exfiltration, and any
-/// evasion/exploit behavior -- is supplied as separate, opt-in, out-of-tree
-/// modules that implement this interface. The built-in core-verb placeholders
-/// exist only to keep every framework verb registered so the catalog lists the
-/// full set and an out-of-tree module replacing one is a registration, not a
-/// schema change.
+/// Concrete tradecraft -- recon, lateral movement, persistence, collection,
+/// exfiltration, and any evasion/exploit behavior -- arrives as opt-in modules
+/// implementing this interface: in-tree reference modules under <c>modules/</c>
+/// or external ones, both through the same config-listed loading path
+/// (AGENTS.md Sec 7, architecture.md Sec 13, Sec 15). The built-in core-verb
+/// placeholders exist only to keep every framework verb registered so the
+/// catalog lists the full set and a module replacing one is a registration,
+/// not a schema change.
 /// </remarks>
 public interface ICapabilityModule
 {

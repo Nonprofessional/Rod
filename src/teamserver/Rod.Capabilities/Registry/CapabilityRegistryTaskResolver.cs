@@ -17,15 +17,15 @@ namespace Rod.Capabilities.Registry;
 /// (architecture.md Sec 10.2). Evasion and exploit are not class-gated
 /// (Sec 5.2/10.1); they are dispatchable here when a module is registered for
 /// the verb, which the built-in load guarantees for every framework verb and
-/// an out-of-tree override keeps. A verb another class's set carries stays
+/// a config-listed override keeps. A verb another class's set carries stays
 /// gated to that class: the registry widens the gate for ungated verbs, it
 /// never re-gates a class-gated one.
 /// </para>
 /// <para>
 /// A registered module -- the built-in placeholder or an operator-supplied
-/// out-of-tree module -- is what satisfies the gate. The placeholder represents
+/// module -- is what satisfies the gate. The placeholder represents
 /// "the framework knows this verb"; concrete behavior runs on the implant
-/// (architecture.md Sec 10.3) and is supplied out-of-tree for the sensitive
+/// (architecture.md Sec 10.3) and arrives as an opt-in module for the sensitive
 /// categories (Sec 13, AGENTS.md Sec 7). This layer holds the contract and the
 /// dispatch path, never the tradecraft.
 /// </para>

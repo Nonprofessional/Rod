@@ -11,8 +11,8 @@ namespace Rod.Capabilities.Recon;
 /// <remarks>
 /// Concrete recon behavior is not part of this repository (architecture.md
 /// Sec 13, AGENTS.md Sec 7): it lives in the implant and is captured as task
-/// output over the beacon stream (architecture.md Sec 10.3), or arrives as an
-/// out-of-tree module that registers for one of these verbs. Here they are
+/// output over the beacon stream (architecture.md Sec 10.3), or arrives as a
+/// module that registers for one of these verbs. Here they are
 /// descriptors only -- enough for the registry to know each verb exists. Each
 /// network-touching verb carries a <c>touches-network</c> OPSEC attribute so
 /// operators and tradecraft filters can avoid risky actions (architecture.md

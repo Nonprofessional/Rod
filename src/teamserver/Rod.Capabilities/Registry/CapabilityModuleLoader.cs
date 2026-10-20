@@ -6,14 +6,16 @@ using Rod.Capabilities.Modules;
 namespace Rod.Capabilities.Registry;
 
 /// <summary>
-/// Loads out-of-tree capability modules from the <c>Capabilities:Modules</c>
-/// configuration list (architecture.md Sec 10.2). Each entry is a
+/// Loads config-listed capability modules from the <c>Capabilities:Modules</c>
+/// configuration list (architecture.md Sec 10.2, Sec 15.1) -- the one path
+/// both the in-tree reference modules and an operator's external ones ride.
+/// Each entry is a
 /// <c>Namespace.Type, AssemblyName</c> string naming a type that implements
 /// <see cref="ICapabilityModule"/>: the assembly is resolved by name -- already
 /// loaded, or present as <c>AssemblyName.dll</c> in the application directory --
 /// and the type is instantiated and registered against the registry. Because
 /// registration replaces the placeholder for the module's verb (last registration
-/// wins), adding an out-of-tree module is a deploy-time config entry, never a
+/// wins), adding a module is a deploy-time config entry, never a
 /// composition-root edit -- the acceptance point.
 /// </summary>
 /// <remarks>

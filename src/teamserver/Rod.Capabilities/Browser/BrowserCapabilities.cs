@@ -11,7 +11,7 @@ namespace Rod.Capabilities.Browser;
 /// <remarks>
 /// The set is deliberately mainstream: everything past it -- input capture in
 /// a hooked page (keylogging, form-field harvesting) and browser-exploit
-/// chaining -- is an out-of-tree capability contract, never a core verb
+/// chaining -- is a module-served capability contract, never a core verb
 /// (architecture.md Sec 13), the same line the evasion and exploit
 /// categories draw. <see cref="Prompt"/> answers with what the user typed,
 /// so it carries <c>reads-input</c> and the sensitive-verb policy holds it

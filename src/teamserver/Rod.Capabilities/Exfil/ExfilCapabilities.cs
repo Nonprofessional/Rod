@@ -11,7 +11,7 @@ namespace Rod.Capabilities.Exfil;
 /// </summary>
 /// <remarks>
 /// Concrete exfiltration behavior is not part of this repository (architecture.md
-/// Sec 13, AGENTS.md Sec 7): it lives in the implant or arrives as an out-of-tree
+/// Sec 13, AGENTS.md Sec 7): it lives in the implant or arrives as a
 /// module that registers for one of these verbs. The reference implants ship no
 /// exfiltration (architecture.md Sec 5). Here they are
 /// descriptors only -- enough for the registry to know each verb exists.

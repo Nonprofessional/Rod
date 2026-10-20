@@ -13,7 +13,7 @@ namespace Rod.Capabilities.Registry;
 /// identifiers, not display strings, and an implant or operator typing
 /// <c>Shell.Exec</c> should not be told the verb is unknown. A later registration
 /// for an already-registered verb replaces the prior one, so a module loaded later
-/// (an out-of-tree override) is the single authority for its verb.
+/// (a config-listed override) is the single authority for its verb.
 /// </remarks>
 public interface ICapabilityRegistry
 {

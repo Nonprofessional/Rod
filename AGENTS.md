@@ -42,6 +42,11 @@ toolchain and language boundaries in Sec 12.2, capability surface in Sec 13.
   Community implants in other languages arrive out-of-tree.
 - **Build units: one in-tree -- Rust.** Other languages plug in out-of-tree
   through the build contract and the `Language` enum.
+- **In-tree capability modules: .NET, under `modules/` (server-side) and
+  `src/implant/rust/modules/` (implant-side).** They are module-layer work,
+  not kernel work: nothing under `src/teamserver` references them, and they
+  load through the same config-listed path external modules take
+  (architecture.md Sec 15.1); the architecture tests hold that boundary.
 - Shared .NET build settings live in `Directory.Build.props` at the repo root
   (`Nullable` enabled, `TreatWarningsAsErrors` on, latest `LangVersion`). Do
   not duplicate these per-project.

@@ -44,9 +44,11 @@ builder.Services.AddRodTransport(builder.Configuration);
 builder.Services.AddRodOperators(builder.Configuration);
 // Wire the capabilities layer onto the live task path (architecture.md Sec 10.3):
 // the capability registry and the registry-backed task resolver that replaces
-// core state's strict class-table default, plus any out-of-tree capability
-// modules listed under Capabilities:Modules (Sec 10.2) -- each replaces the
-// placeholder for its verb, so adding one never edits this composition root.
+// core state's strict class-table default, plus the capability modules listed
+// under Capabilities:Modules -- the in-tree reference modules the build
+// deploys beside the binary and an operator's external ones alike (Sec 10.2,
+// Sec 15.1) -- each replaces the placeholder for its verb, so adding one
+// never edits this composition root.
 // Transport cannot reference Rod.Capabilities (architecture test
 // LayerDependencyTests), so the composition root assembles it here -- the same
 // reason as AddRodOperators.

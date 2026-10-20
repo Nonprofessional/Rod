@@ -10,7 +10,7 @@ namespace Rod.Capabilities.Persist;
 /// </summary>
 /// <remarks>
 /// Concrete persistence behavior is not part of this repository (architecture.md
-/// Sec 13, AGENTS.md Sec 7): it lives in the implant or arrives as an out-of-tree
+/// Sec 13, AGENTS.md Sec 7): it lives in the implant or arrives as a
 /// module that registers for one of these verbs. The reference implants ship no
 /// persistence (architecture.md Sec 5). Here they are
 /// descriptors only -- enough for the registry to know each verb exists. Each

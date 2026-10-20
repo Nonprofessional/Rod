@@ -12,7 +12,7 @@ namespace Rod.Capabilities.Lateral;
 /// <remarks>
 /// Concrete lateral-movement behavior is not part of this repository
 /// (architecture.md Sec 13, AGENTS.md Sec 7): it lives in the implant or arrives
-/// as an out-of-tree module that registers for one of these verbs. Here they are
+/// as a module that registers for one of these verbs. Here they are
 /// descriptors only -- enough for the registry to know each verb exists. Each
 /// verb carries an OPSEC attribute so operators and tradecraft filters can
 /// surface or suppress it (architecture.md Sec 7): <see cref="Move"/> derives a
@@ -25,7 +25,7 @@ public static class LateralCapabilities
     /// Derive a child implant on the target -- the deployment verb whose child
     /// enrols into the same engagement and records its parent (architecture.md
     /// Sec 5.2). The server-side parentage recording is in core state; the
-    /// implant-side derivation is out-of-tree.
+    /// implant-side derivation arrives as a module.
     /// </summary>
     public const string Move = "lateral.move";
 

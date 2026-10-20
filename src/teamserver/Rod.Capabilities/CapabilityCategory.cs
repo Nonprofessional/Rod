@@ -7,7 +7,7 @@ namespace Rod.Capabilities;
 /// mark the two sensitive categories -- <see cref="Evasion"/> and
 /// <see cref="Exploit"/> -- that this repository defines only as pluggable
 /// contracts (architecture.md Sec 13, AGENTS.md Sec 7): their concrete
-/// tradecraft is supplied as separate, opt-in, out-of-tree modules.
+/// tradecraft arrives as opt-in modules, in-tree or external.
 /// </summary>
 public enum CapabilityCategory
 {
@@ -46,7 +46,7 @@ public enum CapabilityCategory
     /// the machinery that widens an implanted artifact's runtime verb set
     /// with C-ABI capability modules delivered over the task channel. The
     /// verbs they load arrive through the categories above (recon, lateral,
-    /// persist, collect, exfil) or a paired out-of-tree descriptor; this
+    /// persist, collect, exfil) or a paired module descriptor; this
     /// category holds the loading machinery itself, and no other class
     /// carries it (module support is the Implant class's, Sec 5.2).
     /// </summary>
@@ -54,13 +54,13 @@ public enum CapabilityCategory
 
     /// <summary>
     /// Detection-evasion hooks. Contract and dispatch only; concrete behavior
-    /// is out-of-tree (architecture.md Sec 13).
+    /// arrives as a module (architecture.md Sec 13).
     /// </summary>
     Evasion,
 
     /// <summary>
     /// PoC/exploit integration point. Contract and dispatch only; concrete
-    /// behavior is out-of-tree (architecture.md Sec 13).
+    /// behavior arrives as a module (architecture.md Sec 13).
     /// </summary>
     Exploit,
 
@@ -68,8 +68,8 @@ public enum CapabilityCategory
     /// The Browser class's hook verbs (architecture.md Sec 5.2, Sec 10.1):
     /// the read-and-steer set a hooked page justifies. The concrete handlers
     /// run inside the served hook script, not on a compiled implant; what
-    /// sits past the set -- input capture, browser-exploit chaining -- is an
-    /// out-of-tree capability contract, not a category here (Sec 13).
+    /// sits past the set -- input capture, browser-exploit chaining -- is a
+    /// module-served capability contract, not a category here (Sec 13).
     /// </summary>
     Browser,
 }

@@ -23,8 +23,9 @@ namespace Rod.Capabilities;
 /// Sec 4.1 layer 6). The layer holds the capability-module
 /// contract (a registration, not an execution surface -- the server only gates
 /// and forwards, architecture.md Sec 10.2/10.3) and the registry; concrete
-/// tradecraft is supplied as separate, opt-in, out-of-tree modules
-/// (architecture.md Sec 13, AGENTS.md Sec 7).
+/// tradecraft arrives as opt-in modules -- in-tree reference modules under
+/// <c>modules/</c> or external ones, one loading path
+/// (architecture.md Sec 13, Sec 15, AGENTS.md Sec 7).
 /// </summary>
 /// <remarks>
 /// Capabilities load through this layer: <see cref="LoadCapabilitiesAsync"/>
@@ -58,7 +59,7 @@ public static class RodCapabilitiesHost
     /// admits a verb the class set does not when a capability module is registered
     /// for it -- the path that opens dispatch for the contract-and-dispatch-only
     /// categories (architecture.md Sec 10.2). Call after <c>AddRodTransport</c>;
-    /// an out-of-tree module registered afterwards against
+    /// a module registered afterwards against
     /// <see cref="ICapabilityRegistry"/> replaces the placeholder for its verb and
     /// stays the authority.
     /// </summary>
@@ -74,9 +75,11 @@ public static class RodCapabilitiesHost
         => services.AddRodCapabilities(configuration: null);
 
     /// <summary>
-    /// Wires the capabilities layer onto the live task path and loads any
-    /// out-of-tree capability modules listed under <c>Capabilities:Modules</c> in
-    /// <paramref name="configuration"/> (architecture.md Sec 10.2). Each entry is
+    /// Wires the capabilities layer onto the live task path and loads the
+    /// capability modules listed under <c>Capabilities:Modules</c> in
+    /// <paramref name="configuration"/> (architecture.md Sec 10.2, Sec 15.1) --
+    /// the in-tree reference modules ship listed, and an operator's external
+    /// ones join the same list. Each entry is
     /// a <c>Namespace.Type, AssemblyName</c> string; the module is instantiated at
     /// startup and registered after the built-in load, so it replaces the
     /// placeholder for its verb -- adding one never edits the composition root.
@@ -172,7 +175,7 @@ public static class RodCapabilitiesHost
         // Every core verb registers as a placeholder: the server gates and
         // forwards only (architecture.md Sec 10.2/10.3), so no core verb has an
         // in-process implementation -- shell.exec included. Skip any verb a
-        // caller already registered (e.g. an out-of-tree override loaded before
+        // caller already registered (e.g. a config-listed override loaded before
         // this call) -- the caller's module is the authority for that verb.
         foreach (var descriptor in CoreCapabilities.All)
         {
@@ -181,7 +184,7 @@ public static class RodCapabilitiesHost
 
         // Recon verbs load the same way: a placeholder per verb so the registry
         // lists the full recon set, leaving any caller-supplied override in
-        // place. Concrete recon behavior is out-of-tree (architecture.md Sec 13).
+        // place. Concrete recon behavior arrives as a module (architecture.md Sec 13).
         foreach (var descriptor in ReconCapabilities.All)
         {
             await RegisterPlaceholderAsync(registry, descriptor, already, cancellationToken);
@@ -189,7 +192,7 @@ public static class RodCapabilitiesHost
 
         // Lateral verbs load the same way: a placeholder per verb so the registry
         // lists the full lateral set, leaving any caller-supplied override in
-        // place. Concrete lateral-movement behavior is out-of-tree
+        // place. Concrete lateral-movement behavior arrives as a module
         // (architecture.md Sec 13).
         foreach (var descriptor in LateralCapabilities.All)
         {
@@ -198,7 +201,7 @@ public static class RodCapabilitiesHost
 
         // Persist verbs load the same way: a placeholder per verb so the registry
         // lists the full persist set, leaving any caller-supplied override in
-        // place. Concrete persistence behavior is out-of-tree (architecture.md
+        // place. Concrete persistence behavior arrives as a module (architecture.md
         // Sec 13); the reference implants ship none.
         foreach (var descriptor in PersistCapabilities.All)
         {
@@ -207,7 +210,7 @@ public static class RodCapabilitiesHost
 
         // Collect verbs load the same way: a placeholder per verb so the registry
         // lists the full collect set, leaving any caller-supplied override in
-        // place. Concrete collection behavior is out-of-tree (architecture.md
+        // place. Concrete collection behavior arrives as a module (architecture.md
         // Sec 13); the reference implants ship none.
         foreach (var descriptor in CollectCapabilities.All)
         {
@@ -216,7 +219,7 @@ public static class RodCapabilitiesHost
 
         // Exfil verbs load the same way: a placeholder per verb so the registry
         // lists the full exfil set, leaving any caller-supplied override in
-        // place. Concrete exfiltration behavior is out-of-tree (architecture.md
+        // place. Concrete exfiltration behavior arrives as a module (architecture.md
         // Sec 13); the reference implants ship none.
         foreach (var descriptor in ExfilCapabilities.All)
         {
@@ -236,8 +239,8 @@ public static class RodCapabilitiesHost
         // Evasion verbs load the same way: a placeholder per verb so the registry
         // lists the full evasion set, leaving any caller-supplied override in
         // place. Evasion is a sensitive category (architecture.md Sec 10.2,
-        // Sec 13): concrete behavior is out-of-tree, supplied
-        // as opt-in modules, and the reference implants ship none. Unlike the
+        // Sec 13): concrete behavior arrives as opt-in modules, disabled by
+        // default, and the reference implants ship none. Unlike the
         // recon, lateral, persist, collect, and exfil verbs these are not gated
         // to a class -- that decision belongs to the live task path, not to this
         // contract milestone.
@@ -249,8 +252,8 @@ public static class RodCapabilitiesHost
         // Exploit verbs load the same way: a placeholder per verb so the registry
         // lists the full exploit set, leaving any caller-supplied override in
         // place. Exploit is a sensitive category (architecture.md Sec 10.2,
-        // Sec 13): concrete behavior is out-of-tree, supplied
-        // as opt-in modules, and the reference implants ship none. Like the
+        // Sec 13): concrete behavior arrives as opt-in modules, disabled by
+        // default, and the reference implants ship none. Like the
         // evasion verbs these are not gated to a class -- that decision belongs to
         // the live task path, not to this contract milestone.
         foreach (var descriptor in ExploitCapabilities.All)
@@ -270,7 +273,7 @@ public static class RodCapabilitiesHost
         // Browser verbs load the same way (architecture.md Sec 5.2, Sec 10.1):
         // the hooked-browser class's read-and-steer set. The handlers live in
         // the served hook script, not in any compiled implant, and the verbs
-        // past the set are out-of-tree contracts -- the server gates and
+        // past the set arrive as modules -- the server gates and
         // forwards only, as for every category.
         foreach (var descriptor in BrowserCapabilities.All)
         {
@@ -279,7 +282,7 @@ public static class RodCapabilitiesHost
     }
 
     // Registers a placeholder for descriptor's verb unless the registry already
-    // has a module for it (an out-of-tree override). Centralized so the core,
+    // has a module for it (a config-listed override). Centralized so the core,
     // recon, lateral, persist, collect, exfil, tunnel, evasion, exploit,
     // browser, and module loops share one dedup rule and one placeholder path.
     private static async Task RegisterPlaceholderAsync(

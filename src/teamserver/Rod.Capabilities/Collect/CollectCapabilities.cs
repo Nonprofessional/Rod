@@ -13,7 +13,7 @@ namespace Rod.Capabilities.Collect;
 /// <see cref="Cred"/> reads a credential, <see cref="Keylog"/> installs a
 /// resident input-capture hook (so it both reads input and persists on the
 /// target), and <see cref="Screenshot"/> reads what the target's display
-/// shows. Concrete behavior lives on the implant or arrives as an out-of-tree
+/// shows. Concrete behavior lives on the implant or arrives as a
 /// module that registers for a verb (architecture.md Sec 10.2/13): the
 /// reference implant implements the credential-store listings and the screen
 /// capture, and keylog stays contract-only.

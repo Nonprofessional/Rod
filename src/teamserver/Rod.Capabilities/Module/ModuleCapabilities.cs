@@ -7,7 +7,7 @@ namespace Rod.Capabilities.Module;
 /// runtime verb set with C-ABI capability modules delivered over the
 /// staged task arm. The verbs a module brings arrive under the standard
 /// categories (recon, lateral, persist, collect, exfil) or a paired
-/// out-of-tree descriptor; this family holds the loading machinery
+/// module descriptor; this family holds the loading machinery
 /// itself.
 /// </summary>
 /// <remarks>

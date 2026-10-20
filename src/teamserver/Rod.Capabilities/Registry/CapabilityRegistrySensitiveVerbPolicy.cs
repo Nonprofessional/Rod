@@ -15,7 +15,7 @@ namespace Rod.Capabilities.Registry;
 /// <remarks>
 /// <para>
 /// The judgment rides the descriptor a module already registers, so a new
-/// verb -- the framework's or an out-of-tree module's -- acquires its
+/// verb -- the framework's or a module's -- acquires its
 /// automation posture the moment it acquires its OPSEC metadata; no parallel
 /// list exists to drift. The attribute set below is the contract between
 /// this policy and module authors: declare one of these attributes and the

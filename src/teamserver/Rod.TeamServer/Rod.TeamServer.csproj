@@ -62,4 +62,30 @@
     <Exec Condition="'$(_RodNpmProbe)' == '0'" Command="npm run build" WorkingDirectory="Client" ConsoleToMSBuild="true" />
     <Message Condition="'$(_RodNpmProbe)' != '0'" Importance="high" Text="Operator UI bundle not found (wwwroot/index.html) and npm is not on PATH; the server will run API-only. Build it with npm ci &amp;&amp; npm run build in src/teamserver/Rod.TeamServer/Client." />
   </Target>
+  <!-- In-tree server-side modules (architecture.md Sec 15.1): the reference
+       modules under modules/ ship as loose assemblies beside the teamserver
+       binary and load through the same config-listed path
+       (Capabilities:Modules) an operator's external module takes. Nothing
+       compile-references them: that is the dogfood rule the architecture
+       tests enforce. This target therefore builds them out-of-band and
+       copies their outputs to where the loader resolves assemblies by name.
+       Publish gets the same copy into the publish directory, so an installed
+       teamserver carries its modules the same way a checkout's dotnet run
+       does. -->
+  <ItemGroup>
+    <RodServerModuleProject Include="$(MSBuildThisFileDirectory)..\..\..\modules\**\*.csproj" />
+  </ItemGroup>
+  <Target Name="DeployInTreeServerModules" AfterTargets="Build">
+    <!-- Restore first: the modules hang off no ProjectReference edge, so no
+         restore of this project covers them; each invocation re-restores
+         cheaply when nothing moved. -->
+    <MSBuild Projects="@(RodServerModuleProject)" Targets="Restore;Build" Properties="Configuration=$(Configuration)">
+      <Output TaskParameter="TargetOutputs" ItemName="RodServerModuleOutput" />
+    </MSBuild>
+    <Copy SourceFiles="@(RodServerModuleOutput)" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" />
+  </Target>
+  <Target Name="PublishInTreeServerModules" AfterTargets="Publish">
+    <Copy SourceFiles="@(RodServerModuleOutput)" DestinationFolder="$(PublishDir)" SkipUnchangedFiles="true" />
+  </Target>
+
 </Project>

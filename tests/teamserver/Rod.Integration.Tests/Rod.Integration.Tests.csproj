@@ -33,10 +33,10 @@
     <!-- Referenced so the operator layer (live bus + SSE endpoint) can be
          layered into the test host alongside the transport core. -->
     <ProjectReference Include="..\..\..\src\teamserver\Rod.Operators\Rod.Operators.csproj" />
-    <!-- Referenced so the tradecraft layer (capability registry wired onto
+    <!-- Referenced so the capabilities layer (capability registry wired onto
          the live task path) can be layered into the test host alongside the
          transport core. -->
-    <ProjectReference Include="..\..\..\src\teamserver\Rod.Tradecraft\Rod.Tradecraft.csproj" />
+    <ProjectReference Include="..\..\..\src\teamserver\Rod.Capabilities\Rod.Capabilities.csproj" />
     <!-- Referenced so the durable PostgreSQL store (Postgres-backed
          operators and engagements) can be layered into the test host and the
          durability acceptance test can resolve its DbContext directly. -->
@@ -45,6 +45,13 @@
          build-stamp endpoint (GET /build) lives in the executable because the
          stamp is a property of the binary, not of any layer. -->
     <ProjectReference Include="..\..\..\src\teamserver\Rod.TeamServer\Rod.TeamServer.csproj" />
+    <!-- The in-tree reference module (modules/hostenum), so its assembly
+         lands in the test bin directory: the stand-in for the deploy step
+         (the teamserver build copying module dlls beside the binary). The
+         in-tree module loading test resolves it through the config-listed
+         loader path exactly as production does; no test code touches its
+         types beyond that assertion. -->
+    <ProjectReference Include="..\..\..\modules\hostenum\Rod.Modules.Hostenum.csproj" />
   </ItemGroup>
 
 </Project>
