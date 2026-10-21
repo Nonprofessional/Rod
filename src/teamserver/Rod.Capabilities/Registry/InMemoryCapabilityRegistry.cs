@@ -43,6 +43,17 @@ public sealed class InMemoryCapabilityRegistry : ICapabilityRegistry
                 + string.Join(" ", schemaErrors));
         }
 
+        // The ATT&CK declaration rides the same rule (ADR-007): the matrix and
+        // the Navigator layer render these ids verbatim, so a malformed one is
+        // a registration failure too.
+        var techniqueErrors = module.Descriptor.ValidateTechniques();
+        if (techniqueErrors.Count > 0)
+        {
+            throw new InvalidOperationException(
+                $"capability module for '{module.Descriptor.Verb}' declares an invalid ATT&CK mapping: "
+                + string.Join(" ", techniqueErrors));
+        }
+
         var verb = module.Descriptor.Verb;
         _byVerb[verb] = module;
 

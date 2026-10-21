@@ -124,6 +124,13 @@ public static class RodCapabilitiesHost
         services.Replace(ServiceDescriptor.Singleton<IVerbOutputResolver>(sp =>
             new CapabilityRegistryVerbOutputResolver(sp.GetRequiredService<ICapabilityRegistry>())));
 
+        // And on the ATT&CK axis (ADR-007): the registry-backed resolver so a
+        // module's technique declaration replaces the kernel data file's entry
+        // for its verb, and the matrix, the catalog, and the report's
+        // Navigator layer all read the one resulting mapping.
+        services.Replace(ServiceDescriptor.Singleton<IVerbTechniqueResolver>(sp =>
+            new CapabilityRegistryVerbTechniqueResolver(sp.GetRequiredService<ICapabilityRegistry>())));
+
         return services;
     }
 

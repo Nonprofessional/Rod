@@ -33,4 +33,13 @@ public interface ICapabilityModule
     /// (last registration wins).
     /// </summary>
     CapabilityDescriptor Descriptor { get; }
+
+    /// <summary>
+    /// The module's published name as the coverage surfaces display it
+    /// (architecture.md Sec 15.3, ADR-007) -- the manifest name of a packaged
+    /// module, e.g. <c>hostenum</c>. Optional: a module that does not carry
+    /// one is shown under its type name. Display metadata only, never an
+    /// identity the loader or the trust chain consults.
+    /// </summary>
+    string? Name => null;
 }

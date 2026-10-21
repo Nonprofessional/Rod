@@ -24,6 +24,13 @@ namespace Rod.Modules.Hostenum;
 public sealed class HostEnumCapabilityModule : ICapabilityModule
 {
     /// <summary>
+    /// The manifest name, so the coverage matrix names the module behind
+    /// <c>recon.hostenum</c> as <c>hostenum</c> (architecture.md Sec 15.3,
+    /// ADR-007) -- the same name the registry and the lock file carry.
+    /// </summary>
+    public string? Name => "hostenum";
+
+    /// <summary>
     /// The verb string both halves declare independently: the implant plugin
     /// registers <c>recon.hostenum</c> against the plugin SDK, and this
     /// descriptor registers the same verb with the server-side registry. The
@@ -31,7 +38,11 @@ public sealed class HostEnumCapabilityModule : ICapabilityModule
     /// (architecture.md Sec 10). The output declaration is the module's half
     /// of the contract trilogy (architecture.md Sec 15.2): the plugin prints
     /// the recon JSON-lines grammar, so the topology panel picks the findings
-    /// up -- this module earns its panel through metadata alone.
+    /// up -- this module earns its panel through metadata alone. The
+    /// techniques declaration is the module's half of the ATT&CK mapping
+    /// (ADR-007): it replaces the kernel file's entry for the verb, and the
+    /// coverage matrix, the catalog, and the report's Navigator layer read it
+    /// from there -- one declaration, every face.
     /// </summary>
     public CapabilityDescriptor Descriptor { get; } = CapabilityDescriptor.Of(
         "recon.hostenum",
@@ -39,5 +50,6 @@ public sealed class HostEnumCapabilityModule : ICapabilityModule
         "1.1",
         output: new VerbOutput(
             VerbOutputKind.Enumeration,
-            "One JSON finding per line: host, os, arch, user, path."));
+            "One JSON finding per line: host, os, arch, user, path."),
+        techniques: ["T1082"]);
 }

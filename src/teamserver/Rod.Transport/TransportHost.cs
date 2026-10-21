@@ -358,6 +358,13 @@ public static class TransportHost
         // layer keep the built-in floor.
         services.AddSingleton<IVerbOutputResolver, DefaultVerbOutputResolver>();
 
+        // ATT&CK techniques -> the static-fallback resolver over the kernel's
+        // data file (ADR-007), so the report's Navigator layer resolves the
+        // full framework mapping even in hosts that never load a module.
+        // AddRodCapabilities replaces this with the registry-backed resolver
+        // so module declarations override the file per verb.
+        services.AddSingleton<IVerbTechniqueResolver, DefaultVerbTechniqueResolver>();
+
         services.AddSingleton(TimeProvider.System);
         services.AddSingleton<EngagementService>();
         services.AddSingleton<EnrollmentService>();

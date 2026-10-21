@@ -28,14 +28,18 @@ public sealed record CapabilityDescriptor(
     string Version,
     IReadOnlyDictionary<string, string> Attributes,
     IReadOnlyList<VerbParameter>? Parameters = null,
-    VerbOutput? Output = null)
+    VerbOutput? Output = null,
+    IReadOnlyList<string>? Techniques = null)
 {
     /// <summary>
     /// Builds a descriptor. Optional <paramref name="parameters"/> and
     /// <paramref name="output"/> carry the contract-trilogy metadata; a
     /// descriptor without them renders the generic raw-arguments form and
     /// plain-text output, which is exactly the honest fallback for a verb
-    /// nobody has described yet.
+    /// nobody has described yet. Optional <paramref name="techniques"/> is the
+    /// module's ATT&CK declaration (ADR-007): when set it replaces the kernel
+    /// mapping's whole entry for the verb -- the same authority a registration
+    /// carries everywhere else -- and when null the kernel entry stands.
     /// </summary>
     public static CapabilityDescriptor Of(
         string verb,
@@ -43,14 +47,16 @@ public sealed record CapabilityDescriptor(
         string version,
         IReadOnlyDictionary<string, string>? attributes = null,
         IReadOnlyList<VerbParameter>? parameters = null,
-        VerbOutput? output = null)
+        VerbOutput? output = null,
+        IReadOnlyList<string>? techniques = null)
         => new(
             verb,
             category,
             version,
             attributes ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
             parameters,
-            output);
+            output,
+            techniques);
 
     /// <summary>
     /// Validates the parameter schema's own invariants, reported as
@@ -92,5 +98,51 @@ public sealed record CapabilityDescriptor(
         }
 
         return errors;
+    }
+
+    /// <summary>
+    /// Validates the ATT&CK declaration's own shape: every id a well-formed
+    /// <c>T####</c> or <c>T####.###</c>, no duplicates, and not an empty list
+    /// (an undeclared mapping is <see langword="null"/>, not empty).
+    /// Registration refuses a descriptor that fails this -- the coverage
+    /// matrix and the Navigator layer both render these ids verbatim.
+    /// </summary>
+    public IReadOnlyList<string> ValidateTechniques()
+    {
+        var errors = new List<string>();
+        if (Techniques is null)
+            return errors;
+
+        if (Techniques.Count == 0)
+        {
+            errors.Add("techniques is empty; omit it to let the kernel mapping stand.");
+            return errors;
+        }
+
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        for (var i = 0; i < Techniques.Count; i++)
+        {
+            var id = Techniques[i];
+            if (!IsTechniqueId(id))
+                errors.Add($"techniques[{i}] '{id}' is not an ATT&CK technique id (T#### or T####.###).");
+            if (!seen.Add(id))
+                errors.Add($"techniques carries '{id}' twice.");
+        }
+
+        return errors;
+    }
+
+    internal static bool IsTechniqueId(string id)
+        => id is { Length: 5 or 9 }
+            && id[0] == 'T'
+            && Digits(id.Substring(1, 4))
+            && (id.Length == 5 || (id[5] == '.' && Digits(id.Substring(6, 3))));
+
+    private static bool Digits(string s)
+    {
+        foreach (var c in s)
+            if (!char.IsDigit(c))
+                return false;
+        return true;
     }
 }
