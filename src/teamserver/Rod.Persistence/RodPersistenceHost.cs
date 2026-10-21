@@ -119,6 +119,16 @@ public static class RodPersistenceHost
         // command sequence survives a restart for every operator on the
         // engagement.
         services.Replace(ServiceDescriptor.Singleton<CoreState.Snippets.ITaskSnippetStore, Stores.PostgresTaskSnippetStore>());
+        // Engagement-scoped collaboration surfaces (architecture.md
+        // Sec 15.3, ADR-005): the durable twins so comments, chat, and
+        // harvested-credential rows survive a restart -- mutable process
+        // knowledge with its own tables, never audit-chain content. The
+        // search swap moves the query from the in-memory sweep to the
+        // tsvector + GIN indexes the collaboration migration builds.
+        services.Replace(ServiceDescriptor.Singleton<CoreState.Collaboration.ICommentStore, Stores.PostgresCommentStore>());
+        services.Replace(ServiceDescriptor.Singleton<CoreState.Collaboration.IChatStore, Stores.PostgresChatStore>());
+        services.Replace(ServiceDescriptor.Singleton<CoreState.Collaboration.ICredentialStore, Stores.PostgresCredentialStore>());
+        services.Replace(ServiceDescriptor.Singleton<CoreState.Collaboration.IEngagementSearch, Stores.PostgresEngagementSearch>());
         // Engagement-scoped delivery campaigns (architecture.md Sec 11.5):
         // the durable twin so a launched campaign's recipient arcs and
         // evidence stamps survive a restart -- the attribution binding on

@@ -50,4 +50,13 @@ internal static class IdConverters
 
     public static ValueConverter<Rod.CoreState.Operators.OperatorApiTokenId, Guid> OperatorApiTokenId { get; } =
         new(id => id.Value, value => new Rod.CoreState.Operators.OperatorApiTokenId(value));
+
+    public static ValueConverter<Rod.CoreState.CommentId, Guid> CommentId { get; } =
+        new(id => id.Value, value => new Rod.CoreState.CommentId(value));
+
+    public static ValueConverter<Rod.CoreState.ChatChannelId, Guid> ChatChannelId { get; } =
+        new(id => id.Value, value => new Rod.CoreState.ChatChannelId(value));
+
+    public static ValueConverter<Rod.CoreState.CredentialId, Guid> CredentialId { get; } =
+        new(id => id.Value, value => new Rod.CoreState.CredentialId(value));
 }

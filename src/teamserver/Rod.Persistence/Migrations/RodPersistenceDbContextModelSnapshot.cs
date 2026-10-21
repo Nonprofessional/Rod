@@ -924,6 +924,185 @@ namespace Rod.Persistence.Migrations
                     b.ToTable("campaign_recipients", (string)null);
                 });
 
+            modelBuilder.Entity("Rod.Persistence.Configurations.StoredChatChannel", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("chat_channel_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<Guid>("EngagementId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("engagement_id");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("name");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EngagementId")
+                        .HasDatabaseName("ix_chat_channels_engagement_id");
+
+                    b.ToTable("chat_channels", (string)null);
+                });
+
+            modelBuilder.Entity("Rod.Persistence.Configurations.StoredChatMessage", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("chat_message_id");
+
+                    b.Property<Guid>("AuthorId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("author_id");
+
+                    b.Property<string>("Body")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("body");
+
+                    b.Property<Guid>("ChannelId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("chat_channel_id");
+
+                    b.Property<Guid>("EngagementId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("engagement_id");
+
+                    b.Property<DateTimeOffset>("SentAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("sent_at");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ChannelId", "SentAt")
+                        .HasDatabaseName("ix_chat_messages_channel_sent_at");
+
+                    b.HasIndex("EngagementId", "SentAt")
+                        .HasDatabaseName("ix_chat_messages_engagement_sent_at");
+
+                    b.ToTable("chat_messages", (string)null);
+                });
+
+            modelBuilder.Entity("Rod.Persistence.Configurations.StoredComment", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("comment_id");
+
+                    b.Property<Guid>("AuthorId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("author_id");
+
+                    b.Property<string>("Body")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("body");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<DateTimeOffset?>("EditedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("edited_at");
+
+                    b.Property<Guid>("EngagementId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("engagement_id");
+
+                    b.Property<Guid>("SubjectId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("subject_id");
+
+                    b.Property<int>("SubjectKind")
+                        .HasColumnType("integer")
+                        .HasColumnName("subject_kind");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EngagementId")
+                        .HasDatabaseName("ix_comments_engagement_id");
+
+                    b.HasIndex("EngagementId", "SubjectKind", "SubjectId")
+                        .HasDatabaseName("ix_comments_engagement_subject");
+
+                    b.ToTable("comments", (string)null);
+                });
+
+            modelBuilder.Entity("Rod.Persistence.Configurations.StoredCredential", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("credential_id");
+
+                    b.Property<DateTimeOffset>("CapturedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("captured_at");
+
+                    b.Property<Guid>("EngagementId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("engagement_id");
+
+                    b.Property<string>("Host")
+                        .HasColumnType("text")
+                        .HasColumnName("host");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("kind");
+
+                    b.Property<string>("Note")
+                        .HasColumnType("text")
+                        .HasColumnName("note");
+
+                    b.Property<string>("Principal")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("principal");
+
+                    b.Property<string>("Secret")
+                        .HasColumnType("text")
+                        .HasColumnName("secret");
+
+                    b.Property<string>("Source")
+                        .HasColumnType("text")
+                        .HasColumnName("source");
+
+                    b.Property<Guid>("SourceImplantId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("source_implant_id");
+
+                    b.Property<Guid>("SourceTaskId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("source_task_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EngagementId")
+                        .HasDatabaseName("ix_credentials_engagement_id");
+
+                    b.HasIndex("EngagementId", "SourceTaskId")
+                        .HasDatabaseName("ix_credentials_engagement_source_task");
+
+                    b.ToTable("credentials", (string)null);
+                });
+
             modelBuilder.Entity("Rod.Persistence.Configurations.StoredDeployToken", b =>
                 {
                     b.Property<Guid>("Id")
