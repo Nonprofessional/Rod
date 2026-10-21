@@ -51,6 +51,22 @@ public sealed record OpsecMetadata(bool LandsOnDisk, string? Notes);
 public sealed record PackageRules(IReadOnlyList<string> Include, IReadOnlyList<string> Exclude);
 
 /// <summary>
+/// One verb row of the manifest's version matrix (architecture.md Sec 15.2,
+/// the contract trilogy's third contract): the verb this module registers,
+/// its module-scoped version, and an optional per-verb teamserver floor. A
+/// verb row is what lets a module iterate one verb without republishing the
+/// whole package's semantics -- the row version is the iteration record the
+/// registry catalog reads and install checks.
+/// </summary>
+public sealed record VerbDeclaration(string Name, SemVer Version, SemVer? TeamserverMin)
+{
+    public sealed override string ToString()
+        => TeamserverMin is { } floor
+            ? $"{Name}@{Version} (teamserver >= {floor})"
+            : $"{Name}@{Version}";
+}
+
+/// <summary>
 /// The parsed <c>rod-module.toml</c> (ADR-009): the self-describing module
 /// contract shared by all three entry kinds. This model is the authority for
 /// the canonical form that gets signed -- every field it carries participates
@@ -68,10 +84,16 @@ public sealed record ModuleManifest
     public IReadOnlyList<TargetMatrix> Targets { get; init; } = [];
     public required OpsecMetadata Opsec { get; init; }
     public IReadOnlyList<string> Techniques { get; init; } = [];
+    public IReadOnlyList<VerbDeclaration> Verbs { get; init; } = [];
     public PackageRules? Package { get; init; }
 
     private static readonly Regex NamePattern = new("^[a-z0-9][a-z0-9-]{0,63}$", RegexOptions.Compiled);
     private static readonly Regex TechniquePattern = new("^T\\d{4}(\\.\\d{3})?$", RegexOptions.Compiled);
+
+    // The verb grammar Sec 10 names: namespace.action, each segment lowercase
+    // kebab with underscores allowed (the reference set carries
+    // lateral.exec_remote), matching what the plugin loader admits.
+    private static readonly Regex VerbPattern = new("^[a-z0-9][a-z0-9_-]*\\.[a-z0-9][a-z0-9_-]*$", RegexOptions.Compiled);
 
     /// <summary>The name rule shared by the manifest validator and the
     /// scaffold: kebab-case, single segment, at most 64 characters.</summary>
@@ -115,6 +137,16 @@ public sealed record ModuleManifest
         {
             if (!TechniquePattern.IsMatch(Techniques[i]))
                 errors.Add($"attack.techniques[{i}] '{Techniques[i]}' is not an ATT&CK technique id (T#### or T####.###).");
+        }
+
+        var seenVerbs = new HashSet<string>(StringComparer.Ordinal);
+        for (var i = 0; i < Verbs.Count; i++)
+        {
+            var verb = Verbs[i];
+            if (!VerbPattern.IsMatch(verb.Name))
+                errors.Add($"verbs[{i}] '{verb.Name}' is not a namespaced verb (namespace.action, lowercase segments).");
+            else if (!seenVerbs.Add(verb.Name))
+                errors.Add($"verbs[{i}] '{verb.Name}' is declared twice.");
         }
 
         return errors;

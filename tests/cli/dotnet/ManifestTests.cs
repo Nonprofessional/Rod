@@ -54,6 +54,131 @@ public class ManifestTests
     }
 
     [Fact]
+    public void VerbRows_ParseWithVersionsAndFloors()
+    {
+        // The version matrix (architecture.md Sec 15.2's third contract):
+        // one row per verb, its module-scoped version, an optional per-verb
+        // teamserver floor.
+        var toml = Valid + """
+
+            [[verbs]]
+            name = "demo.run"
+            version = "1.0.0"
+
+            [[verbs]]
+            name = "demo.sweep"
+            version = "0.3.1"
+            teamserver = "1.4.0"
+            """;
+        var errors = ManifestToml.Load(toml, out var manifest);
+
+        Assert.Empty(errors);
+        Assert.NotNull(manifest);
+        Assert.Equal(2, manifest!.Verbs.Count);
+        Assert.Equal(new VerbDeclaration("demo.run", new SemVer(1, 0, 0, null), null), manifest.Verbs[0]);
+        Assert.Equal(new VerbDeclaration("demo.sweep", new SemVer(0, 3, 1, null), new SemVer(1, 4, 0, null)), manifest.Verbs[1]);
+    }
+
+    [Fact]
+    public void MalformedVerbRows_AreEachNamed()
+    {
+        // Row-level parse failures (a missing name, an unparseable version)
+        // name their own row and stop the load.
+        var toml = Valid + """
+
+            [[verbs]]
+            name = "demo.run"
+            version = "not-semver"
+
+            [[verbs]]
+            version = "1.0.0"
+            """;
+        var errors = ManifestToml.Load(toml, out var manifest);
+
+        Assert.Null(manifest);
+        Assert.Contains(errors, e => e.Contains("needs a SemVer version"));
+        Assert.Contains(errors, e => e.Contains("verbs[1].name is missing"));
+    }
+
+    [Fact]
+    public void VerbRowsOutsideTheNamespaceGrammar_AreNamedByValidation()
+    {
+        // The namespace grammar (namespace.action, lowercase segments) is a
+        // field-level rule the validator names once the rows themselves
+        // parse -- the same two-stage reporting every other manifest field
+        // follows.
+        var toml = Valid + """
+
+            [[verbs]]
+            name = "NotNamespaced"
+            version = "1.0.0"
+            """;
+        var errors = ManifestToml.Load(toml, out var manifest);
+
+        Assert.NotNull(manifest);
+        Assert.Contains(errors, e => e.Contains("'NotNamespaced' is not a namespaced verb"));
+    }
+
+    [Fact]
+    public void DuplicateVerbRows_AreRefused()
+    {
+        var toml = Valid + """
+
+            [[verbs]]
+            name = "demo.run"
+            version = "1.0.0"
+
+            [[verbs]]
+            name = "demo.run"
+            version = "1.1.0"
+            """;
+        var errors = ManifestToml.Load(toml, out var manifest);
+
+        Assert.NotNull(manifest);
+        Assert.Contains(errors, e => e.Contains("'demo.run' is declared twice"));
+    }
+
+    [Fact]
+    public void CanonicalForm_CoversTheVerbRows()
+    {
+        // The verb rows ride the signed canonical form: a tampered verb
+        // version or floor breaks the signature exactly like a tampered
+        // payload byte.
+        ManifestToml.Load(Valid + """
+
+            [[verbs]]
+            name = "demo.sweep"
+            version = "0.3.1"
+            teamserver = "1.4.0"
+
+            [[verbs]]
+            name = "demo.run"
+            version = "1.0.0"
+            """, out var manifest);
+        var canonical = CanonicalForm.Build(manifest!, new Dictionary<string, string>());
+
+        Assert.Contains("verb/demo.run=1.0.0\n", canonical);
+        // The last verb line carries no trailing newline, like the canonical
+        // form's own last line.
+        Assert.EndsWith("verb/demo.sweep=0.3.1 teamserver=1.4.0", canonical);
+
+        // The rows are name-sorted regardless of declaration order, so the
+        // form is a function of the manifest's fields, not its layout.
+        ManifestToml.Load(Valid + """
+
+            [[verbs]]
+            name = "demo.run"
+            version = "1.0.0"
+
+            [[verbs]]
+            name = "demo.sweep"
+            version = "0.3.1"
+            teamserver = "1.4.0"
+            """, out var reordered);
+        Assert.Equal(canonical, CanonicalForm.Build(reordered!, new Dictionary<string, string>()));
+    }
+
+    [Fact]
     public void MissingRequiredFields_AreEachNamed()
     {
         var errors = ManifestToml.Load("[module]\nname = \"x\"\n", out var manifest);

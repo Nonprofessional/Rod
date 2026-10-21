@@ -244,6 +244,74 @@ public class EndToEndTests
         Assert.DoesNotContain("cred-sweep", CliRun.Run("mod", "search", "nonexistent-term", "--registry", registry).Output);
     }
 
+    [Fact]
+    public void TheVersionMatrix_RidesScaffoldPublishInstallAndVerify()
+    {
+        // The contract trilogy's third contract (architecture.md Sec 15.2):
+        // the scaffold carries verb rows, the registry entry mirrors them,
+        // info reads them back, install checks their per-verb floors, and
+        // verify's re-derived canonical form covers them -- a tampered verb
+        // version reads as a trust failure exactly like a tampered payload
+        // byte.
+        using var root = new TempRoot();
+        var module = root["demo-sweep"];
+        var registry = root["registry"];
+        var install = root["install"];
+
+        var init = CliRun.Run("mod", "init", "demo-sweep", "--path", module);
+        Assert.True(init.Code == 0, init.Error);
+        var scaffolded = File.ReadAllText(Path.Combine(module, "rod-module.toml"));
+        Assert.Contains("[[verbs]]", scaffolded);
+        Assert.Contains("name = \"demo-sweep.run\"", scaffolded);
+
+        Author(module, "1.0.0", "payload-v1");
+        // Author's version rewrite also retargets the scaffolded verb row, so
+        // the module ships one row at 1.0.0; the second verb arrives with its
+        // own version and a per-verb floor.
+        var toml = File.ReadAllText(Path.Combine(module, "rod-module.toml")) + """
+            [[verbs]]
+            name = "demo-sweep.deep"
+            version = "0.2.0"
+            teamserver = "1.4.0"
+            """;
+        File.WriteAllText(Path.Combine(module, "rod-module.toml"), toml);
+
+        var publish = CliRun.Run("mod", "publish", "--path", module, "--registry", registry);
+        Assert.True(publish.Code == 0, publish.Error);
+
+        // The catalog answers verb questions: search finds the module by a
+        // verb name, info lists the rows with their floors.
+        Assert.Contains("demo-sweep", CliRun.Run("mod", "search", "demo-sweep.deep", "--registry", registry).Output);
+        var info = CliRun.Run("mod", "info", "demo-sweep", "--registry", registry);
+        Assert.Contains("demo-sweep.deep@0.2.0 (teamserver >= 1.4.0)", info.Output);
+        Assert.Contains("demo-sweep.run@1.0.0", info.Output);
+
+        // The per-verb floor refuses an install the module-wide floor would
+        // have admitted, naming the verb that needs the newer teamserver.
+        var refused = CliRun.Run("mod", "install", "demo-sweep", "--registry", registry,
+            "--dir", install, "--teamserver", "1.2.0");
+        Assert.Equal(RodCli.ExitUsage, refused.Code);
+        Assert.Contains("demo-sweep.deep@0.2.0 needs teamserver >= 1.4.0", refused.Error);
+
+        // On a teamserver that satisfies every floor, the install lands and
+        // verify re-proves the tree -- including the verb rows.
+        var installed = CliRun.Run("mod", "install", "demo-sweep", "--registry", registry,
+            "--dir", install, "--teamserver", "1.5.0");
+        Assert.True(installed.Code == 0, installed.Error);
+        var verify = CliRun.Run("mod", "verify", "--dir", install);
+        Assert.True(verify.Code == 0, verify.Error);
+        Assert.Contains("PASS demo-sweep@1.0.0", verify.Output);
+
+        // A tampered verb version in the installed tree breaks the canonical
+        // form and therefore the signature: exit 2, the trust failure.
+        var installedManifest = Path.Combine(install, "modules", "demo-sweep", "1.0.0", "rod-module.toml");
+        File.WriteAllText(installedManifest,
+            File.ReadAllText(installedManifest).Replace("demo-sweep.deep\"\nversion = \"0.2.0\"", "demo-sweep.deep\"\nversion = \"9.9.9\""));
+        var tampered = CliRun.Run("mod", "verify", "--dir", install);
+        Assert.Equal(RodCli.ExitTrustFailure, tampered.Code);
+        Assert.Contains("FAIL demo-sweep@1.0.0", tampered.Output);
+    }
+
     private static void Author(string module, string version, string? payload, string teamserver = "1.0.0", string? description = null)
     {
         // Regex edits rather than Replace(): the scaffold fills version and

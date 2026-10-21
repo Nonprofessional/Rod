@@ -46,6 +46,19 @@ public static class CanonicalForm
                 .Distinct(StringComparer.Ordinal)
                 .OrderBy(t => t, StringComparer.Ordinal)));
 
+        // The verb version matrix rides one line per verb, name-sorted, with
+        // a per-verb floor folded in -- so a tampered verb version or floor
+        // breaks the signature exactly like a tampered OPSEC mark.
+        foreach (var verb in manifest.Verbs
+                     .GroupBy(v => v.Name, StringComparer.Ordinal)
+                     .Select(g => g.OrderByDescending(v => v.Version).First())
+                     .OrderBy(v => v.Name, StringComparer.Ordinal))
+        {
+            Line("verb/" + verb.Name, verb.TeamserverMin is { } floor
+                ? $"{verb.Version} teamserver={floor}"
+                : verb.Version.ToString());
+        }
+
         // Payload paths use '/' separators and the 'file/' prefix so a
         // payload named like a field key can never collide with one.
         foreach (var path in payloadDigests.Keys.OrderBy(p => p, StringComparer.Ordinal))

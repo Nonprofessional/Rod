@@ -97,6 +97,20 @@ public static class InstallCommand
                     $"vs index {name}@{version.Version} ({entry.Entry}).", RodCli.ExitTrustFailure);
             }
 
+            // The verb rows' own floors (the version matrix's third contract):
+            // a verb that needs a newer teamserver than the deployment runs
+            // names itself at install, so a mixed module still lands only
+            // when every verb in it can run.
+            foreach (var verb in manifest.Verbs)
+            {
+                if (verb.TeamserverMin is { } verbFloor && verbFloor.CompareTo(teamserver) > 0)
+                {
+                    throw new CliError(
+                        $"{name}@{version.Version} verb {verb.Name}@{verb.Version} needs teamserver >= {verbFloor}, running {teamserver}. " +
+                        "Pass --teamserver <version> if the deployment is newer than this CLI.");
+                }
+            }
+
             var canonical = CanonicalForm.Build(manifest, CanonicalForm.DigestPayload(extractDirectory));
             if (!Ed25519.Verify(Ed25519.DecodeKey(version.PublicKey), Convert.FromBase64String(version.Signature),
                     System.Text.Encoding.UTF8.GetBytes(canonical)))

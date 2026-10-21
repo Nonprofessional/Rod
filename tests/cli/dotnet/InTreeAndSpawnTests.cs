@@ -38,6 +38,12 @@ public class HostenumModuleTests
         Assert.NotEmpty(manifest.Techniques);
         Assert.NotEmpty(manifest.Targets);
         Assert.NotEmpty(manifest.Package!.Include);
+
+        // The version matrix rides the reference module like any external
+        // one: the verb it registers carries its row.
+        var verb = Assert.Single(manifest.Verbs);
+        Assert.Equal("recon.hostenum", verb.Name);
+        Assert.Equal(manifest.Version, verb.Version);
     }
 
     [Fact]
@@ -60,17 +66,19 @@ public class HostenumModuleTests
             "--out", root["dist"]);
         Assert.True(publish.Code == 0, publish.Error);
 
+        var (manifest, _) = ManifestToml.LoadFile(Path.Combine(module, ManifestToml.FileName));
+        var version = manifest.Version.ToString();
         var installed = CliRun.Run("mod", "install", "hostenum", "--registry", registry,
             "--dir", install, "--teamserver", "1.0.0");
         Assert.True(installed.Code == 0, installed.Error);
 
-        var landed = Path.Combine(install, "modules", "hostenum", "1.0.0");
+        var landed = Path.Combine(install, "modules", "hostenum", version);
         Assert.True(File.Exists(Path.Combine(landed, "HostEnumCapabilityModule.cs")));
         Assert.False(Directory.Exists(Path.Combine(landed, "bin")));
 
         var verify = CliRun.Run("mod", "verify", "--dir", install);
         Assert.True(verify.Code == 0, verify.Error);
-        Assert.Contains("PASS hostenum@1.0.0", verify.Output);
+        Assert.Contains($"PASS hostenum@{version}", verify.Output);
     }
 }
 

@@ -61,7 +61,8 @@ public static class SearchCommand
     {
         var fields = new List<string> { entry.Name }
             .Concat(new[] { entry.Description ?? "", entry.License })
-            .Concat(entry.Attack);
+            .Concat(entry.Attack)
+            .Concat(entry.Versions.SelectMany(v => v.Verbs ?? []).Select(v => v.Name));
         return fields.Any(field => field.Contains(term, StringComparison.OrdinalIgnoreCase));
     }
 }
@@ -115,6 +116,14 @@ public static class InfoCommand
         output.WriteLine($"  min teamserver: {version.Compatibility.Teamserver}");
         foreach (var target in version.Compatibility.Targets)
             output.WriteLine($"    {target.ImplantClass}/{target.Platform}/{target.Arch}");
+        if ((version.Verbs?.Count ?? 0) > 0)
+        {
+            output.WriteLine("  verbs:");
+            foreach (var verb in version.Verbs!)
+                output.WriteLine(verb.Teamserver is null
+                    ? $"    {verb.Name}@{verb.Version}"
+                    : $"    {verb.Name}@{verb.Version} (teamserver >= {verb.Teamserver})");
+        }
         output.WriteLine($"  signed by: {version.Fingerprint}");
         output.WriteLine($"  package:   {version.Url}");
         output.WriteLine($"  sha256:    {version.Sha256}");

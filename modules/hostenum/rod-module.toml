@@ -5,13 +5,19 @@
 
 [module]
 name = "hostenum"
-version = "1.0.0"
+version = "1.1.0"
 entry = "server"
 license = "Apache-2.0"
 description = "Host enumeration reference module: server-side registration for recon.hostenum, execution in the implant-side plugin at src/implant/rust/modules/hostenum."
 
 [compatibility]
 teamserver = "1.0.0"
+
+# The verb version matrix (architecture.md Sec 15.2): the verb iterates under
+# its own module-scoped version, independently of the package version.
+[[verbs]]
+name = "recon.hostenum"
+version = "1.1.0"
 
 [[compatibility.targets]]
 implant-class = "implant"

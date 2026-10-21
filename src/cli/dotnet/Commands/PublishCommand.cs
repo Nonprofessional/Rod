@@ -87,7 +87,10 @@ public static class PublishCommand
                 manifest.TeamserverMin.ToString(),
                 manifest.Targets
                     .Select(t => new RegistryVersion.TargetInfo(t.ImplantClass, t.Platform, t.Arch))
-                    .ToList()));
+                    .ToList()),
+            Verbs: manifest.Verbs
+                .Select(v => new RegistryVersion.VerbInfo(v.Name, v.Version.ToString(), v.TeamserverMin?.ToString()))
+                .ToList());
 
         var fragmentPath = Path.Combine(distDirectory, $"{manifest.Name}-{manifest.Version}.json");
         File.WriteAllText(fragmentPath, RegistryJson.SaveVersion(version));

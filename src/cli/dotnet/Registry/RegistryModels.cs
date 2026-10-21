@@ -36,13 +36,19 @@ public sealed record RegistryVersion(
     string Signature,
     string PublicKey,
     string Fingerprint,
-    RegistryVersion.CompatibilityInfo Compatibility)
+    RegistryVersion.CompatibilityInfo Compatibility,
+    IReadOnlyList<RegistryVersion.VerbInfo>? Verbs = null)
 {
     public sealed record CompatibilityInfo(
         string Teamserver,
         IReadOnlyList<TargetInfo> Targets);
 
     public sealed record TargetInfo(string ImplantClass, string Platform, string Arch);
+
+    /// <summary>One verb row of the version matrix (architecture.md Sec 15.2's
+    /// third contract): the verb, its module-scoped version, and its optional
+    /// per-verb teamserver floor.</summary>
+    public sealed record VerbInfo(string Name, string Version, string? Teamserver);
 }
 
 public static class RegistryJson

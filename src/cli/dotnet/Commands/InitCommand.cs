@@ -104,13 +104,25 @@ public static class InitCommand
                     using Rod.Capabilities.Modules;
 
                     /// <summary>The server-side half of {{name}}: the gate and catalog
-                    /// registration for one verb. The execution half lives on the implant.</summary>
+                    /// registration for one verb. The execution half lives on the implant.
+                    /// The parameter schema and the output declaration are the contract
+                    /// trilogy (architecture.md Sec 15.2): the operator UI renders the
+                    /// task form from the schema and routes the result to its panel from
+                    /// the output kind -- the module earns its UI through metadata alone.</summary>
                     public sealed class {{pascal}}Module : ICapabilityModule
                     {
                         public CapabilityDescriptor Descriptor { get; } = CapabilityDescriptor.Of(
                             "{{name}}.run",
                             CapabilityCategory.Core,
-                            "1.0");
+                            "0.1",
+                            parameters: new[]
+                            {
+                                // One VerbParameter per argument field, in the order the
+                                // verb's own grammar joins them (space-separated; the last
+                                // parameter may carry the raw remainder).
+                                new VerbParameter("target", "Target", VerbParameterKind.String, Required: true),
+                            },
+                            output: new VerbOutput(VerbOutputKind.Text));
                     }
                     """);
                     break;

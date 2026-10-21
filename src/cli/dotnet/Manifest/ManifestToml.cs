@@ -37,6 +37,9 @@ public static class ManifestToml
 
         [TomlPropertyName("package")]
         public PackageSection? Package { get; set; }
+
+        [TomlPropertyName("verbs")]
+        public List<VerbRow>? Verbs { get; set; }
     }
 
     private sealed class ModuleSection
@@ -77,6 +80,13 @@ public static class ManifestToml
     {
         [TomlPropertyName("include")] public List<string>? Include { get; set; }
         [TomlPropertyName("exclude")] public List<string>? Exclude { get; set; }
+    }
+
+    private sealed class VerbRow
+    {
+        [TomlPropertyName("name")] public string? Name { get; set; }
+        [TomlPropertyName("version")] public string? Version { get; set; }
+        [TomlPropertyName("teamserver")] public string? Teamserver { get; set; }
     }
 
     /// <summary>Parses manifest text; syntax errors and semantic errors come
@@ -145,6 +155,41 @@ public static class ManifestToml
         if (include is { Count: > 0 } || exclude is { Count: > 0 })
             package = new PackageRules(include ?? [], exclude ?? []);
 
+        // The verb rows (the version matrix): each carries its own version
+        // and an optional per-verb teamserver floor. A row that fails to
+        // parse names its own error rather than failing the whole load.
+        var verbs = new List<VerbDeclaration>();
+        for (var i = 0; i < (document.Verbs?.Count ?? 0); i++)
+        {
+            var row = document.Verbs![i];
+            var verbName = TrimOrNull(row.Name);
+            if (verbName is null)
+            {
+                errors.Add($"verbs[{i}].name is missing (namespace.action).");
+                continue;
+            }
+
+            if (!SemVer.TryParse(TrimOrNull(row.Version) ?? "", out var verbVersion))
+            {
+                errors.Add($"verbs[{i}] '{verbName}' needs a SemVer version.");
+                continue;
+            }
+
+            SemVer? verbFloor = null;
+            var floorText = TrimOrNull(row.Teamserver);
+            if (floorText is not null)
+            {
+                if (!SemVer.TryParse(floorText, out var parsedFloor))
+                {
+                    errors.Add($"verbs[{i}] '{verbName}' carries an unparseable teamserver floor '{floorText}'.");
+                    continue;
+                }
+                verbFloor = parsedFloor;
+            }
+
+            verbs.Add(new VerbDeclaration(verbName, verbVersion, verbFloor));
+        }
+
         if (errors.Count > 0)
             return errors;
 
@@ -162,6 +207,7 @@ public static class ManifestToml
             // any error returns before the manifest is built.
             Opsec = new OpsecMetadata(landsOnDisk!.Value, TrimOrNull(opsec?.Notes)),
             Techniques = techniques,
+            Verbs = verbs,
             Package = package,
         };
         errors.AddRange(manifest.Validate());
@@ -208,6 +254,15 @@ public static class ManifestToml
         sb.AppendLine();
         sb.AppendLine("[attack]");
         sb.AppendLine("techniques = []  # ATT&CK ids this module covers, e.g. [\"T1082\"]");
+        sb.AppendLine();
+        sb.AppendLine("# The verb version matrix (one row per verb the module registers): the");
+        sb.AppendLine("# module-scoped version each verb iterates under, with an optional");
+        sb.AppendLine("# per-verb teamserver floor. The rows ride the signed canonical form.");
+        sb.AppendLine();
+        sb.AppendLine("[[verbs]]");
+        sb.AppendLine($"name = \"{name}.run\"");
+        sb.AppendLine("version = \"0.1.0\"");
+        sb.AppendLine("# teamserver = \"1.0.0\"  # optional per-verb floor");
         sb.AppendLine();
         sb.AppendLine("# Optional packaging rules; uncomment to narrow what publish packs.");
         sb.AppendLine("# [package]");
