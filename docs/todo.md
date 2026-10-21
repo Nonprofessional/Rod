@@ -40,7 +40,7 @@ so the queue moved up by the file's own mechanics.
 - **Resumable file transfer** (Sec 15.3, ADR-010). _AC:_ an interrupted
   transfer resumes to matching both-side hashes; the DNS degraded path
   passes.
-- **MCP read-write + Go SDK** (Sec 15.3, ADR-006). _AC:_ writes land in
+- **MCP read-write** (Sec 15.3, ADR-006). _AC:_ writes land in
   the audit chain; token scopes are enforced.
 - **Built-in diagnostics and stats page** (Sec 15.3, ADR-008). _AC:_
   ships with no new external dependency.
@@ -91,6 +91,11 @@ Parked on P1; P1 shipped is the reopen condition.
 ## Backlog
 
 Second wave -- take up once real users exist:
+
+- **Go SDK** -- the versioned operator API's Go face (Sec 15.3, ADR-006):
+  a thin client cut against the committed OpenAPI contract. Split out of
+  the MCP item: nothing in-tree or queued consumes it, so it waits for a
+  real user to name the need.
 
 - **Purple-team mode** -- verb to technique to expected-detection mapping;
   the report gains a blue-team checklist (reporting domain).
