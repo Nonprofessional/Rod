@@ -71,9 +71,16 @@ def main() -> int:
               file=sys.stderr)
         return 1
 
-    # 5. Collect the artifact: list the task's evidence, pull the bytes.
-    listed = api.list_artifacts(args.engagement, task_id)
-    artifacts = listed["items"]
+    # 5. Collect the artifact: the terminal exfil chunk lands on the
+    #    stream thread, so the listing may trail the completed status --
+    #    poll rather than race it.
+    artifacts: list = []
+    deadline = time.monotonic() + args.timeout
+    while time.monotonic() < deadline:
+        artifacts = api.list_artifacts(args.engagement, task_id)["items"]
+        if artifacts:
+            break
+        time.sleep(0.25)
     if not artifacts:
         print("task completed with no artifacts", file=sys.stderr)
         return 1

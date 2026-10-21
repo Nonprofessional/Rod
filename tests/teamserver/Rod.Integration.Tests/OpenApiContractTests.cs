@@ -19,7 +19,9 @@ public class OpenApiContractTests
     [Fact]
     public async Task TheDocument_DescribesTheVersionedOperatorSurface()
     {
-        var (client, _, _) = AuthenticatedHost.Create();
+        var (client, host, _) = AuthenticatedHost.Create();
+        using var _client = client;
+        using var _host = host;
         await AuthenticatedHost.LoginAsync(client);
 
         var response = await client.GetAsync("/openapi/v1.json");
@@ -45,7 +47,9 @@ public class OpenApiContractTests
     [Fact]
     public async Task TheCommittedContract_MatchesTheServedDocument()
     {
-        var (client, _, _) = AuthenticatedHost.Create();
+        var (client, host, _) = AuthenticatedHost.Create();
+        using var _client = client;
+        using var _host = host;
         await AuthenticatedHost.LoginAsync(client);
 
         var response = await client.GetAsync("/openapi/v1.json");

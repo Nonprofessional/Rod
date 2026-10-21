@@ -191,45 +191,45 @@ public class PythonSdkSmokeTests
     }
 }
 
-    /// <summary>
-    /// Gates the smoke on a usable python3: skipped (not failed) when the
-    /// interpreter is absent, the same posture the Rust e2e keeps for cargo.
-    /// </summary>
+/// <summary>
+/// Gates the smoke on a usable python3: skipped (not failed) when the
+/// interpreter is absent, the same posture the Rust e2e keeps for cargo.
+/// </summary>
 internal sealed class PythonFactAttribute : FactAttribute
-    {
-        public static string? Python { get; }
+{
+    public static string? Python { get; }
 
-        static PythonFactAttribute()
+    static PythonFactAttribute()
+    {
+        foreach (var candidate in new[] { "python3", "python" })
         {
-            foreach (var candidate in new[] { "python3", "python" })
+            try
             {
-                try
+                var probe = Process.Start(new ProcessStartInfo
                 {
-                    var probe = Process.Start(new ProcessStartInfo
-                    {
-                        FileName = candidate,
-                        ArgumentList = { "--version" },
-                        UseShellExecute = false,
-                        RedirectStandardOutput = true,
-                        RedirectStandardError = true,
-                    });
-                    probe?.WaitForExit(5000);
-                    if (probe is not null && probe.ExitCode == 0)
-                    {
-                        Python = candidate;
-                        break;
-                    }
-                }
-                catch
+                    FileName = candidate,
+                    ArgumentList = { "--version" },
+                    UseShellExecute = false,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                });
+                probe?.WaitForExit(5000);
+                if (probe is not null && probe.ExitCode == 0)
                 {
-                    // Not on PATH; the next candidate.
+                    Python = candidate;
+                    break;
                 }
             }
-        }
-
-        public PythonFactAttribute()
-        {
-            if (Python is null)
-                Skip = "python3 is not on PATH; the SDK smoke needs it";
+            catch
+            {
+                // Not on PATH; the next candidate.
+            }
         }
     }
+
+    public PythonFactAttribute()
+    {
+        if (Python is null)
+            Skip = "python3 is not on PATH; the SDK smoke needs it";
+    }
+}

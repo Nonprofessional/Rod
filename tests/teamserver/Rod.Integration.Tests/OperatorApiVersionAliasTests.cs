@@ -19,7 +19,9 @@ public class OperatorApiVersionAliasTests
     [InlineData("/api/v1/engagements")]
     public async Task TheOperatorSurface_AnswerAtBothAddresses(string path)
     {
-        var (client, _, _) = AuthenticatedHost.Create();
+        var (client, host, _) = AuthenticatedHost.Create();
+        using var _client = client;
+        using var _host = host;
         await AuthenticatedHost.LoginAsync(client);
 
         var createResponse = await client.PostAsJsonAsync("/api/v1/engagements",

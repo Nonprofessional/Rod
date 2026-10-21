@@ -30,9 +30,6 @@ engagement names the need.
 
 Phase P0 -- the replacement threshold (architecture.md Sec 15):
 
-- **`/api/v1` + OpenAPI + Python SDK** (Sec 15.3, ADR-006). _AC:_ SDK
-  smoke run -- login, create an engagement, issue a task, collect the
-  artifact.
 - **ATT&CK mapping + coverage matrix** (Sec 15.3, ADR-007). _AC:_
   verb-to-technique mapping stored; the matrix view filters by tactic and
   platform; reports carry a Navigator layer.

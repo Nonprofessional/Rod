@@ -26,6 +26,8 @@ public class OperatorTokenScopeTests
     public async Task AReadToken_ReadsButCannotAct()
     {
         var (client, host, operatorId) = AuthenticatedHost.Create();
+        using var _client = client;
+        using var _host = host;
         await AuthenticatedHost.LoginAsync(client);
         var token = await MintAsync(client, operatorId.ToString(), scope: null);
 
@@ -43,6 +45,8 @@ public class OperatorTokenScopeTests
     public async Task AnOperateToken_ActsInsideEngagementsButNotOnTheDeployment()
     {
         var (client, host, operatorId) = AuthenticatedHost.Create();
+        using var _client = client;
+        using var _host = host;
         await AuthenticatedHost.LoginAsync(client);
         var token = await MintAsync(client, operatorId.ToString(), "operate");
 
@@ -61,6 +65,8 @@ public class OperatorTokenScopeTests
     public async Task AnAdminToken_ReachestheManagementSurface()
     {
         var (client, host, operatorId) = AuthenticatedHost.Create();
+        using var _client = client;
+        using var _host = host;
         await AuthenticatedHost.LoginAsync(client);
         var token = await MintAsync(client, operatorId.ToString(), "admin");
 
@@ -74,7 +80,9 @@ public class OperatorTokenScopeTests
     [Fact]
     public async Task TheCookieSession_IsUnscopedAndUnaffected()
     {
-        var (client, _, _) = AuthenticatedHost.Create();
+        var (client, host, _) = AuthenticatedHost.Create();
+        using var _client = client;
+        using var _host = host;
         await AuthenticatedHost.LoginAsync(client);
 
         var created = await client.PostAsJsonAsync("/engagements",
