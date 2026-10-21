@@ -96,6 +96,60 @@ public class OperatorSurfaceCoverageTests
             Assert.Contains("recon.portscan", verbs);
             Assert.Contains(EvasionCapabilities.Avoid, verbs);
             Assert.Contains(ExploitCapabilities.Invoke, verbs);
+
+            // The catalog carries each verb's resolved ATT&CK mapping
+            // (ADR-007) -- the same answer the coverage matrix and the
+            // Navigator layer read -- and an unmapped verb carries the empty
+            // set, not a missing field.
+            var shellExec = descriptors.Single(d => d.Verb == "shell.exec");
+            Assert.Equal(new[] { "T1059.003", "T1059.004" }, shellExec.Techniques);
+            var procKill = descriptors.Single(d => d.Verb == "proc.kill");
+            Assert.Empty(procKill.Techniques ?? []);
+        }
+    }
+
+    [Fact]
+    public async Task CapabilityCoverage_ServesTheMatrix_FilteredByTacticAndPlatform()
+    {
+        // The coverage matrix (ADR-007) over HTTP: technique x platform x
+        // status with the verb, module, and implant classes named, filterable
+        // by tactic and platform -- the AC's matrix view axes.
+        var (client, host) = CreateClient();
+        using (client)
+        using (host)
+        {
+            var matrix = await client.GetFromJsonAsync<CoverageMatrixResponse>("/capabilities/coverage");
+            Assert.NotNull(matrix);
+            Assert.False(string.IsNullOrWhiteSpace(matrix!.AttackVersion));
+            Assert.NotEmpty(matrix.Tactics);
+            Assert.NotEmpty(matrix.Platforms);
+
+            // This host loads no modules, so recon.hostenum sits on its
+            // placeholder: T1082 is present (the kernel mapping) and reads as
+            // the work queue.
+            var t1082 = Assert.Single(matrix.Techniques, r => r.TechniqueId == "T1082");
+            var carrier = Assert.Single(t1082.Carriers);
+            Assert.Equal("recon.hostenum", carrier.Verb);
+            Assert.Equal("gap", carrier.Status);
+            Assert.Equal(["implant"], carrier.ImplantClasses);
+
+            // Tactic filter: only rows under the tactic survive; the facets
+            // still describe the whole matrix.
+            var discovery = await client.GetFromJsonAsync<CoverageMatrixResponse>(
+                "/capabilities/coverage?tactic=discovery");
+            Assert.NotNull(discovery);
+            Assert.All(discovery!.Techniques, r => Assert.Contains("discovery", r.Tactics));
+            Assert.Contains(discovery.Techniques, r => r.TechniqueId == "T1082");
+            Assert.DoesNotContain(discovery.Techniques, r => r.TechniqueId == "T1105");
+            Assert.Contains(discovery.Tactics, t => t == "execution");
+
+            // Platform filter: only rows a carrier reaches on the platform.
+            var browser = await client.GetFromJsonAsync<CoverageMatrixResponse>(
+                "/capabilities/coverage?platform=browser");
+            Assert.NotNull(browser);
+            Assert.All(browser!.Techniques, r => Assert.Contains("browser", r.Platforms));
+            Assert.Contains(browser.Techniques, r => r.TechniqueId == "T1185");
+            Assert.DoesNotContain(browser.Techniques, r => r.TechniqueId == "T1082");
         }
     }
 
@@ -274,5 +328,25 @@ public class OperatorSurfaceCoverageTests
         string Verb,
         string Category,
         string Version,
-        IReadOnlyDictionary<string, string> Attributes);
+        IReadOnlyDictionary<string, string> Attributes,
+        IReadOnlyList<string>? Techniques);
+
+    public sealed record CoverageMatrixResponse(
+        string AttackVersion,
+        IReadOnlyList<string> Tactics,
+        IReadOnlyList<string> Platforms,
+        IReadOnlyList<CoverageRowResponse> Techniques);
+
+    public sealed record CoverageRowResponse(
+        string TechniqueId,
+        string Name,
+        IReadOnlyList<string> Tactics,
+        IReadOnlyList<CoverageCarrierResponse> Carriers,
+        IReadOnlyList<string> Platforms);
+
+    public sealed record CoverageCarrierResponse(
+        string Verb,
+        string Status,
+        string? Module,
+        IReadOnlyList<string> ImplantClasses);
 }

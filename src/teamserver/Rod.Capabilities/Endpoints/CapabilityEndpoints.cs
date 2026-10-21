@@ -31,18 +31,35 @@ public static class CapabilityEndpoints
         // operator session.
         var group = endpoints.MapGroup("/capabilities").RequireAuthorization();
         group.MapGet("/", ListAsync).WithName("ListCapabilities");
+        group.MapGet("/coverage", GetCoverageAsync).WithName("GetCapabilityCoverage");
         return endpoints;
     }
 
     private static async Task<IResult> ListAsync(
         ICapabilityRegistry registry,
+        Rod.CoreState.Implants.IVerbTechniqueResolver techniques,
         CancellationToken cancellationToken)
     {
         // Registration order is stable (the registry preserves it), so the catalog
         // reads in a predictable category order for the UI's grouping.
         var descriptors = await registry.ListAsync(cancellationToken);
-        var body = descriptors.Select(CapabilityDescriptorResponse.Of).ToArray();
+        var body = descriptors.Select(d => CapabilityDescriptorResponse.Of(d, techniques)).ToArray();
         return Results.Ok(body);
+    }
+
+    private static async Task<IResult> GetCoverageAsync(
+        ICapabilityRegistry registry,
+        Rod.CoreState.Implants.IVerbTechniqueResolver techniques,
+        string? tactic,
+        string? platform,
+        CancellationToken cancellationToken)
+    {
+        // The coverage matrix (ADR-007) is registry metadata like the catalog:
+        // process-global, not engagement-scoped, so it lives beside the catalog
+        // under the layer that owns the registry. The tactic and platform
+        // filters are the matrix view's axes.
+        var matrix = await Coverage.CoverageMatrixBuilder.BuildAsync(registry, techniques, tactic, platform, cancellationToken);
+        return Results.Ok(CoverageResponse.Of(matrix));
     }
 
     // --- DTOs. camelCase JSON is the framework default; records stay clean. ---
@@ -95,6 +112,10 @@ public static class CapabilityEndpoints
     /// <see cref="Parameters"/> is the task-form schema and
     /// <see cref="Output"/> the output-taxonomy declaration (architecture.md
     /// Sec 15.2) -- everything the UI needs to task a verb it has never met.
+    /// <see cref="Techniques"/> is the verb's resolved ATT&CK mapping
+    /// (ADR-007): the module's declaration when it carries one, else the
+    /// kernel data file's entry -- the same answer the coverage matrix and
+    /// the report's Navigator layer read.
     /// </summary>
     public sealed record CapabilityDescriptorResponse(
         string Verb,
@@ -102,16 +123,57 @@ public static class CapabilityEndpoints
         string Version,
         IReadOnlyDictionary<string, string> Attributes,
         IReadOnlyList<VerbParameterResponse>? Parameters,
-        VerbOutputResponse? Output)
+        VerbOutputResponse? Output,
+        IReadOnlyList<string> Techniques)
     {
-        public static CapabilityDescriptorResponse Of(Capabilities.CapabilityDescriptor d)
+        public static CapabilityDescriptorResponse Of(
+            CapabilityDescriptor d,
+            Rod.CoreState.Implants.IVerbTechniqueResolver techniques)
             => new(
                 d.Verb,
                 d.Category.ToString(),
                 d.Version,
                 d.Attributes,
                 d.Parameters?.Select(VerbParameterResponse.Of).ToArray(),
-                VerbOutputResponse.Of(d.Output));
+                VerbOutputResponse.Of(d.Output),
+                techniques.Techniques(d.Verb) ?? Array.Empty<string>());
+    }
+
+    // --- The coverage matrix (ADR-007): one projection, DTOs kept lean. ---
+
+    public sealed record CoverageResponse(
+        string AttackVersion,
+        IReadOnlyList<string> Tactics,
+        IReadOnlyList<string> Platforms,
+        IReadOnlyList<CoverageRowResponse> Techniques)
+    {
+        public static CoverageResponse Of(Coverage.CoverageMatrix matrix)
+            => new(
+                matrix.AttackVersion,
+                matrix.Tactics,
+                matrix.Platforms,
+                matrix.Rows.Select(CoverageRowResponse.Of).ToArray());
+    }
+
+    public sealed record CoverageRowResponse(
+        string TechniqueId,
+        string Name,
+        IReadOnlyList<string> Tactics,
+        IReadOnlyList<CoverageCarrierResponse> Carriers,
+        IReadOnlyList<string> Platforms)
+    {
+        public static CoverageRowResponse Of(Coverage.CoverageRow row)
+            => new(row.TechniqueId, row.Name, row.Tactics, row.Carriers.Select(CoverageCarrierResponse.Of).ToArray(), row.Platforms);
+    }
+
+    public sealed record CoverageCarrierResponse(
+        string Verb,
+        string Status,
+        string? Module,
+        IReadOnlyList<string> ImplantClasses)
+    {
+        public static CoverageCarrierResponse Of(Coverage.CoverageCarrier carrier)
+            => new(carrier.Verb, carrier.Status.ToString().ToLowerInvariant(), carrier.Module, carrier.ImplantClasses);
     }
 
 }
