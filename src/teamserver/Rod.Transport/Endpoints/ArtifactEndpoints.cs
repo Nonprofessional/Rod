@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Routing;
 using Rod.Audit;
 using Rod.CoreState;
@@ -135,7 +136,7 @@ public static class ArtifactEndpoints
             response);
     }
 
-    private static async Task<IResult> ListArtifactsAsync(
+    private static async Task<Results<Ok<ArtifactListResponse>, BadRequest<Problem>, NotFound<Problem>>> ListArtifactsAsync(
         string engagementId,
         string taskId,
         int? limit,
@@ -145,18 +146,18 @@ public static class ArtifactEndpoints
         CancellationToken cancellationToken)
     {
         if (!Guid.TryParse(engagementId, out var engagementValue))
-            return Results.BadRequest(new Problem("Engagement id is not a valid identifier."));
+            return TypedResults.BadRequest(new Problem("Engagement id is not a valid identifier."));
         if (!Guid.TryParse(taskId, out var taskValue))
-            return Results.BadRequest(new Problem("Task id is not a valid identifier."));
+            return TypedResults.BadRequest(new Problem("Task id is not a valid identifier."));
         if (!ListPaging.TryBind(limit, cursor, c => TimestampIdCursor.TryDecode(c, out _, out _),
                 out var boundLimit, out var boundCursor, out var pagingError))
         {
-            return Results.BadRequest(new Problem(pagingError));
+            return TypedResults.BadRequest(new Problem(pagingError));
         }
 
         var task = await tasks.FindAsync(new TaskId(taskValue), cancellationToken);
         if (task is null || task.EngagementId != new EngagementId(engagementValue))
-            return Results.NotFound(new Problem("Task does not exist in this engagement."));
+            return TypedResults.NotFound(new Problem("Task does not exist in this engagement."));
 
         // One page of the task's artifacts, newest window first across pages --
         // a heavily evidenced task no longer grows this listing without bound.
@@ -164,10 +165,10 @@ public static class ArtifactEndpoints
         var body = new ArtifactListResponse(
             page.Items.Select(ArtifactResponse.Of).ToArray(),
             page.NextCursor);
-        return Results.Ok(body);
+        return TypedResults.Ok(body);
     }
 
-    private static async Task<IResult> GetArtifactAsync(
+    private static async Task<Results<FileContentHttpResult, BadRequest<Problem>, NotFound<Problem>>> GetArtifactAsync(
         string engagementId,
         string artifactId,
         ClaimsPrincipal user,
@@ -178,13 +179,13 @@ public static class ArtifactEndpoints
         CancellationToken cancellationToken)
     {
         if (!Guid.TryParse(engagementId, out var engagementValue))
-            return Results.BadRequest(new Problem("Engagement id is not a valid identifier."));
+            return TypedResults.BadRequest(new Problem("Engagement id is not a valid identifier."));
         if (!Guid.TryParse(artifactId, out var artifactValue))
-            return Results.BadRequest(new Problem("Artifact id is not a valid identifier."));
+            return TypedResults.BadRequest(new Problem("Artifact id is not a valid identifier."));
 
         var artifact = await artifacts.FindAsync(artifactValue, cancellationToken);
         if (artifact is null || artifact.EngagementId != engagementValue)
-            return Results.NotFound(new Problem("Artifact does not exist in this engagement."));
+            return TypedResults.NotFound(new Problem("Artifact does not exist in this engagement."));
 
         // Retrieving evidence bytes is an act on the engagement, unlike
         // reading a projection of it (architecture.md Sec 11.2): the artifact
@@ -219,7 +220,7 @@ public static class ArtifactEndpoints
                 at: clock.GetUtcNow()),
             cancellationToken);
 
-        return Results.File(artifact.Content, artifact.ContentType, artifact.Name);
+        return TypedResults.File(artifact.Content, artifact.ContentType, artifact.Name);
     }
 
     // The loot kinds: what gathered the artifact, the read-time judgment the

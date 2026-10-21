@@ -2,6 +2,7 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.AspNetCore.Http.HttpResults;
 using Rod.Audit;
 using Rod.CoreState;
 using Rod.CoreState.Application;
@@ -57,7 +58,7 @@ public static class EngagementEndpoints
         return endpoints;
     }
 
-    private static async Task<IResult> ListEngagementsAsync(
+    private static async Task<Results<Ok<List<EngagementResponse>>, UnauthorizedHttpResult>> ListEngagementsAsync(
         ClaimsPrincipal user,
         IEngagementRepository engagements,
         IEngagementMembershipStore memberships,
@@ -68,7 +69,7 @@ public static class EngagementEndpoints
     {
         var caller = user.TryGetOperatorId();
         if (caller is null)
-            return Results.Unauthorized();
+            return TypedResults.Unauthorized();
 
         // The listing is the caller's own reach (architecture.md Sec 3): the
         // engagements they own plus the ones an owner granted them into. A
@@ -112,10 +113,10 @@ public static class EngagementEndpoints
                     active.Count(i => onlineIds.Contains(i.Id)))));
         }
 
-        return Results.Ok(body);
+        return TypedResults.Ok(body);
     }
 
-    private static async Task<IResult> CreateEngagementAsync(
+    private static async Task<Results<Created<EngagementResponse>, BadRequest<Problem>, UnauthorizedHttpResult>> CreateEngagementAsync(
         CreateEngagementRequest body,
         ClaimsPrincipal user,
         EngagementService service,
@@ -127,9 +128,9 @@ public static class EngagementEndpoints
         // so a present-but-missing claim is a defensive 401, not a normal path.
         var ownerId = user.TryGetOperatorId();
         if (ownerId is null)
-            return Results.Unauthorized();
+            return TypedResults.Unauthorized();
         if (string.IsNullOrWhiteSpace(body.Name))
-            return Results.BadRequest(new Problem("Engagement name is required."));
+            return TypedResults.BadRequest(new Problem("Engagement name is required."));
 
         var created = await service.CreateEngagementAsync(
             new CreateEngagementCommand(ownerId.Value, body.Name, body.Description),
@@ -166,7 +167,7 @@ public static class EngagementEndpoints
                 at: created.CreatedAt),
             cancellationToken);
 
-        return Results.Created($"/engagements/{response.EngagementId}", response);
+        return TypedResults.Created($"/engagements/{response.EngagementId}", response);
     }
 
     private static async Task<IResult> EditEngagementAsync(

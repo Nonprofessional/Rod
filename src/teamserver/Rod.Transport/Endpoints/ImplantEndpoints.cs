@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Routing;
 using Rod.Audit;
 using Rod.CoreState;
@@ -58,14 +59,14 @@ public static class ImplantEndpoints
         return endpoints;
     }
 
-    private static async Task<IResult> ListImplantsAsync(
+    private static async Task<Results<Ok<ImplantResponse[]>, BadRequest<Problem>>> ListImplantsAsync(
         string engagementId,
         IImplantRepository implants,
         ISessionRegistry sessions,
         CancellationToken cancellationToken)
     {
         if (!Guid.TryParse(engagementId, out var engagementValue))
-            return Results.BadRequest(new Problem("Engagement id is not a valid identifier."));
+            return TypedResults.BadRequest(new Problem("Engagement id is not a valid identifier."));
 
         var engagementKey = new EngagementId(engagementValue);
         var enrolled = await implants.ListByEngagementAsync(engagementKey, cancellationToken);
@@ -113,7 +114,7 @@ public static class ImplantEndpoints
                 CampaignRecipientId: i.CampaignRecipientId?.ToString()))
             .ToArray();
 
-        return Results.Ok(body);
+        return TypedResults.Ok(body);
     }
 
     private static async Task<IResult> ListImplantTasksAsync(

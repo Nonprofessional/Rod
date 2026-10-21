@@ -19,7 +19,17 @@
         "operationId": "ListEngagementsAsync",
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/EngagementResponse"
+                  }
+                }
+              }
+            }
           }
         }
       },
@@ -39,8 +49,25 @@
           "required": true
         },
         "responses": {
-          "200": {
-            "description": "OK"
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EngagementResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           }
         }
       }
@@ -319,7 +346,27 @@
         ],
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ImplantResponse"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           }
         }
       }
@@ -2280,8 +2327,35 @@
           "required": true
         },
         "responses": {
-          "200": {
-            "description": "OK"
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskIssuedResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           }
         }
       },
@@ -2321,7 +2395,24 @@
         ],
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           }
         }
       }
@@ -2352,7 +2443,34 @@
         ],
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           }
         }
       }
@@ -3058,7 +3176,34 @@
         ],
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArtifactListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           }
         }
       }
@@ -3088,8 +3233,25 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "OK"
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           }
         }
       }
@@ -4501,6 +4663,75 @@
           }
         }
       },
+      "ArtifactListResponse": {
+        "required": [
+          "items",
+          "nextCursor"
+        ],
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ArtifactResponse"
+            }
+          },
+          "nextCursor": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "ArtifactResponse": {
+        "required": [
+          "artifactId",
+          "taskId",
+          "operatorId",
+          "name",
+          "contentType",
+          "size",
+          "storedAt"
+        ],
+        "type": "object",
+        "properties": {
+          "artifactId": {
+            "type": "string"
+          },
+          "taskId": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "operatorId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "contentType": {
+            "type": "string"
+          },
+          "size": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "storedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
       "AttachArtifactRequest": {
         "required": [
           "name",
@@ -4554,6 +4785,46 @@
               "null",
               "boolean"
             ]
+          }
+        }
+      },
+      "AuditEventResponse": {
+        "required": [
+          "eventId",
+          "kind",
+          "verb",
+          "payload",
+          "output",
+          "outcome",
+          "at"
+        ],
+        "type": "object",
+        "properties": {
+          "eventId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "verb": {
+            "type": "string"
+          },
+          "payload": {
+            "type": "string"
+          },
+          "output": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "outcome": {
+            "type": "string"
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time"
           }
         }
       },
@@ -5253,6 +5524,98 @@
           }
         }
       },
+      "EngagementFleetSummaryResponse": {
+        "required": [
+          "implantCount",
+          "onlineCount"
+        ],
+        "type": "object",
+        "properties": {
+          "implantCount": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "onlineCount": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          }
+        }
+      },
+      "EngagementResponse": {
+        "required": [
+          "engagementId",
+          "name",
+          "description",
+          "ownerId",
+          "ownerHandle",
+          "yourRole",
+          "createdAt",
+          "roe"
+        ],
+        "type": "object",
+        "properties": {
+          "engagementId": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "ownerId": {
+            "type": "string"
+          },
+          "ownerHandle": {
+            "type": "string"
+          },
+          "yourRole": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "roe": {
+            "$ref": "#/components/schemas/RoeProfileResponse"
+          },
+          "frozenAt": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "retiredAt": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "summary": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/EngagementFleetSummaryResponse"
+              }
+            ]
+          }
+        }
+      },
       "ExecuteWebShellRequest": {
         "required": [
           "command"
@@ -5278,6 +5641,202 @@
               "null",
               "string"
             ]
+          }
+        }
+      },
+      "ImplantResponse": {
+        "required": [
+          "implantId",
+          "engagementId",
+          "class",
+          "killDate",
+          "createdAt",
+          "isOnline",
+          "retiredAt"
+        ],
+        "type": "object",
+        "properties": {
+          "implantId": {
+            "type": "string"
+          },
+          "engagementId": {
+            "type": "string"
+          },
+          "class": {
+            "type": "string"
+          },
+          "killDate": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "isOnline": {
+            "type": "boolean"
+          },
+          "retiredAt": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "parentImplantId": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "hostname": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "os": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "arch": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "username": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "sleepSeconds": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?(?:[eE][\u002B-]?\\d\u002B)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "jitterSeconds": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d\u002B)?(?:[eE][\u002B-]?\\d\u002B)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "deployedBy": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "enrolledViaListenerId": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "lastSeenAt": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "lastCarrier": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "carriers": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "type": "string"
+            }
+          },
+          "campaignId": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "campaignRecipientId": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "ImplantTaskResponse": {
+        "required": [
+          "taskId",
+          "implantId",
+          "issuedBy",
+          "verb",
+          "arguments",
+          "status",
+          "output",
+          "outcome",
+          "createdAt",
+          "completedAt"
+        ],
+        "type": "object",
+        "properties": {
+          "taskId": {
+            "type": "string"
+          },
+          "implantId": {
+            "type": "string"
+          },
+          "issuedBy": {
+            "type": "string"
+          },
+          "verb": {
+            "type": "string"
+          },
+          "arguments": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "output": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "outcome": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "completedAt": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
           }
         }
       },
@@ -5627,6 +6186,34 @@
           }
         }
       },
+      "RoeProfileResponse": {
+        "required": [
+          "permittedVerbs",
+          "permittedImplants",
+          "permittedTargets"
+        ],
+        "type": "object",
+        "properties": {
+          "permittedVerbs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "permittedImplants": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "permittedTargets": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
       "SendMessageRequest": {
         "required": [
           "body"
@@ -5759,6 +6346,148 @@
           "eof": {
             "type": "boolean",
             "default": false
+          }
+        }
+      },
+      "TaskIssuedResponse": {
+        "required": [
+          "taskId",
+          "engagementId",
+          "implantId",
+          "issuedBy",
+          "verb",
+          "arguments",
+          "createdAt"
+        ],
+        "type": "object",
+        "properties": {
+          "taskId": {
+            "type": "string"
+          },
+          "engagementId": {
+            "type": "string"
+          },
+          "implantId": {
+            "type": "string"
+          },
+          "issuedBy": {
+            "type": "string"
+          },
+          "verb": {
+            "type": "string"
+          },
+          "arguments": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "TaskListResponse": {
+        "required": [
+          "items",
+          "nextCursor"
+        ],
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ImplantTaskResponse"
+            }
+          },
+          "nextCursor": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "TaskResponse": {
+        "required": [
+          "taskId",
+          "engagementId",
+          "implantId",
+          "issuedBy",
+          "verb",
+          "arguments",
+          "status",
+          "output",
+          "outcome",
+          "createdAt",
+          "dispatchedAt",
+          "completedAt",
+          "cancelledAt",
+          "audit"
+        ],
+        "type": "object",
+        "properties": {
+          "taskId": {
+            "type": "string"
+          },
+          "engagementId": {
+            "type": "string"
+          },
+          "implantId": {
+            "type": "string"
+          },
+          "issuedBy": {
+            "type": "string"
+          },
+          "verb": {
+            "type": "string"
+          },
+          "arguments": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "output": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "outcome": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "dispatchedAt": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "completedAt": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "cancelledAt": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "audit": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AuditEventResponse"
+            }
           }
         }
       },

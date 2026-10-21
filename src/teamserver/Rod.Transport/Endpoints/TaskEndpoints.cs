@@ -2,6 +2,7 @@ using System.Security.Claims;
 using System.Text;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Routing;
 using Rod.Audit;
 using Rod.CoreState;
@@ -87,7 +88,7 @@ public static class TaskEndpoints
     // larger belongs in an object store before it belongs in a task.
     private const int MaxStagedBytes = 64 * 1024 * 1024;
 
-    private static async Task<IResult> IssueAsync(
+    private static async Task<Results<Created<TaskIssuedResponse>, BadRequest<Problem>, UnauthorizedHttpResult, NotFound<Problem>, JsonHttpResult<Problem>>> IssueAsync(
         string engagementId,
         IssueTaskRequest body,
         ClaimsPrincipal user,
@@ -102,15 +103,15 @@ public static class TaskEndpoints
         // session principal rather than named in the body (operator auth).
         var issuedBy = user.TryGetOperatorId();
         if (issuedBy is null)
-            return Results.Unauthorized();
+            return TypedResults.Unauthorized();
         if (!Guid.TryParse(engagementId, out var engagementValue))
-            return Results.BadRequest(new Problem("Engagement id is not a valid identifier."));
+            return TypedResults.BadRequest(new Problem("Engagement id is not a valid identifier."));
         if (!Guid.TryParse(body.ImplantId, out var implantValue))
-            return Results.BadRequest(new Problem("Implant id is not a valid identifier."));
+            return TypedResults.BadRequest(new Problem("Implant id is not a valid identifier."));
         if (string.IsNullOrWhiteSpace(body.Verb))
-            return Results.BadRequest(new Problem("Task verb is required."));
+            return TypedResults.BadRequest(new Problem("Task verb is required."));
         if (body.Arguments is { Length: > MaxArgumentBytes })
-            return Results.BadRequest(new Problem($"Task arguments exceed {MaxArgumentBytes} bytes."));
+            return TypedResults.BadRequest(new Problem($"Task arguments exceed {MaxArgumentBytes} bytes."));
 
         // The typed arm (architecture.md Sec 10): a task whose bulk payload
         // outgrows the arguments string carries it as Content instead. The
@@ -120,9 +121,9 @@ public static class TaskEndpoints
         // staged marker. The bytes themselves are staged below, after the task
         // exists to bind them to.
         if (body.Content is { Length: 0 })
-            return Results.BadRequest(new Problem("Staged content must not be empty."));
+            return TypedResults.BadRequest(new Problem("Staged content must not be empty."));
         if (body.Content is { Length: > MaxStagedBytes })
-            return Results.Json(
+            return TypedResults.Json(
                 new Problem($"Staged content exceeds {MaxStagedBytes} bytes."),
                 statusCode: StatusCodes.Status413PayloadTooLarge);
         var stagedHash = body.Content is null
@@ -172,7 +173,7 @@ public static class TaskEndpoints
                         outcome: ex.Message,
                         at: clock.GetUtcNow()),
                     cancellationToken);
-                return Results.Json(
+                return TypedResults.Json(
                     new Problem(ex.Message),
                     statusCode: StatusCodes.Status422UnprocessableEntity);
             }
@@ -184,8 +185,8 @@ public static class TaskEndpoints
                 or TaskRejectionReason.ImplantRetired
                 or TaskRejectionReason.EngagementClosed
                 or TaskRejectionReason.UnknownTaskReference
-                    => Results.Json(new Problem(ex.Message), statusCode: StatusCodes.Status422UnprocessableEntity),
-                _ => Results.NotFound(new Problem(ex.Message)),
+                    => TypedResults.Json(new Problem(ex.Message), statusCode: StatusCodes.Status422UnprocessableEntity),
+                _ => TypedResults.NotFound(new Problem(ex.Message)),
             };
         }
 
@@ -247,7 +248,7 @@ public static class TaskEndpoints
                 cancellationToken);
         }
 
-        return Results.Created($"/engagements/{response.EngagementId}/tasks/{response.TaskId}", response);
+        return TypedResults.Created($"/engagements/{response.EngagementId}/tasks/{response.TaskId}", response);
     }
 
     // The task's issuance record (architecture.md Sec 11): attributed to the
@@ -275,7 +276,7 @@ public static class TaskEndpoints
                 at: issued.CreatedAt),
             cancellationToken);
 
-    private static async Task<IResult> ListAsync(
+    private static async Task<Results<Ok<TaskListResponse>, BadRequest<Problem>>> ListAsync(
         string engagementId,
         int? limit,
         string? cursor,
@@ -283,11 +284,11 @@ public static class TaskEndpoints
         CancellationToken cancellationToken)
     {
         if (!Guid.TryParse(engagementId, out var engagementValue))
-            return Results.BadRequest(new Problem("Engagement id is not a valid identifier."));
+            return TypedResults.BadRequest(new Problem("Engagement id is not a valid identifier."));
         if (!ListPaging.TryBind(limit, cursor, c => TaskPageCursor.TryDecode(c, out _),
                 out var boundLimit, out var boundCursor, out var pagingError))
         {
-            return Results.BadRequest(new Problem(pagingError));
+            return TypedResults.BadRequest(new Problem(pagingError));
         }
 
         // One page of the engagement's task history across every implant, newest
@@ -306,7 +307,7 @@ public static class TaskEndpoints
             page.Items.Select(ToResponse).ToArray(),
             page.NextCursor);
 
-        return Results.Ok(body);
+        return TypedResults.Ok(body);
     }
 
     private static ImplantEndpoints.ImplantTaskResponse ToResponse(Task t)
@@ -322,7 +323,7 @@ public static class TaskEndpoints
             t.CreatedAt,
             t.CompletedAt);
 
-    private static async Task<IResult> GetAsync(
+    private static async Task<Results<Ok<TaskResponse>, BadRequest<Problem>, NotFound<Problem>>> GetAsync(
         string engagementId,
         string taskId,
         TaskService service,
@@ -331,17 +332,17 @@ public static class TaskEndpoints
         CancellationToken cancellationToken)
     {
         if (!Guid.TryParse(engagementId, out var engagementValue))
-            return Results.BadRequest(new Problem("Engagement id is not a valid identifier."));
+            return TypedResults.BadRequest(new Problem("Engagement id is not a valid identifier."));
         if (!Guid.TryParse(taskId, out var taskValue))
-            return Results.BadRequest(new Problem("Task id is not a valid identifier."));
+            return TypedResults.BadRequest(new Problem("Task id is not a valid identifier."));
 
         var task = await tasks.FindAsync(new TaskId(taskValue), cancellationToken);
         if (task is null || task.EngagementId != new EngagementId(engagementValue))
-            return Results.NotFound(new Problem("Task does not exist in this engagement."));
+            return TypedResults.NotFound(new Problem("Task does not exist in this engagement."));
 
         var events = await audit.ForTaskAsync(task.Id.Value, cancellationToken);
 
-        return Results.Ok(TaskResponse.Of(task, events));
+        return TypedResults.Ok(TaskResponse.Of(task, events));
     }
 
     // Retract a queued task before the implant wakes (architecture.md Sec
