@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { issueTask } from '../api'
 import { browseInFlight, ensureBrowse, useBrowseEntry } from '../browserCache'
+import { renderOutput, type ProcessRow } from '../outputRender'
 import { ago, useNow } from '../when'
 import { StatusBadge } from './StatusBadge'
 
@@ -15,29 +16,12 @@ import { StatusBadge } from './StatusBadge'
 // closed lands in the cache anyway -- the background poller owns the wait.
 // Refresh cancels the queued listing it replaces and issues a fresh one.
 
-interface ProcessRow {
-  pid: number
-  ppid: number
-  user: string
-  image: string
-}
-
-// The reference implant's recon.ps line: "pid=<n> ppid=<n> user=<name>
-// image=<path>" -- stable by contract, so the pane parses it outright and
-// falls back to showing the raw output when a line does not match.
-const ROW = /^pid=(\d+) ppid=(-?\d+) user=(\S+) image=(.*)$/
-
+// The process-list grammar parse (outputRender's shared taxonomy parser):
+// one JSON row per line, pid and image required. Output that does not parse
+// (an old build's bespoke format, prose) degrades to the raw view below.
 function parseListing(output: string): ProcessRow[] {
-  return output
-    .split('\n')
-    .map((line) => ROW.exec(line.trim()))
-    .filter((match): match is RegExpExecArray => match !== null)
-    .map((match) => ({
-      pid: Number(match[1]),
-      ppid: Number(match[2]),
-      user: match[3],
-      image: match[4],
-    }))
+  const panel = renderOutput('ProcessList', output)
+  return panel.kind === 'process-list' ? panel.rows : []
 }
 
 export function ProcessBrowser({

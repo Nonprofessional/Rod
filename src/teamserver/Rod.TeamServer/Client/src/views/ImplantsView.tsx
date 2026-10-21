@@ -1,5 +1,6 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import {
+  type CapabilityDescriptor,
   type Implant,
   type ImplantLabel,
   type ImplantNote,
@@ -25,7 +26,7 @@ import { ProcessBrowser } from '../components/ProcessBrowser'
 import { ShellDialog } from '../components/ShellDialog'
 import { StatusBadge } from '../components/StatusBadge'
 import { TaskDialog } from '../components/TaskDialog'
-import { DEFAULT_TASK_FORM, VERB_FORMS } from '../verbForms'
+import { formForDescriptor } from '../verbForms'
 import { ago, formatSeconds, useNow } from '../when'
 import { implantMenuEntries } from './implantMenu'
 
@@ -195,6 +196,15 @@ export function ImplantsView({
   }, [])
 
   const attributesByVerb = useMemo(() => verbAttributes(capabilityGroups), [capabilityGroups])
+  // The full descriptors by verb, so the task dialog renders the verb's
+  // declared parameter schema -- module verbs included, zero UI changes.
+  const descriptorByVerb = useMemo(() => {
+    const map = new Map<string, CapabilityDescriptor>()
+    for (const group of capabilityGroups) {
+      for (const descriptor of group.descriptors) map.set(descriptor.verb, descriptor)
+    }
+    return map
+  }, [capabilityGroups])
 
   const refresh = useCallback(async () => {
     try {
@@ -850,9 +860,7 @@ export function ImplantsView({
             engagementId={engagementId}
             implantId={dialog.implantId}
             verb={dialog.verb}
-            form={
-              VERB_FORMS[dialog.verb] ?? DEFAULT_TASK_FORM
-            }
+            form={formForDescriptor(descriptorByVerb.get(dialog.verb))}
             attributes={attributesByVerb.get(dialog.verb) ?? {}}
             onClose={() => setDialog(null)}
             onIssued={() => void refresh()}

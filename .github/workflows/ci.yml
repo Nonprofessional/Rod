@@ -62,11 +62,15 @@ jobs:
           cache-dependency-path: src/teamserver/Rod.TeamServer/Client/package-lock.json
       - name: Build operator UI
         # Emits the React bundle into src/teamserver/Rod.TeamServer/wwwroot so
-        # the .NET build packages it. The output is gitignored.
+        # the .NET build packages it. The output is gitignored. The test run
+        # covers the UI's contract halves (the schema-driven form builder,
+        # the output-taxonomy parsers) -- the acceptance legs that keep a
+        # novel module's UI interaction framework-free.
         working-directory: src/teamserver/Rod.TeamServer/Client
         run: |
           npm ci
           npm run build
+          npm test
       - name: Restore
         run: dotnet restore Rod.slnx
       - name: Build

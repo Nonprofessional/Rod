@@ -4,6 +4,7 @@ import {
   type EngagementTask,
   type Implant,
   type SummarizedTask,
+  type VerbOutputKind,
   attachArtifact,
   fetchArtifactBlob,
   listArtifacts,
@@ -12,10 +13,12 @@ import {
   listImplants,
   summarizeTask,
 } from '../api'
+import { loadCapabilityGroups } from '../capabilities'
 import { HelpHint } from '../components/HelpHint'
 import { Icon } from '../components/Icons'
 import { InteractPane } from '../components/InteractPane'
 import { StatusBadge } from '../components/StatusBadge'
+import { TaskOutputView } from '../components/TaskOutputView'
 import { saveBlob } from '../download'
 import { ellipsize, fmtBytes } from '../format'
 import { isChannelVerb } from '../verbForms'
@@ -60,6 +63,26 @@ export function TaskLogView({
   // re-filter on every keystroke.
   const [textDraft, setTextDraft] = useState('')
   const [textFilter, setTextFilter] = useState('')
+  // The verb -> output-kind map the typed output panels key on, from the
+  // capability registry -- whatever it declares, module verbs included.
+  const [outputKindByVerb, setOutputKindByVerb] = useState<Map<string, VerbOutputKind>>(new Map())
+
+  useEffect(() => {
+    void loadCapabilityGroups()
+      .then((groups) => {
+        const map = new Map<string, VerbOutputKind>()
+        for (const group of groups) {
+          for (const descriptor of group.descriptors) {
+            if (descriptor.output) map.set(descriptor.verb, descriptor.output.kind)
+          }
+        }
+        setOutputKindByVerb(map)
+      })
+      .catch(() => {
+        // The catalog is a render enhancement; a failed load leaves the
+        // plain transcript, which is the honest fallback.
+      })
+  }, [])
 
   const refresh = useCallback(async () => {
     try {
@@ -264,6 +287,7 @@ export function TaskLogView({
                   key={t.taskId}
                   engagementId={engagementId}
                   task={t}
+                  outputKind={outputKindByVerb.get(t.verb) ?? null}
                   expanded={expanded.has(t.taskId)}
                   onToggle={() => toggleExpanded(t.taskId)}
                   onInteract={() =>
@@ -291,6 +315,7 @@ export function TaskLogView({
 function LogRow({
   engagementId,
   task,
+  outputKind,
   expanded,
   onToggle,
   onInteract,
@@ -298,6 +323,7 @@ function LogRow({
 }: {
   engagementId: string
   task: EngagementTask
+  outputKind: VerbOutputKind | null
   expanded: boolean
   onToggle: () => void
   onInteract: () => void
@@ -370,7 +396,17 @@ function LogRow({
                   <span className="muted">arguments</span> <code>{task.arguments}</code>
                 </div>
               )}
-              <pre className="output long">{task.output ?? '—'}</pre>
+              {task.output ? (
+                <TaskOutputView
+                  engagementId={engagementId}
+                  taskId={task.taskId}
+                  output={task.output}
+                  outputKind={outputKind}
+                  className="output long"
+                />
+              ) : (
+                <pre className="output long">—</pre>
+              )}
               <TaskSummary engagementId={engagementId} task={task} />
               <div className="task-detail-line muted">
                 created {new Date(task.createdAt).toLocaleString()}

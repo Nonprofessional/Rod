@@ -876,11 +876,54 @@ export function subscribeToEngagement(
 // risk badges). Sensitive categories -- evasion and exploit -- are listed too;
 // this surface holds only the contract, never concrete tradecraft.
 
+// The parameter schema and output taxonomy (the contract trilogy,
+// architecture.md Sec 15.2): everything the UI needs to task a verb it has
+// never met. The schema renders the form; the output kind routes the result
+// to the right panel; neither reaches the wire, where task arguments stay
+// the verb's own opaque string.
+
+export type VerbParameterKind =
+  | 'String'
+  | 'Text'
+  | 'Number'
+  | 'Boolean'
+  | 'Enum'
+  | 'File'
+  | 'Array'
+
+export interface VerbParameter {
+  name: string
+  label: string
+  kind: VerbParameterKind
+  required: boolean
+  help: string | null
+  placeholder: string | null
+  choices: string[] | null
+  trailing: boolean
+  inline: boolean
+}
+
+export type VerbOutputKind =
+  | 'Text'
+  | 'Enumeration'
+  | 'ProcessList'
+  | 'FileList'
+  | 'Credential'
+  | 'File'
+  | 'Screenshot'
+
+export interface VerbOutput {
+  kind: VerbOutputKind
+  help: string | null
+}
+
 export interface CapabilityDescriptor {
   verb: string
   category: string
   version: string
   attributes: Record<string, string>
+  parameters: VerbParameter[] | null
+  output: VerbOutput | null
 }
 
 export async function listCapabilities(): Promise<CapabilityDescriptor[]> {
@@ -1410,6 +1453,33 @@ export async function listLoot(
   if (limit !== undefined) params.set('limit', String(limit))
   const query = params.size > 0 ? `?${params.toString()}` : ''
   return jsonOrThrow(await fetch(`engagements/${engagementId}/loot${query}`))
+}
+
+// --- Credentials (the taxonomy's read-time projection) ---------
+//
+// The engagement's harvested credential rows, assembled at read time from
+// every completed task whose verb declared credential output -- any module's
+// harvest, the same projection posture the topology holds. Secrets render
+// masked in the UI; nothing here enters the audit chain.
+
+export interface CredentialRow {
+  kind: string
+  principal: string
+  secret: string | null
+  source: string | null
+  host: string | null
+  note: string | null
+  taskId: string | null
+  implantId: string | null
+  verb: string
+  capturedAt: string
+}
+
+export async function listCredentials(engagementId: string): Promise<CredentialRow[]> {
+  const page = await jsonOrThrow<{ items: CredentialRow[] }>(
+    await fetch(`engagements/${engagementId}/credentials`),
+  )
+  return page.items
 }
 
 export interface TopologyHost {

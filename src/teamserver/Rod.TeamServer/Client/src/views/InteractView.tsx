@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
+  type CapabilityDescriptor,
   type EngagementTask,
   type Implant,
   type PresenceRecord,
@@ -9,7 +10,7 @@ import {
   listImplantTasks,
   listImplants,
 } from '../api'
-import { loadCapabilityGroups, verbAttributes, type CapabilityGroup } from '../capabilities'
+import { loadCapabilityGroups, type CapabilityGroup } from '../capabilities'
 import { osIconFor } from '../osKind'
 import { ContextMenu } from '../components/ContextMenu'
 import { useContextMenu } from '../contextMenuState'
@@ -21,7 +22,8 @@ import { ShellDialog } from '../components/ShellDialog'
 import { SnippetSaveDialog } from '../components/SnippetSaveDialog'
 import { StatusBadge } from '../components/StatusBadge'
 import { TaskDialog } from '../components/TaskDialog'
-import { DEFAULT_TASK_FORM, isChannelVerb, VERB_FORMS } from '../verbForms'
+import { TaskOutputView } from '../components/TaskOutputView'
+import { formForDescriptor, isChannelVerb } from '../verbForms'
 import { ellipsize } from '../format'
 import { ago, formatSeconds, useNow } from '../when'
 import { implantMenuEntries } from './implantMenu'
@@ -146,7 +148,16 @@ export function InteractView({
     }
   }, [engagementId, implantId, cursor])
 
-  const descriptorByVerb = useMemo(() => verbAttributes(capabilityGroups), [capabilityGroups])
+  // The full descriptors by verb: attributes badge the dialogs, parameters
+  // render the forms, and the output kind keys the typed panels -- whatever
+  // the registry declares, module verbs included.
+  const descriptorByVerb = useMemo(() => {
+    const map = new Map<string, CapabilityDescriptor>()
+    for (const group of capabilityGroups) {
+      for (const descriptor of group.descriptors) map.set(descriptor.verb, descriptor)
+    }
+    return map
+  }, [capabilityGroups])
 
   const presence = onlineImplants.find((p) => p.implantId === implantId)
 
@@ -385,7 +396,9 @@ export function InteractView({
             <ConsoleBlock
               key={task.taskId}
               task={task}
+              engagementId={engagementId}
               operatorId={operator.operatorId}
+              outputKind={descriptorByVerb.get(task.verb)?.output?.kind ?? null}
               toggled={toggled.has(task.taskId)}
               onToggle={() => toggleToggled(task.taskId)}
               onCancel={() => void onCancel(task.taskId)}
@@ -467,10 +480,8 @@ export function InteractView({
           engagementId={engagementId}
           implantId={implantId}
           verb={dialogVerb}
-          form={
-            VERB_FORMS[dialogVerb] ?? DEFAULT_TASK_FORM
-          }
-          attributes={descriptorByVerb.get(dialogVerb) ?? {}}
+          form={formForDescriptor(descriptorByVerb.get(dialogVerb))}
+          attributes={descriptorByVerb.get(dialogVerb)?.attributes ?? {}}
           onClose={() => setDialogVerb(null)}
           onIssued={() => void refresh()}
         />
@@ -486,14 +497,18 @@ export function InteractView({
 // flipped against their default.
 function ConsoleBlock({
   task,
+  engagementId,
   operatorId,
+  outputKind,
   toggled,
   onToggle,
   onCancel,
   onInteract,
 }: {
   task: EngagementTask
+  engagementId: string
   operatorId: string
+  outputKind: import('../api').VerbOutputKind | null
   toggled: boolean
   onToggle: () => void
   onCancel: () => void
@@ -536,7 +551,15 @@ function ConsoleBlock({
           )}
         </span>
       </div>
-      {hasOutput && visible && <pre className="console-output">{output}</pre>}
+      {hasOutput && visible && (
+        <TaskOutputView
+          engagementId={engagementId}
+          taskId={task.taskId}
+          output={output}
+          outputKind={outputKind}
+          className="console-output"
+        />
+      )}
     </div>
   )
 }

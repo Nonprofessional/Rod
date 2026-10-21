@@ -1,19 +1,15 @@
-// Per-verb dialog sugar for task issuance. The capability registry
-// (GET /capabilities) stays the authority for which verbs exist and their
-// OPSEC attributes; this module only knows the *argument grammar* the
-// reference implant defines (the "<path> <base64>" shapes) so the operator UI
-// can ask for labeled fields instead of one raw argument string. A verb
-// without an entry here falls back to the generic raw-task form, so a
-// registry addition never needs a UI change to stay issuable.
+// Schema-driven task-form construction (architecture.md Sec 15.2, the
+// contract trilogy's first contract). The capability registry (GET
+// /capabilities) stays the authority for which verbs exist, their OPSEC
+// attributes, and now each verb's parameter schema; this module turns a
+// schema into the fields a dialog renders and the values into the verb's
+// argument string. It knows the *serialization rule* -- space-joined tokens
+// in declaration order, a trailing parameter taking the raw remainder, file
+// parameters riding the inline-or-staged content arm -- and nothing about
+// any specific verb: a module's descriptor renders its form the moment it
+// registers, with zero UI changes.
 
-export interface VerbField {
-  key: string
-  label: string
-  type?: 'text' | 'number' | 'file' | 'wide'
-  placeholder?: string
-  required?: boolean
-  help?: string
-}
+import type { CapabilityDescriptor, VerbParameter } from './api'
 
 // A file picked in a dialog: its name plus the bytes as base64 (and the byte
 // count, so the upload path can pick inline vs staged).
@@ -30,235 +26,112 @@ export interface BuiltTask {
   content?: string
 }
 
+export interface VerbField {
+  key: string
+  label: string
+  kind: VerbParameter['kind']
+  placeholder?: string
+  required?: boolean
+  help?: string
+  choices?: string[]
+  // The final parameter that takes the raw remainder of the argument string.
+  trailing?: boolean
+}
+
 export interface VerbForm {
   title: string
   fields: VerbField[]
   // Async because the staged upload arm hashes the bytes before it can name
   // them in the arguments string.
   build: (
-    values: Record<string, string>,
+    values: Record<string, string | boolean>,
     files: Record<string, SelectedFile>,
   ) => BuiltTask | Promise<BuiltTask>
 }
 
-// The inline ceiling the implant accepts inside its arguments string;
-// anything larger must ride the staged arm.
+// The inline ceiling the reference implant accepts inside its arguments
+// string; anything larger must ride the staged arm.
 const INLINE_FILE_LIMIT = 1024 * 1024
 
-async function sha256Hex(base64: string): Promise<string> {
-  const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0))
-  const digest = await crypto.subtle.digest('SHA-256', bytes)
-  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('')
+const text = (value: string | boolean | undefined): string =>
+  typeof value === 'string' ? value.trim() : ''
+
+// Builds the form a descriptor's schema describes. A descriptor with no
+// parameters yields the zero-field form (issue outright); one with no schema
+// at all falls back to the raw-argument form -- the honest degradation for a
+// verb nobody has described yet.
+export function formForDescriptor(descriptor: CapabilityDescriptor | undefined): VerbForm {
+  if (!descriptor || !descriptor.parameters) return DEFAULT_TASK_FORM
+  const fields: VerbField[] = descriptor.parameters.map((p) => ({
+    key: p.name,
+    label: p.label,
+    kind: p.kind,
+    placeholder: p.placeholder ?? undefined,
+    required: p.required,
+    help: p.help ?? undefined,
+    choices: p.choices ?? undefined,
+    trailing: p.trailing || undefined,
+  }))
+  const parameters = descriptor.parameters
+  return {
+    title: titleFor(descriptor),
+    fields,
+    build: (values, files) => buildArguments(parameters, values, files),
+  }
 }
 
-const text = (value: string | undefined): string => (value ?? '').trim()
+// The dialog title: the verb's own name -- the one label every audience
+// shares -- with the category as context. No per-verb sugar to maintain.
+function titleFor(descriptor: CapabilityDescriptor): string {
+  return `Task ${descriptor.verb}`
+}
 
-export const VERB_FORMS: Record<string, VerbForm> = {
-  'shell.exec': {
-    title: 'Run a shell command',
-    fields: [{ key: 'command', label: 'Command', type: 'wide', required: true, placeholder: 'whoami' }],
-    build: (values) => ({ arguments: text(values.command) }),
-  },
-  'file.pull': {
-    title: 'Download a file',
-    fields: [
-      {
-        key: 'path',
-        label: 'Remote path',
-        type: 'wide',
-        required: true,
-        placeholder: '/etc/hostname',
-        help: 'Small files return inline in the task output; larger ones stream back as a downloadable artifact.',
-      },
-    ],
-    build: (values) => ({ arguments: text(values.path) }),
-  },
-  'file.push': {
-    title: 'Upload a file',
-    fields: [
-      { key: 'file', label: 'Local file', type: 'file', required: true },
-      {
-        key: 'path',
-        label: 'Remote path',
-        type: 'wide',
-        required: true,
-        placeholder: '/tmp/tool.exe',
-        help: 'The remote absolute path the bytes land at. Larger uploads stage server-side and stream to the implant.',
-      },
-    ],
-    // The implant's two upload arms: inline base64 in the arguments for small
-    // files, staged bytes named by hash for large ones.
-    build: async (values, files) => {
-      const path = text(values.path)
-      const file = files.file
-      if (!file) return { arguments: path }
-      if (file.bytes <= INLINE_FILE_LIMIT) return { arguments: `${path} ${file.base64}` }
-      return { arguments: `${path} sha256:${await sha256Hex(file.base64)}`, content: file.base64 }
-    },
-  },
-  'proc.kill': {
-    title: 'Terminate a process',
-    fields: [{ key: 'pid', label: 'PID', type: 'number', required: true, placeholder: '4242' }],
-    build: (values) => ({ arguments: text(values.pid) }),
-  },
-  'beacon.sleep': {
-    title: 'Retune the contact cadence',
-    fields: [
-      {
-        key: 'sleep',
-        label: 'Contact every',
-        required: true,
-        placeholder: '10s, 5m, or bare seconds (0 = back-to-back)',
-        help: 'Go duration (30s, 5m) or bare seconds. 0 contacts continuously — the interactive-as-poll posture.',
-      },
-      {
-        key: 'jitter',
-        label: 'Randomize ±',
-        placeholder: '2s — empty keeps the current jitter',
-      },
-    ],
-    build: (values) => ({
-      arguments: [text(values.sleep), text(values.jitter)].filter(Boolean).join(' '),
-    }),
-  },
-  'recon.portscan': {
-    title: 'Scan ports on a host',
-    fields: [
-      { key: 'host', label: 'Host', required: true, placeholder: '10.0.0.5' },
-      { key: 'range', label: 'Port range', required: true, placeholder: '1-1024', help: 'Inclusive start-end.' },
-    ],
-    build: (values) => ({ arguments: `${text(values.host)} ${text(values.range)}` }),
-  },
-  'recon.service': {
-    title: 'Probe services on a host',
-    fields: [
-      { key: 'host', label: 'Host', required: true, placeholder: '10.0.0.5' },
-      { key: 'ports', label: 'Ports', required: true, placeholder: '22,80,443' },
-    ],
-    build: (values) => ({ arguments: `${text(values.host)} ${text(values.ports)}` }),
-  },
-  'collect.cred': {
-    title: 'Collect credentials',
-    fields: [
-      {
-        key: 'source',
-        label: 'Store (optional)',
-        placeholder: 'ssh, aws, or cmdkey',
-        help: 'Empty enumerates every standard store the implant reaches.',
-      },
-    ],
-    build: (values) => ({ arguments: text(values.source) }),
-  },
-  'persist.install': {
-    title: 'Install persistence',
-    fields: [
-      {
-        key: 'mechanism',
-        label: 'Mechanism',
-        required: true,
-        placeholder: 'runkey, schtask, service, cron, or systemd',
-      },
-      { key: 'name', label: 'Name', required: true, placeholder: 'update-service' },
-      {
-        key: 'payload',
-        label: 'Payload',
-        type: 'wide',
-        required: true,
-        placeholder: 'the command or unit body the mechanism runs',
-      },
-    ],
-    build: (values) => ({
-      arguments: `${text(values.mechanism)} ${text(values.name)} ${text(values.payload)}`,
-    }),
-  },
-  'persist.remove': {
-    title: 'Remove persistence',
-    fields: [
-      { key: 'mechanism', label: 'Mechanism', required: true, placeholder: 'cron' },
-      { key: 'name', label: 'Name', required: true, placeholder: 'update-service' },
-    ],
-    build: (values) => ({ arguments: `${text(values.mechanism)} ${text(values.name)}` }),
-  },
-  'module.load': {
-    title: 'Load a module',
-    fields: [
-      {
-        key: 'name',
-        label: 'Module name',
-        required: true,
-        placeholder: 'hostenum',
-        help: 'Letters, digits, dot, dash, underscore; 64 bytes at most. The name the module family registers under.',
-      },
-      {
-        key: 'file',
-        label: 'Module binary',
-        type: 'file',
-        required: true,
-        help: 'The plugin the build unit produced for the target\'s platform (a dll on Windows, the executable shape on Linux). Rides the staged content arm; the server binds its sha256 into the signed tasking.',
-      },
-    ],
-    // The staged arm only: the one-shot handler refuses module.load, so the
-    // bytes must always ride Content (the server appends the sha256 to the
-    // arguments -- no client-side hash needed, unlike file.push's inline
-    // split).
-    build: (values, files) => {
-      const name = text(values.name)
-      const file = files.file
-      if (!file) return { arguments: name }
-      return { arguments: name, content: file.base64 }
-    },
-  },
-  'module.unload': {
-    title: 'Unload a module',
-    fields: [
-      {
-        key: 'name',
-        label: 'Module name',
-        required: true,
-        placeholder: 'hostenum',
-      },
-    ],
-    build: (values) => ({ arguments: text(values.name) }),
-  },
-  'browser.dom': {
-    title: 'Read the page DOM',
-    fields: [
-      {
-        key: 'selector',
-        label: 'CSS selector (optional)',
-        placeholder: '#session-table',
-        help: 'Empty returns the whole document; output truncates at 1 MiB.',
-      },
-    ],
-    build: (values) => ({ arguments: text(values.selector) }),
-  },
-  'browser.redirect': {
-    title: 'Redirect the tab',
-    fields: [
-      {
-        key: 'url',
-        label: 'URL',
-        required: true,
-        placeholder: 'https://portal.example/login',
-        help: 'Navigating destroys the page and the hook with it.',
-      },
-    ],
-    build: (values) => ({ arguments: text(values.url) }),
-  },
-  'browser.prompt': {
-    title: 'Prompt the user',
-    fields: [
-      {
-        key: 'text',
-        label: 'Text',
-        type: 'wide',
-        required: true,
-        placeholder: 'Your session expired. Re-enter your password.',
-        help: 'Returns what the user answered (or that they dismissed it).',
-      },
-    ],
-    build: (values) => ({ arguments: text(values.text) }),
-  },
+// The serialization rule (architecture.md Sec 10's per-verb grammars, folded
+// into one deterministic build): non-file parameters join with single spaces
+// in declaration order, empty optionals drop out, a trailing parameter takes
+// everything after as the raw remainder (a value that itself carries spaces
+// belongs in the trailing slot -- the join is unquoted, exactly what the
+// reference grammars parse), and each file parameter rides the content arm --
+// inline base64 under the ceiling when the verb accepts it, staged bytes
+// otherwise (the server binds the sha256 into the signed arguments, so the
+// client never hashes).
+async function buildArguments(
+  parameters: VerbParameter[],
+  values: Record<string, string | boolean>,
+  files: Record<string, SelectedFile>,
+): Promise<BuiltTask> {
+  const tokens: string[] = []
+  let content: string | undefined
+
+  for (const parameter of parameters) {
+    if (parameter.kind === 'File') continue
+    const raw = values[parameter.name]
+    if (parameter.kind === 'Boolean') {
+      if (raw === true) tokens.push('true')
+      continue
+    }
+
+    const value = text(raw)
+    if (value === '') continue
+    tokens.push(value)
+  }
+
+  // The file arm serializes after the tokens -- the reference grammars read
+  // the payload as the tail (file.push's "<path> <base64>", the staged
+  // sha256 the server appends) -- so display order and serialization order
+  // stay independent.
+  for (const parameter of parameters) {
+    if (parameter.kind !== 'File') continue
+    const file = files[parameter.name]
+    if (!file) continue
+    if (parameter.inline && file.bytes <= INLINE_FILE_LIMIT) {
+      tokens.push(file.base64)
+    } else {
+      content = file.base64
+    }
+  }
+
+  return { arguments: tokens.join(' '), content }
 }
 
 // The verbs whose tasks run as live channels (the server's ChannelVerbs is the
@@ -272,12 +145,12 @@ export const CHANNEL_VERBS: readonly string[] = [
 
 export const isChannelVerb = (verb: string): boolean => CHANNEL_VERBS.includes(verb)
 
-// The generic task form a verb with no dedicated entry falls back to: the
-// raw argument string, nothing more.
+// The generic task form a verb with no schema falls back to: the raw
+// argument string, nothing more.
 export const DEFAULT_TASK_FORM: VerbForm = {
   title: 'Issue task',
-  fields: [{ key: 'args', label: 'Arguments', type: 'wide', placeholder: 'the argument string' }],
-  build: (values) => ({ arguments: (values.args ?? '').trim() }),
+  fields: [{ key: 'args', label: 'Arguments', kind: 'Text', placeholder: 'the argument string' }],
+  build: (values) => ({ arguments: text(values.args as string) }),
 }
 
 // Reads a picked file into the SelectedFile shape: the dialog calls it on
@@ -290,4 +163,15 @@ export async function readSelectedFile(file: globalThis.File): Promise<SelectedF
     binary += String.fromCharCode(...bytes.subarray(i, i + chunk))
   }
   return { name: file.name, base64: btoa(binary), bytes: bytes.length }
+}
+
+// The one-string-plus-inline-file serialization the file browser's upload
+// uses: the shared rule over a <path> token and an inline-capable file
+// parameter -- the same build a declared schema produces, offered directly
+// because the browser uploads without opening a dialog.
+export function buildPathUpload(path: string, file: SelectedFile): BuiltTask {
+  if (file.bytes <= INLINE_FILE_LIMIT) {
+    return { arguments: `${path.trim()} ${file.base64}` }
+  }
+  return { arguments: path.trim(), content: file.base64 }
 }

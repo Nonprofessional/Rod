@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import {
+  type CredentialRow,
   type HostEntry,
   type HostNote,
   type LootEntry,
@@ -8,6 +9,7 @@ import {
   clearHostLabel,
   fetchArtifactBlob,
   getTopology,
+  listCredentials,
   listHostNotes,
   listHosts,
   listLoot,
@@ -17,16 +19,18 @@ import { HelpHint } from '../components/HelpHint'
 import { saveBlob } from '../download'
 
 // The target-intel view (architecture.md Sec 11.2): what the engagement
-// learned, organized as a picture instead of transcripts. Three sections
+// learned, organized as a picture instead of transcripts. Four sections
 // share one card: the host roster (the enrollment-hostname grouping with the
 // crew's attributed labels and notes), the typed loot board (the artifact
-// store classified by what gathered each piece), and the topology graph
-// (hosts, pivot links, and recon observations assembled at read time).
-// Everything is a read of stores that already hold the data; the only writes
-// are the label and note facts, which land in the audit trail like their
-// implant-side twins.
+// store classified by what gathered each piece), the credential board (the
+// read-time projection over every task whose verb declared credential
+// output -- any module's harvest, architecture.md Sec 15.2), and the
+// topology graph (hosts, pivot links, and recon observations assembled at
+// read time). Everything is a read of stores that already hold the data; the
+// only writes are the label and note facts, which land in the audit trail
+// like their implant-side twins.
 
-type Section = 'hosts' | 'loot' | 'topology'
+type Section = 'hosts' | 'loot' | 'credentials' | 'topology'
 
 const LOOT_KINDS = ['screenshot', 'credential', 'file', 'other'] as const
 
@@ -38,24 +42,34 @@ export function IntelView({ engagementId, onlineTick }: { engagementId: string; 
         Intel
         <HelpHint>
           What the engagement learned: hosts grouped by the name they reported at enroll, loot
-          typed by what gathered it, and the network picture with its pivot links. Labels and
-          notes are attributed trail facts; opening loot records the pull.
+          typed by what gathered it, credentials harvested by any verb that declared them, and
+          the network picture with its pivot links. Labels and notes are attributed trail
+          facts; opening loot records the pull.
         </HelpHint>
       </h2>
       <div className="card">
         <div className="table-toolbar">
-          {(['hosts', 'loot', 'topology'] as const).map((s) => (
+          {(['hosts', 'loot', 'credentials', 'topology'] as const).map((s) => (
             <button
               key={s}
               className={section === s ? 'sm' : 'ghost sm'}
               onClick={() => setSection(s)}
             >
-              {s === 'hosts' ? 'Hosts' : s === 'loot' ? 'Loot' : 'Topology'}
+              {s === 'hosts'
+                ? 'Hosts'
+                : s === 'loot'
+                  ? 'Loot'
+                  : s === 'credentials'
+                    ? 'Credentials'
+                    : 'Topology'}
             </button>
           ))}
         </div>
         {section === 'hosts' && <HostsSection engagementId={engagementId} onlineTick={onlineTick} />}
         {section === 'loot' && <LootSection engagementId={engagementId} onlineTick={onlineTick} />}
+        {section === 'credentials' && (
+          <CredentialsSection engagementId={engagementId} onlineTick={onlineTick} />
+        )}
         {section === 'topology' && <TopologySection engagementId={engagementId} onlineTick={onlineTick} />}
       </div>
     </section>
@@ -429,6 +443,97 @@ function formatBytes(size: number): string {
   if (size < 1024) return `${size} B`
   if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KiB`
   return `${(size / (1024 * 1024)).toFixed(1)} MiB`
+}
+
+// --- Credentials: the harvest board ----------------------------------------
+//
+// The read-time projection over every completed task whose verb declared
+// credential output (architecture.md Sec 15.2's second contract): any
+// module's harvest lands here through its declaration alone. Secrets stay
+// masked until revealed; the rows carry their capture attribution.
+
+function CredentialsSection({ engagementId, onlineTick }: { engagementId: string; onlineTick: number }) {
+  const [rows, setRows] = useState<CredentialRow[] | null>(null)
+  const [revealed, setRevealed] = useState<Set<number>>(new Set())
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      try {
+        const list = await listCredentials(engagementId)
+        if (!cancelled) {
+          setRows(list)
+          setError(null)
+        }
+      } catch (e) {
+        if (!cancelled) setError(String(e))
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [engagementId, onlineTick])
+
+  if (error) return <p className="error">{error}</p>
+  if (!rows) return <p className="muted">Assembling the harvest…</p>
+
+  return (
+    <div>
+      <table>
+        <thead>
+          <tr>
+            <th>Captured</th>
+            <th>Kind</th>
+            <th>Principal</th>
+            <th>Secret</th>
+            <th>Source</th>
+            <th>Host</th>
+            <th>Harvested by</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row, index) => (
+            <tr key={`${row.verb}-${row.principal}-${index}`}>
+              <td>{new Date(row.capturedAt).toLocaleString()}</td>
+              <td>
+                <span className="chip">{row.kind}</span>
+              </td>
+              <td>
+                <code>{row.principal}</code>
+              </td>
+              <td>
+                {row.secret === null ? (
+                  <span className="muted">—</span>
+                ) : revealed.has(index) ? (
+                  <code>{row.secret}</code>
+                ) : (
+                  <button
+                    className="ghost sm"
+                    onClick={() => setRevealed((current) => new Set(current).add(index))}
+                  >
+                    Reveal
+                  </button>
+                )}
+              </td>
+              <td>{row.source ?? <span className="muted">—</span>}</td>
+              <td>{row.host ?? <span className="muted">—</span>}</td>
+              <td title={row.taskId ? `task ${row.taskId}` : undefined}>
+                {row.verb}
+                {row.implantId ? ` (implant ${row.implantId.slice(0, 8)})` : ''}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {rows.length === 0 && (
+        <p className="muted">
+          No credentials harvested yet -- any verb that declares credential output lands its
+          rows here.
+        </p>
+      )}
+    </div>
+  )
 }
 
 // --- Topology: the assembled network picture --------------------------------

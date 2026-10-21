@@ -10,10 +10,11 @@ import {
   listTaskSnippets,
 } from '../api'
 import { loadCapabilityGroups, verbAttributes, type CapabilityGroup } from '../capabilities'
+import type { CapabilityDescriptor } from '../api'
 import { fuzzyBest } from '../fuzzy'
 import { osIconFor } from '../osKind'
 import { NAV_GROUPS } from '../tabs'
-import { DEFAULT_TASK_FORM, VERB_FORMS } from '../verbForms'
+import { formForDescriptor } from '../verbForms'
 import { DIRECT_VERBS } from '../views/implantMenu'
 import { Icon, type IconName } from './Icons'
 import { TaskDialog } from './TaskDialog'
@@ -210,6 +211,13 @@ export function CommandPalette({
     [groups],
   )
   const attributesByVerb = useMemo(() => verbAttributes(groups), [groups])
+  const descriptorByVerb = useMemo(() => {
+    const map = new Map<string, CapabilityDescriptor>()
+    for (const group of groups) {
+      for (const descriptor of group.descriptors) map.set(descriptor.verb, descriptor)
+    }
+    return map
+  }, [groups])
   const contextImplant = implants.find((i) => i.implantId === contextImplantId) ?? null
 
   const implantEntry = (implant: Implant, run: () => void): Entry => ({
@@ -273,11 +281,14 @@ export function CommandPalette({
             resolveTarget({
               kind: 'verb',
               verb: descriptor.verb,
-              // The direct-or-dialog call the implant menu makes: a
-              // dedicated form or the raw fallback asks for arguments,
-              // the menu's zero-argument set issues outright.
+              // The direct-or-dialog call the implant menu makes: a verb
+              // whose declared schema carries no parameters issues outright
+              // (the menu's zero-argument mirror covers descriptors without
+              // a schema), anything else opens the schema-rendered form.
               direct:
-                !VERB_FORMS[descriptor.verb] && DIRECT_VERBS.includes(descriptor.verb),
+                descriptor.parameters !== null &&
+                descriptor.parameters.length === 0 &&
+                DIRECT_VERBS.includes(descriptor.verb),
             }),
         })
       }
@@ -495,7 +506,7 @@ export function CommandPalette({
           engagementId={engagementId}
           implantId={dialog.implantId}
           verb={dialog.verb}
-          form={VERB_FORMS[dialog.verb] ?? DEFAULT_TASK_FORM}
+          form={formForDescriptor(descriptorByVerb.get(dialog.verb))}
           attributes={attributesByVerb.get(dialog.verb) ?? {}}
           onClose={() => setDialog(null)}
           onIssued={() => {

@@ -10,7 +10,8 @@ import { Icon } from './Icons'
 import { StatusBadge } from './StatusBadge'
 import { saveBlob } from '../download'
 import { fmtBytes } from '../format'
-import { readSelectedFile, VERB_FORMS, type SelectedFile } from '../verbForms'
+import { buildPathUpload, readSelectedFile, type SelectedFile } from '../verbForms'
+import { renderOutput } from '../outputRender'
 
 // The file browser: fs.list walks the target's tree, file.push uploads into
 // the listed directory, file.pull downloads the picked file. The snapshot
@@ -40,19 +41,16 @@ interface Entry {
   mtime: string
 }
 
+// The file-list grammar parse (outputRender's shared taxonomy parser):
+// one JSON entry per line, anything that does not parse is not an entry.
 function parseListing(output: string): Entry[] {
-  const entries: Entry[] = []
-  for (const line of output.split('\n')) {
-    if (line.trim() === '') continue
-    try {
-      entries.push(JSON.parse(line) as Entry)
-    } catch {
-      // A non-JSON line is not an entry; the browser shows whatever parsed.
-    }
-  }
-  return entries.sort((a, b) =>
-    a.dir === b.dir ? a.name.localeCompare(b.name) : a.dir ? -1 : 1,
-  )
+  const panel = renderOutput('FileList', output)
+  if (panel.kind !== 'file-list') return []
+  return panel.rows
+    .map((row) => ({ ...row, mtime: row.mtime ?? '' }))
+    .sort((a, b) =>
+      a.dir === b.dir ? a.name.localeCompare(b.name) : a.dir ? -1 : 1,
+    )
 }
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
@@ -196,11 +194,9 @@ export function FileBrowser({
     }
     setPending(`uploading ${file.name}…`)
     try {
-      // The shared file.push grammar: inline under the ceiling, staged above.
-      const built = await VERB_FORMS['file.push'].build(
-        { path: joinPath(file.name) },
-        { file: selected },
-      )
+      // The shared serialization rule for a path plus an inline-capable file:
+      // inline base64 under the ceiling, staged bytes above.
+      const built = buildPathUpload(joinPath(file.name), selected)
       const done = await runTask('file.push', built.arguments, built.content)
       if (!done) return
       if (done.detail.outcome !== 'Succeeded') {

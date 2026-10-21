@@ -2499,6 +2499,31 @@ button.file-entry {
   overflow: auto;
 }
 
+/* --- Typed task output (the taxonomy's panels) ------------------------------------------- */
+
+/* Artifact rows under a file/screenshot-typed task output: name, size, and
+   the download link on one line; image previews sit above, bounded. */
+.artifact-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 6px 0;
+}
+
+.artifact-row {
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.screenshot-preview {
+  max-width: 320px;
+  max-height: 200px;
+  border: 1px solid var(--border, #333);
+  border-radius: 4px;
+  display: block;
+}
+
 /* --- Build summary ---------------------------------------------------------------------- */
 
 /* The baked shape read back from the form's picks, laid over the submit
