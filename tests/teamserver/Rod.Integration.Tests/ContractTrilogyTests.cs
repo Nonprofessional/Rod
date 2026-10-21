@@ -91,13 +91,19 @@ public class ContractTrilogyTests
         issued.EnsureSuccessStatusCode();
         var task = await issued.Content.ReadFromJsonAsync<TaskEndpoints.TaskResponse>();
 
-        var tasks = host.Services.GetRequiredService<ITaskRepository>();
-        var stored = await tasks.FindAsync(new TaskId(Guid.Parse(task!.TaskId)));
+        // Drive the completion through the use case, not the repository: the
+        // result capture is where a credential-kind task's harvest lands
+        // (architecture.md Sec 15.3), so a repository-direct completion would
+        // skip the products the read projections assert on. The dispatch mark
+        // stands in for the beacon claim this test never opens.
+        var repository = host.Services.GetRequiredService<ITaskRepository>();
         var clock = host.Services.GetRequiredService<TimeProvider>();
-        var at = clock.GetUtcNow();
-        stored!.MarkDispatched(at);
-        stored.Complete(output, TaskOutcome.Succeeded, at.AddSeconds(1));
-        await tasks.SaveAsync(stored);
+        var stored = await repository.FindAsync(new TaskId(Guid.Parse(task!.TaskId)));
+        stored!.MarkDispatched(clock.GetUtcNow());
+        await repository.SaveAsync(stored);
+        var service = host.Services.GetRequiredService<Rod.CoreState.Application.TaskService>();
+        await service.RecordResultAsync(
+            new TaskId(Guid.Parse(task!.TaskId)), output, TaskOutcome.Succeeded);
         return task.TaskId;
     }
 

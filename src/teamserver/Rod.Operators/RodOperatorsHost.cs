@@ -5,6 +5,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using Rod.CoreState.Live;
 using Rod.Operators.Automation;
+using Rod.Operators.Collaboration;
 using Rod.Operators.Endpoints;
 using Rod.Operators.Live;
 using Rod.Operators.Llm;
@@ -100,6 +101,24 @@ public static class RodOperatorsHost
         // no engine and no run endpoint here.
         services.TryAddSingleton<TaskSnippetService>();
 
+        // The collaboration surfaces (architecture.md Sec 15.3, ADR-005):
+        // the comment and chat use cases over the core-state stores, and
+        // the engagement search -- in-memory sweep by default, Postgres
+        // tsvector when the connection string is set (the persistence
+        // layer swaps the adapter). Options bind when configuration is
+        // supplied; the edit window's default stands alone.
+        if (configuration is not null)
+        {
+            services.AddOptions<CollaborationOptions>().Bind(configuration.GetSection(CollaborationOptions.SectionName));
+        }
+        else
+        {
+            services.AddOptions<CollaborationOptions>();
+        }
+        services.TryAddSingleton<CommentService>();
+        services.TryAddSingleton<ChatService>();
+        services.TryAddSingleton<Rod.CoreState.Collaboration.IEngagementSearch, InMemoryEngagementSearch>();
+
         // The LLM triage client (architecture.md Sec 11): opt-in and
         // OpenAI-compatible, its client built lazily on first call with the
         // request budget on the client pipeline. Options bind when
@@ -151,10 +170,11 @@ public static class RodOperatorsHost
     /// Maps the operator layer's endpoints: the SSE event stream that keeps an
     /// operator session live per engagement and pushes every engagement event,
     /// the automation-rule surface, the webhook-subscription surface, the
-    /// task-snippet surface, the LLM summarize route, and the recon workbench.
-    /// Call alongside
-    /// <c>MapRodEndpoints</c>. The MCP endpoint is deliberately not folded in
-    /// here -- <c>MapRodMcp</c> is a composition-root act (see its doc).
+    /// task-snippet surface, the collaboration surfaces (comments, chat,
+    /// search), the LLM summarize route, and the recon workbench. Call
+    /// alongside <c>MapRodEndpoints</c>. The MCP endpoint is deliberately not
+    /// folded in here -- <c>MapRodMcp</c> is a composition-root act (see its
+    /// doc).
     /// </summary>
     public static IEndpointRouteBuilder MapOperatorEndpoints(this IEndpointRouteBuilder endpoints)
     {
@@ -162,6 +182,9 @@ public static class RodOperatorsHost
         endpoints.MapAutomationRuleEndpoints();
         endpoints.MapWebhookSubscriptionEndpoints();
         endpoints.MapTaskSnippetEndpoints();
+        endpoints.MapCommentEndpoints();
+        endpoints.MapChatEndpoints();
+        endpoints.MapSearchEndpoints();
         endpoints.MapLlmEndpoints();
         endpoints.MapReconWorkbenchEndpoints();
         return endpoints;
