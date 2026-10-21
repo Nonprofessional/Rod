@@ -14,6 +14,7 @@ import {
   summarizeTask,
 } from '../api'
 import { loadCapabilityGroups } from '../capabilities'
+import { CommentsPanel } from '../components/CommentsPanel'
 import { HelpHint } from '../components/HelpHint'
 import { Icon } from '../components/Icons'
 import { InteractPane } from '../components/InteractPane'
@@ -287,6 +288,7 @@ export function TaskLogView({
                   key={t.taskId}
                   engagementId={engagementId}
                   task={t}
+                  tick={onlineTick}
                   outputKind={outputKindByVerb.get(t.verb) ?? null}
                   expanded={expanded.has(t.taskId)}
                   onToggle={() => toggleExpanded(t.taskId)}
@@ -315,6 +317,7 @@ export function TaskLogView({
 function LogRow({
   engagementId,
   task,
+  tick,
   outputKind,
   expanded,
   onToggle,
@@ -323,6 +326,7 @@ function LogRow({
 }: {
   engagementId: string
   task: EngagementTask
+  tick: number
   outputKind: VerbOutputKind | null
   expanded: boolean
   onToggle: () => void
@@ -414,6 +418,12 @@ function LogRow({
                 {' '}· by <code title={task.issuedBy}>{task.issuedBy.slice(0, 8)}</code>
               </div>
               <TaskArtifacts engagementId={engagementId} taskId={task.taskId} />
+              <CommentsPanel
+                engagementId={engagementId}
+                subjectKind="task"
+                subjectId={task.taskId}
+                tick={tick}
+              />
             </div>
           </td>
         </tr>

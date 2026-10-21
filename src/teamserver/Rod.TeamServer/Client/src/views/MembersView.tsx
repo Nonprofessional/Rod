@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { CommentsPanel } from '../components/CommentsPanel'
 import {
   type EngagementMember,
   type SessionOperator,
@@ -189,47 +190,102 @@ export function MembersView({
                 </tr>
               )}
               {members.map((member) => (
-                <tr key={member.operatorId}>
-                  <td>
-                    <span className="endpoint-cell">
-                      <code>{member.handle}</code>
-                      {member.operatorId === operator.operatorId && <span className="muted"> (you)</span>}
-                    </span>
-                  </td>
-                  <td title={ROLE_HELP[member.role] ?? member.role}>
-                    {member.role}
-                  </td>
-                  <td title={new Date(member.addedAt).toLocaleString()}>
-                    {new Date(member.addedAt).toLocaleDateString()}
-                  </td>
-                  <td>
-                    {isOwner && member.role !== 'owner' && (
-                      <span className="row-actions">
-                        <button
-                          className="ghost sm"
-                          onClick={() =>
-                            void onSetRole(member, member.role === 'writer' ? 'reader' : 'writer')
-                          }
-                          title={`Move to the ${member.role === 'writer' ? 'reader (watch only)' : 'writer (act and manage)'} tier. Takes effect on the member's next request.`}
-                        >
-                          Make {member.role === 'writer' ? 'reader' : 'writer'}
-                        </button>
-                        <button
-                          className="ghost sm"
-                          onClick={() => void onRemove(member)}
-                          title="Remove this membership. From its next request on, the operator cannot even see the engagement exists. The row can be re-granted at any time."
-                        >
-                          Remove
-                        </button>
-                      </span>
-                    )}
-                  </td>
-                </tr>
+                <MemberRow
+                  key={member.operatorId}
+                  engagementId={engagementId}
+                  member={member}
+                  isOwner={isOwner}
+                  operator={operator}
+                  onSetRole={onSetRole}
+                  onRemove={onRemove}
+                />
               ))}
             </tbody>
           </table>
         </div>
       </div>
+      <div className="card">
+        <h3>Engagement notes</h3>
+        <p className="muted">
+          Mutable process knowledge about the operation itself -- editable within
+          the window, carried on the timeline, never in the audit chain.
+        </p>
+        <CommentsPanel engagementId={engagementId} subjectKind="engagement" subjectId={engagementId} />
+      </div>
     </section>
+  )
+}
+
+// One roster row with the operator's comments folded behind the chevron:
+// notes about a teammate are process knowledge on that operator.
+function MemberRow({
+  engagementId,
+  member,
+  isOwner,
+  operator,
+  onSetRole,
+  onRemove,
+}: {
+  engagementId: string
+  member: EngagementMember
+  isOwner: boolean
+  operator: SessionOperator
+  onSetRole: (member: EngagementMember, role: 'reader' | 'writer') => void
+  onRemove: (member: EngagementMember) => void
+}) {
+  const [open, setOpen] = useState(false)
+  return (
+    <>
+      <tr>
+        <td>
+          <button
+            className={`ghost sm row-expand${open ? ' open' : ''}`}
+            title={open ? 'Hide notes on this operator' : 'Notes on this operator'}
+            onClick={() => setOpen((v) => !v)}
+          >
+            <Icon name={open ? 'chevronDown' : 'chevronRight'} />
+          </button>{' '}
+          <span className="endpoint-cell">
+            <code>{member.handle}</code>
+            {member.operatorId === operator.operatorId && <span className="muted"> (you)</span>}
+          </span>
+        </td>
+        <td title={ROLE_HELP[member.role] ?? member.role}>{member.role}</td>
+        <td title={new Date(member.addedAt).toLocaleString()}>
+          {new Date(member.addedAt).toLocaleDateString()}
+        </td>
+        <td>
+          {isOwner && member.role !== 'owner' && (
+            <span className="row-actions">
+              <button
+                className="ghost sm"
+                onClick={() => onSetRole(member, member.role === 'writer' ? 'reader' : 'writer')}
+                title={`Move to the ${member.role === 'writer' ? 'reader (watch only)' : 'writer (act and manage)'} tier. Takes effect on the member's next request.`}
+              >
+                Make {member.role === 'writer' ? 'reader' : 'writer'}
+              </button>
+              <button
+                className="ghost sm"
+                onClick={() => onRemove(member)}
+                title="Remove this membership. From its next request on, the operator cannot even see the engagement exists. The row can be re-granted at any time."
+              >
+                Remove
+              </button>
+            </span>
+          )}
+        </td>
+      </tr>
+      {open && (
+        <tr>
+          <td colSpan={4}>
+            <CommentsPanel
+              engagementId={engagementId}
+              subjectKind="operator"
+              subjectId={member.operatorId}
+            />
+          </td>
+        </tr>
+      )}
+    </>
   )
 }

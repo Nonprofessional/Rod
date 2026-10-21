@@ -2,12 +2,14 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   type Engagement,
   type Implant,
+  type SearchHitRow,
   type TaskSnippet,
   deleteTaskSnippet,
   issueTask,
   listEngagements,
   listImplants,
   listTaskSnippets,
+  searchEngagement,
 } from '../api'
 import { loadCapabilityGroups, verbAttributes, type CapabilityGroup } from '../capabilities'
 import type { CapabilityDescriptor } from '../api'
@@ -29,7 +31,7 @@ import { TaskDialog } from './TaskDialog'
 // against the pick, the first against the console's implant when the
 // palette opened from one.
 
-type Section = 'snippet' | 'verb' | 'implant' | 'navigate'
+type Section = 'find' | 'snippet' | 'verb' | 'implant' | 'navigate'
 
 interface Entry {
   key: string
@@ -53,6 +55,7 @@ type Pending =
   | { kind: 'snippet'; snippet: TaskSnippet }
 
 const SECTION_LABELS: Record<Section, string> = {
+  find: 'find',
   snippet: 'snippet',
   verb: 'verb',
   implant: 'implant',
@@ -60,6 +63,25 @@ const SECTION_LABELS: Record<Section, string> = {
 }
 
 const MAX_ENTRIES = 14
+
+// Where a search hit lands: the surface that shows the corpus it came from.
+// Comments and tasks live in the task log, credentials and artifacts in the
+// intel picture, chat in the mutable timeline -- the audit view.
+function hitHash(engagementId: string, hit: SearchHitRow): string {
+  const base = `#/engagements/${engagementId}`
+  switch (hit.corpus) {
+    case 'comment':
+    case 'task_output':
+      return `${base}/tasking`
+    case 'credential':
+    case 'artifact':
+      return `${base}/intel`
+    case 'chat_message':
+      return `${base}/audit`
+    default:
+      return base
+  }
+}
 
 export function CommandPalette({
   engagementId,
@@ -89,6 +111,12 @@ export function CommandPalette({
 
   const [implants, setImplants] = useState<Implant[]>([])
   const [snippets, setSnippets] = useState<TaskSnippet[]>([])
+  // The engagement-wide server search (architecture.md Sec 15.3): the same
+  // query that fuzzy-matches the palette's local entries also asks the
+  // tsvector index, so three-plus characters reach task output, comments,
+  // artifact metadata, credentials, and chat -- surfaces a local list can
+  // never hold.
+  const [serverHits, setServerHits] = useState<SearchHitRow[]>([])
   const [groups, setGroups] = useState<CapabilityGroup[]>([])
   const [engagements, setEngagements] = useState<Engagement[]>([])
   const [loaded, setLoaded] = useState(false)
@@ -129,6 +157,27 @@ export function CommandPalette({
   useEffect(() => {
     inputRef.current?.focus()
   }, [pending])
+
+  useEffect(() => {
+    if (!engagementId || pending || query.trim().length < 3) {
+      setServerHits([])
+      return
+    }
+    let cancelled = false
+    const timer = setTimeout(() => {
+      void searchEngagement(engagementId, query.trim())
+        .then((hits) => {
+          if (!cancelled) setServerHits(hits)
+        })
+        .catch(() => {
+          if (!cancelled) setServerHits([])
+        })
+    }, 250)
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
+  }, [engagementId, pending, query])
 
   const navigate = (hash: string) => {
     window.location.hash = hash
@@ -238,6 +287,21 @@ export function CommandPalette({
 
   const entries = useMemo<Entry[]>(() => {
     const list: Entry[] = []
+    if (!pending && engagementId) {
+      // The server's answers outrank the local fuzzy set: an operator who
+      // typed a real needle wants the needle, not a similarly-spelled verb.
+      for (const hit of serverHits) {
+        list.push({
+          key: `find:${hit.corpus}:${hit.refId}`,
+          section: 'find',
+          label: hit.title,
+          detail: hit.excerpt,
+          keywords: [hit.excerpt],
+          bonus: 20,
+          run: () => navigate(hitHash(engagementId, hit)),
+        })
+      }
+    }
     if (pending) {
       // Target picking: only the fleet is reachable, Enter issues.
       for (const implant of implants) {
@@ -364,7 +428,7 @@ export function CommandPalette({
     // the data the list is built from, and every handler re-reads its
     // action from the loop variable rather than from a cached snapshot.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pending, engagementId, implants, snippets, descriptors, engagements, contextImplantId])
+  }, [pending, engagementId, implants, snippets, descriptors, engagements, contextImplantId, serverHits])
 
   const matches = useMemo(() => {
     if (query.trim() === '') return entries.slice(0, MAX_ENTRIES)

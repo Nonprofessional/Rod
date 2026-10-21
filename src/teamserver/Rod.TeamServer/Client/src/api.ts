@@ -769,6 +769,9 @@ export interface EngagementStreamHandlers {
   onShellSessionEnded?: (payload: string) => void
   onPayloadFetched?: (payload: string) => void
   onCampaignActivity?: (payload: string) => void
+  // A comment or chat row moved (added, edited, deleted, a channel created,
+  // a message sent): collaboration surfaces refetch on it.
+  onCollaborationChange?: (kind: string) => void
   onError?: (event: Event) => void
 }
 
@@ -863,6 +866,15 @@ export function subscribeToEngagement(
     const payload = parse((e as MessageEvent).data)
     handlers.onCampaignActivity?.(payload?.payload ?? '')
   })
+  const onCollaboration = (e: Event) => {
+    const payload = parse((e as MessageEvent).data)
+    handlers.onCollaborationChange?.(payload?.kind ?? '')
+  }
+  source.addEventListener('CommentAdded', onCollaboration)
+  source.addEventListener('CommentEdited', onCollaboration)
+  source.addEventListener('CommentDeleted', onCollaboration)
+  source.addEventListener('ChatChannelCreated', onCollaboration)
+  source.addEventListener('ChatMessageSent', onCollaboration)
   source.onerror = (e) => handlers.onError?.(e)
 
   return () => source.close()
@@ -1013,6 +1025,10 @@ export interface AuditEventEntry {
   output: string | null
   outcome: string
   at: string
+  // True for the collaboration rows (comments, chat) that ride the timeline
+  // as ordinary events without entering the hash chain -- mutable process
+  // knowledge beside the chain's immutable facts.
+  mutable?: boolean
 }
 
 export async function listAudit(
@@ -1463,6 +1479,9 @@ export async function listLoot(
 // masked in the UI; nothing here enters the audit chain.
 
 export interface CredentialRow {
+  // The row's stable id -- the value a $cred-<id> task-reference placeholder
+  // addresses in comments and task input.
+  id: string
   kind: string
   principal: string
   secret: string | null
@@ -1641,6 +1660,165 @@ export async function deleteTaskSnippet(
   if (!response.ok && response.status !== 404) {
     throw new Error(`delete task snippet: ${response.status}`)
   }
+}
+
+// --- Collaboration: comments, chat, global search  -------------
+//
+// The engagement's mutable process knowledge (architecture.md Sec 15.3):
+// comments on entities (editable by their author within a window), chat
+// channels, and the one-query global search over task output, comments,
+// artifact metadata, credentials, and chat. None of it enters the audit
+// chain; the timeline carries it as explicitly mutable rows.
+
+export type CommentSubjectKind =
+  | 'task'
+  | 'implant'
+  | 'artifact'
+  | 'file'
+  | 'engagement'
+  | 'operator'
+
+export interface CommentRow {
+  id: string
+  subjectKind: CommentSubjectKind
+  subjectId: string
+  authorId: string
+  body: string
+  createdAt: string
+  editedAt: string | null
+  editable: boolean
+}
+
+export async function listComments(
+  engagementId: string,
+  subjectKind: CommentSubjectKind,
+  subjectId: string,
+): Promise<CommentRow[]> {
+  const query = `?subjectKind=${subjectKind}&subjectId=${encodeURIComponent(subjectId)}`
+  const page = await jsonOrThrow<{ items: CommentRow[] }>(
+    await fetch(`engagements/${engagementId}/comments${query}`),
+  )
+  return page.items
+}
+
+export async function createComment(
+  engagementId: string,
+  subjectKind: CommentSubjectKind,
+  subjectId: string,
+  body: string,
+): Promise<CommentRow> {
+  const response = await fetch(`engagements/${engagementId}/comments`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ subjectKind, subjectId, body }),
+  })
+  return jsonOrThrow(response)
+}
+
+export async function editComment(
+  engagementId: string,
+  commentId: string,
+  body: string,
+): Promise<CommentRow> {
+  const response = await fetch(`engagements/${engagementId}/comments/${commentId}`, {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ body }),
+  })
+  return jsonOrThrow(response)
+}
+
+export async function deleteComment(engagementId: string, commentId: string): Promise<void> {
+  const response = await fetch(`engagements/${engagementId}/comments/${commentId}`, {
+    method: 'DELETE',
+  })
+  if (!response.ok && response.status !== 404) {
+    throw new ApiError(`${response.status} ${response.statusText}`, response.status)
+  }
+}
+
+export interface ChatChannelRow {
+  id: string
+  name: string
+  createdBy: string
+  createdAt: string
+}
+
+export interface ChatMessageRow {
+  id: string
+  channelId: string
+  authorId: string
+  body: string
+  sentAt: string
+}
+
+export async function listChatChannels(engagementId: string): Promise<ChatChannelRow[]> {
+  const page = await jsonOrThrow<{ items: ChatChannelRow[] }>(
+    await fetch(`engagements/${engagementId}/chat/channels`),
+  )
+  return page.items
+}
+
+export async function createChatChannel(
+  engagementId: string,
+  name: string,
+): Promise<ChatChannelRow> {
+  const response = await fetch(`engagements/${engagementId}/chat/channels`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ name }),
+  })
+  return jsonOrThrow(response)
+}
+
+export async function listChatMessages(
+  engagementId: string,
+  channelId: string,
+  cursor?: string,
+): Promise<ListPage<ChatMessageRow>> {
+  const query = cursor ? `?cursor=${encodeURIComponent(cursor)}&limit=50` : '?limit=50'
+  return jsonOrThrow(await fetch(`engagements/${engagementId}/chat/channels/${channelId}/messages${query}`))
+}
+
+export async function sendChatMessage(
+  engagementId: string,
+  channelId: string,
+  body: string,
+): Promise<ChatMessageRow> {
+  const response = await fetch(`engagements/${engagementId}/chat/channels/${channelId}/messages`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ body }),
+  })
+  return jsonOrThrow(response)
+}
+
+export type SearchCorpus =
+  | 'task_output'
+  | 'comment'
+  | 'artifact'
+  | 'credential'
+  | 'chat_message'
+
+export interface SearchHitRow {
+  corpus: SearchCorpus
+  refId: string
+  title: string
+  excerpt: string
+  at: string
+}
+
+export async function searchEngagement(
+  engagementId: string,
+  query: string,
+  corpora?: SearchCorpus[],
+): Promise<SearchHitRow[]> {
+  const params = new URLSearchParams({ q: query })
+  if (corpora && corpora.length > 0) params.set('corpora', corpora.join(','))
+  const page = await jsonOrThrow<{ items: SearchHitRow[] }>(
+    await fetch(`engagements/${engagementId}/search?${params.toString()}`),
+  )
+  return page.items
 }
 
 // --- Listeners and redirector repoint  -----------------------

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { CommentsPanel } from '../components/CommentsPanel'
 import {
   type CredentialRow,
   type HostEntry,
@@ -16,6 +17,7 @@ import {
   setHostLabel,
 } from '../api'
 import { HelpHint } from '../components/HelpHint'
+import { Icon } from '../components/Icons'
 import { saveBlob } from '../download'
 
 // The target-intel view (architecture.md Sec 11.2): what the engagement
@@ -408,23 +410,12 @@ function LootSection({ engagementId, onlineTick }: { engagementId: string; onlin
         </thead>
         <tbody>
           {items.map((entry) => (
-            <tr key={entry.artifactId}>
-              <td>{new Date(entry.storedAt).toLocaleString()}</td>
-              <td>
-                <span className="chip">{entry.kind}</span>
-              </td>
-              <td title={entry.contentType}>{entry.name}</td>
-              <td title={entry.taskId ? `task ${entry.taskId}` : 'pre-foothold finding'}>
-                {entry.verb ?? '—'}
-                {entry.implantId ? ` (implant ${entry.implantId.slice(0, 8)})` : ''}
-              </td>
-              <td>{formatBytes(entry.size)}</td>
-              <td>
-                <button className="ghost sm" onClick={() => void open(entry)}>
-                  {entry.kind === 'screenshot' ? 'Open' : 'Download'}
-                </button>
-              </td>
-            </tr>
+            <LootRow
+              key={entry.artifactId}
+              engagementId={engagementId}
+              entry={entry}
+              onOpen={() => void open(entry)}
+            />
           ))}
         </tbody>
       </table>
@@ -707,5 +698,60 @@ function TopologyGraph({ topology }: { topology: Topology }) {
         </details>
       )}
     </div>
+  )
+}
+
+// One loot row with the artifact's comments folded behind a chevron: a
+// working note on a captured file is process knowledge on that artifact.
+function LootRow({
+  engagementId,
+  entry,
+  onOpen,
+}: {
+  engagementId: string
+  entry: LootEntry
+  onOpen: () => void
+}) {
+  const [open, setOpen] = useState(false)
+  return (
+    <>
+      <tr>
+        <td>
+          <button
+            className={`ghost sm row-expand${open ? ' open' : ''}`}
+            title={open ? 'Hide comments' : 'Comments on this artifact'}
+            onClick={() => setOpen((v) => !v)}
+          >
+            <Icon name={open ? 'chevronDown' : 'chevronRight'} />
+          </button>{' '}
+          {new Date(entry.storedAt).toLocaleString()}
+        </td>
+        <td>
+          <span className="chip">{entry.kind}</span>
+        </td>
+        <td title={entry.contentType}>{entry.name}</td>
+        <td title={entry.taskId ? `task ${entry.taskId}` : 'pre-foothold finding'}>
+          {entry.verb ?? '—'}
+          {entry.implantId ? ` (implant ${entry.implantId.slice(0, 8)})` : ''}
+        </td>
+        <td>{formatBytes(entry.size)}</td>
+        <td>
+          <button className="ghost sm" onClick={onOpen}>
+            {entry.kind === 'screenshot' ? 'Open' : 'Download'}
+          </button>
+        </td>
+      </tr>
+      {open && (
+        <tr>
+          <td colSpan={6}>
+            <CommentsPanel
+              engagementId={engagementId}
+              subjectKind="artifact"
+              subjectId={entry.artifactId}
+            />
+          </td>
+        </tr>
+      )}
+    </>
   )
 }

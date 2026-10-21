@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { ChatPanel } from '../components/ChatPanel'
 import {
   type ClaimSummary,
   type DrivingEntry,
@@ -61,6 +62,7 @@ export function EngagementView({
   // A monotonically increasing tick the SSE handlers bump on any tasking or
   // presence change; child views read it to refresh without polling.
   const [tick, setTick] = useState(0)
+  const [chatOpen, setChatOpen] = useState(false)
   const [implantCount, setImplantCount] = useState(0)
   const [onlineImplants, setOnlineImplants] = useState<PresenceRecord[]>([])
   // Interaction ownership (architecture.md Sec 4.5): the engagement's held
@@ -128,6 +130,9 @@ export function EngagementView({
       // rows' budgets and the audit trail both move on it.
       onPayloadFetched: () => setTick((t) => t + 1),
       onCampaignActivity: () => setTick((t) => t + 1),
+      // A comment or chat row moved: the mutable surfaces refetch on the
+      // same beat everything else does.
+      onCollaborationChange: () => setTick((t) => t + 1),
     })
     return close
   }, [engagementId])
@@ -210,6 +215,16 @@ export function EngagementView({
       {tab === 'campaigns' && <CampaignsView engagementId={engagementId} onlineTick={tick} />}
       {tab === 'build' && <PayloadBuildView engagementId={engagementId} />}
       {tab === 'payloads' && <PayloadsView engagementId={engagementId} onlineTick={tick} />}
+      <button
+        className={chatOpen ? 'ghost sm chat-toggle active' : 'ghost sm chat-toggle'}
+        title={chatOpen ? 'Close the watch channel' : 'Open the watch channel'}
+        onClick={() => setChatOpen((v) => !v)}
+      >
+        Chat
+      </button>
+      {chatOpen && (
+        <ChatPanel engagementId={engagementId} tick={tick} onClose={() => setChatOpen(false)} />
+      )}
     </LiveContext.Provider>
   )
 }

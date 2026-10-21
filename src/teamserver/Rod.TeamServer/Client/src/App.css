@@ -3894,3 +3894,93 @@ button.palette-trigger {
 .terminal-surface.focused {
   box-shadow: inset 0 0 0 1px var(--accent);
 }
+
+/* --- Collaboration: comments, chat -------------------------------------------- */
+
+/* A task-reference token (@task-<id> / $cred-<id>) inside a comment body:
+   a chip, not a guid wall -- the server resolved it at publish. */
+.ref-token {
+  background: var(--surface-3, var(--surface-2));
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0 4px;
+  margin: 0 1px;
+  font-size: 11px;
+}
+
+/* The chat dock: the watch's room beside the working view. Fixed to the
+   right edge so it stays put while the tab behind it does the work. */
+.chat-toggle {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  z-index: 30;
+}
+
+.chat-toggle.active {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.chat-dock {
+  position: fixed;
+  top: 56px;
+  right: 0;
+  bottom: 0;
+  width: 340px;
+  z-index: 29;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface-1, var(--surface-2));
+  border-left: 1px solid var(--border);
+  box-shadow: -4px 0 16px rgb(0 0 0 / 25%);
+}
+
+.chat-dock header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.chat-channels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.chat-channel {
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  border-radius: 10px;
+  padding: 1px 9px;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+
+.chat-channel.active {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.chat-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 12px;
+}
+
+.chat-line {
+  padding: 3px 0;
+  font-size: 12.5px;
+  border-bottom: 1px solid var(--border);
+}
+
+.chat-input {
+  border-top: 1px solid var(--border);
+  padding: 8px 10px;
+  margin: 0;
+}

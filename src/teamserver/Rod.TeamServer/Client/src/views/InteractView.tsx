@@ -12,6 +12,7 @@ import {
 } from '../api'
 import { loadCapabilityGroups, type CapabilityGroup } from '../capabilities'
 import { osIconFor } from '../osKind'
+import { CommentsPanel } from '../components/CommentsPanel'
 import { ContextMenu } from '../components/ContextMenu'
 import { useContextMenu } from '../contextMenuState'
 import { FileBrowser } from '../components/FileBrowser'
@@ -485,6 +486,17 @@ export function InteractView({
           onClose={() => setDialogVerb(null)}
           onIssued={() => void refresh()}
         />
+      )}
+      {implant && (
+        <div className="card">
+          <h3>Comments</h3>
+          <CommentsPanel
+            engagementId={engagementId}
+            subjectKind="implant"
+            subjectId={implantId}
+            tick={onlineTick}
+          />
+        </div>
       )}
     </>
   )
