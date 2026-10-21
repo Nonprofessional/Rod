@@ -14,6 +14,16 @@
     assembly-level visibility, it does not add a package reference here.
   -->
   <ItemGroup>
+    <!--
+      The verb-to-technique mapping (architecture.md Sec 15.3, ADR-007) ships as
+      an embedded resource: versioned with the code it describes and present in
+      every assembly consumer (the default resolver, the coverage matrix, the
+      report's Navigator layer) without a filesystem dependency.
+    -->
+    <EmbeddedResource Include="Implants\attack-coverage.json" />
+  </ItemGroup>
+
+  <ItemGroup>
     <InternalsVisibleTo Include="Rod.Persistence" />
     <!--
       The renewal rule the certificate authorities share (ServerLeafRotation)
