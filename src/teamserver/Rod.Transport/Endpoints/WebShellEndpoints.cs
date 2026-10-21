@@ -265,6 +265,7 @@ public static class WebShellEndpoints
         ClaimsPrincipal user,
         WebShellService service,
         TaskService tasks,
+        Rod.CoreState.Collaboration.TaskReferenceService references,
         IHttpClientFactory http,
         IAuditStore audit,
         TimeProvider clock,
@@ -311,8 +312,19 @@ public static class WebShellEndpoints
                 statusCode: StatusCodes.Status409Conflict);
         await AppendDispatchedAuditAsync(dispatched, audit, cancellationToken);
 
+        // Credential placeholders resolve on the wire and nowhere else
+        // (architecture.md Sec 15.3, ADR-005): this route plays the beacon,
+        // so it carries the same rule BeaconTasking holds -- the adapter
+        // round trip holds the secret, while the task row and the
+        // issued/dispatched/completed records keep the placeholder the
+        // operator wrote. Unresolved tokens never reach here; issuance
+        // already refused them by name.
+        var wireCommand = Rod.CoreState.Collaboration.TaskReferences.ContainsCredential(body.Command)
+            ? await references.SubstituteCredentialsAsync(endpoint.Engagement, body.Command, cancellationToken)
+            : body.Command;
+
         var stopwatch = Stopwatch.StartNew();
-        var (ok, _, output) = await RoundTripAsync(http, endpoint.Profile, body.Command, cancellationToken);
+        var (ok, _, output) = await RoundTripAsync(http, endpoint.Profile, wireCommand, cancellationToken);
         stopwatch.Stop();
 
         TaskCompleted completed;

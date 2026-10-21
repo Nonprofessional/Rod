@@ -335,6 +335,62 @@ public class WebShellTests
         Assert.Empty(roster!);
     }
 
+    [Fact]
+    public async System.Threading.Tasks.Task WebShell_ExecSubstitutesCredentialsOnTheWire_StoresKeepThePlaceholder()
+    {
+        // The ADR-005 boundary this surface owed: the synchronous execute
+        // channel plays the beacon, so it carries the beacon's substitution
+        // rule -- the adapter round trip holds the secret, the task row and
+        // the audit arc keep the placeholder -- and an unresolvable token is
+        // refused at issuance, never sent anywhere.
+        await using var target = await StubTarget.StartAsync();
+        await using var env = await TestEnv.StartAsync();
+        await AuthenticatedHost.LoginAsync(env.Http);
+        var engagementId = await CreateEngagementAsync(env.Http);
+
+        var registered = await env.Http.PostAsJsonAsync($"/engagements/{engagementId}/webshells",
+            new RegisterWebShellRequest(target.Url, AdapterId: "eval-php", Password: "connect"));
+        registered.EnsureSuccessStatusCode();
+        var endpoint = await registered.Content.ReadFromJsonAsync<WebShellDto>();
+        Assert.NotNull(endpoint);
+
+        Rod.CoreState.EngagementId.TryParse(engagementId, out var engagement);
+        var credentials = env.Host.Services.GetRequiredService<Rod.CoreState.Collaboration.ICredentialStore>();
+        var credential = new Rod.CoreState.Collaboration.CredentialRecord(
+            Rod.CoreState.CredentialId.New(), engagement,
+            Rod.CoreState.TaskId.New(), Rod.CoreState.ImplantId.New(),
+            "password", "svc-web", "runuser-s3cret", Source: null, Host: "web01", Note: null,
+            env.Host.Services.GetRequiredService<TimeProvider>().GetUtcNow());
+        await credentials.AddAsync(credential, CancellationToken.None);
+
+        // The wire carries the secret: the stub echoes the command it ran.
+        var token = $"$cred-{credential.Id}";
+        var executed = await env.Http.PostAsJsonAsync(
+            $"/engagements/{engagementId}/webshells/{endpoint!.ImplantId}:exec",
+            new ExecuteWebShellRequest($"runuser {token} /svc"));
+        executed.EnsureSuccessStatusCode();
+        var result = await executed.Content.ReadFromJsonAsync<ExecDto>();
+        Assert.NotNull(result);
+        Assert.Equal("Succeeded", result!.Outcome);
+        Assert.Contains("runuser-s3cret", result.Output);
+        Assert.DoesNotContain(token, result.Output);
+
+        // The store keeps the placeholder the operator wrote.
+        var tasks = env.Host.Services.GetRequiredService<ITaskRepository>();
+        var row = (await tasks.ListByEngagementAsync(engagement))
+            .Single(t => t.Id.ToString() == result.TaskId);
+        Assert.Equal($"runuser {token} /svc", row.Arguments);
+
+        // A token no engagement row answers is refused before the queue,
+        // with the offender named -- nothing reaches the target.
+        var unresolved = await env.Http.PostAsJsonAsync(
+            $"/engagements/{engagementId}/webshells/{endpoint.ImplantId}:exec",
+            new ExecuteWebShellRequest($"runuser $cred-{Guid.NewGuid()} /svc"));
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, unresolved.StatusCode);
+        var problem = await unresolved.Content.ReadFromJsonAsync<Problem>();
+        Assert.Contains("$cred-", problem!.Error);
+    }
+
     private sealed record ScriptDto(
         string PayloadId, string AdapterId, string ScriptLanguage,
         string Password, string Script, string Fingerprint);
