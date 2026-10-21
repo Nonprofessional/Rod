@@ -1,0 +1,250 @@
+using System.Text;
+using Tomlyn;
+using Tomlyn.Serialization;
+
+namespace Rod.Cli.Manifest;
+
+/// <summary>
+/// Reads and writes <c>rod-module.toml</c>. Reading deserializes into a
+/// typed document shape and maps it onto the manifest model with
+/// field-level error reporting -- an operator's first <c>rod mod</c>
+/// failure should name the key, not the parser offset. Tomlyn 2.x maps
+/// properties by their exact declared name only, so every property of the
+/// document shape carries <see cref="TomlPropertyNameAttribute"/>, kebab
+/// TOML keys included; unknown keys are ignored, so a manifest written for
+/// a newer CLI still parses. Writing is a hand-rolled emitter for the
+/// scaffold template only: manifests are authored, never rewritten by the
+/// tooling, so round-trip fidelity is not a requirement and the emitter
+/// stays deliberately small.
+/// </summary>
+public static class ManifestToml
+{
+    public const string FileName = "rod-module.toml";
+
+    private sealed class Document
+    {
+        [TomlPropertyName("module")]
+        public ModuleSection? Module { get; set; }
+
+        [TomlPropertyName("compatibility")]
+        public CompatibilitySection? Compatibility { get; set; }
+
+        [TomlPropertyName("opsec")]
+        public OpsecSection? Opsec { get; set; }
+
+        [TomlPropertyName("attack")]
+        public AttackSection? Attack { get; set; }
+
+        [TomlPropertyName("package")]
+        public PackageSection? Package { get; set; }
+    }
+
+    private sealed class ModuleSection
+    {
+        [TomlPropertyName("name")] public string? Name { get; set; }
+        [TomlPropertyName("version")] public string? Version { get; set; }
+        [TomlPropertyName("entry")] public string? Entry { get; set; }
+        [TomlPropertyName("license")] public string? License { get; set; }
+        [TomlPropertyName("description")] public string? Description { get; set; }
+        [TomlPropertyName("homepage")] public string? Homepage { get; set; }
+    }
+
+    private sealed class CompatibilitySection
+    {
+        [TomlPropertyName("teamserver")] public string? Teamserver { get; set; }
+        [TomlPropertyName("targets")] public List<TargetRow>? Targets { get; set; }
+    }
+
+    private sealed class TargetRow
+    {
+        [TomlPropertyName("implant-class")] public string? ImplantClass { get; set; }
+        [TomlPropertyName("platform")] public string? Platform { get; set; }
+        [TomlPropertyName("arch")] public string? Arch { get; set; }
+    }
+
+    private sealed class OpsecSection
+    {
+        [TomlPropertyName("lands-on-disk")] public bool? LandsOnDisk { get; set; }
+        [TomlPropertyName("notes")] public string? Notes { get; set; }
+    }
+
+    private sealed class AttackSection
+    {
+        [TomlPropertyName("techniques")] public List<string>? Techniques { get; set; }
+    }
+
+    private sealed class PackageSection
+    {
+        [TomlPropertyName("include")] public List<string>? Include { get; set; }
+        [TomlPropertyName("exclude")] public List<string>? Exclude { get; set; }
+    }
+
+    /// <summary>Parses manifest text; syntax errors and semantic errors come
+    /// back together so one command run shows everything wrong with the file.</summary>
+    public static IReadOnlyList<string> Load(string text, out ModuleManifest? manifest)
+    {
+        manifest = null;
+        var errors = new List<string>();
+
+        Document? document;
+        try
+        {
+            document = TomlSerializer.Deserialize<Document>(text, new TomlSerializerOptions());
+        }
+        catch (TomlException failure)
+        {
+            return [failure.Message];
+        }
+        if (document is null)
+            return ["the manifest did not deserialize."];
+
+        var module = document.Module;
+        var compatibility = document.Compatibility;
+        var opsec = document.Opsec;
+
+        string? name = TrimOrNull(module?.Name);
+        string? versionText = TrimOrNull(module?.Version);
+        string? entryText = TrimOrNull(module?.Entry);
+        string? license = TrimOrNull(module?.License);
+        if (name is null) errors.Add("module.name is missing.");
+        if (versionText is null) errors.Add("module.version is missing.");
+        if (entryText is null) errors.Add("module.entry is missing (server, implant, or build-unit).");
+        if (license is null) errors.Add("module.license is missing; use an SPDX identifier.");
+
+        string? teamserverText = TrimOrNull(compatibility?.Teamserver);
+        if (teamserverText is null)
+            errors.Add("compatibility.teamserver is missing (the minimum teamserver version).");
+
+        var landsOnDisk = opsec?.LandsOnDisk;
+        if (landsOnDisk is null)
+            errors.Add("opsec.lands-on-disk is missing (boolean): state honestly what running the module leaves on the target.");
+
+        if (errors.Count > 0)
+            return errors;
+
+        if (!SemVer.TryParse(versionText!, out var version))
+            errors.Add($"module.version '{versionText}' is not a SemVer version (M.m.p[-pre]).");
+        if (!ModuleEntryKindNames.TryParse(entryText!, out var entry))
+            errors.Add($"module.entry '{entryText}' is not one of: server, implant, or build-unit.");
+        if (!SemVer.TryParse(teamserverText!, out var teamserverMin))
+            errors.Add($"compatibility.teamserver '{teamserverText}' is not a SemVer version.");
+
+        var targets = (compatibility?.Targets ?? []).Select(row => new TargetMatrix(
+            TrimOrNull(row.ImplantClass) ?? "",
+            TrimOrNull(row.Platform) ?? "",
+            TrimOrNull(row.Arch) ?? "")).ToList();
+
+        var techniques = (document.Attack?.Techniques ?? [])
+            .Where(t => !string.IsNullOrWhiteSpace(t))
+            .Select(t => t.Trim().ToUpperInvariant())
+            .ToList();
+
+        PackageRules? package = null;
+        var include = document.Package?.Include;
+        var exclude = document.Package?.Exclude;
+        if (include is { Count: > 0 } || exclude is { Count: > 0 })
+            package = new PackageRules(include ?? [], exclude ?? []);
+
+        if (errors.Count > 0)
+            return errors;
+
+        manifest = new ModuleManifest
+        {
+            Name = name!,
+            Version = version,
+            Entry = entry,
+            License = license!,
+            Description = TrimOrNull(module?.Description),
+            Homepage = TrimOrNull(module?.Homepage),
+            TeamserverMin = teamserverMin,
+            Targets = targets,
+            // Non-null here: a null lands-on-disk added an error above, and
+            // any error returns before the manifest is built.
+            Opsec = new OpsecMetadata(landsOnDisk!.Value, TrimOrNull(opsec?.Notes)),
+            Techniques = techniques,
+            Package = package,
+        };
+        errors.AddRange(manifest.Validate());
+        return errors;
+    }
+
+    public static (ModuleManifest Manifest, IReadOnlyList<string> Errors) LoadFile(string path)
+    {
+        var errors = Load(File.ReadAllText(path), out var manifest);
+        return manifest is null
+            ? (null!, errors.Count > 0 ? errors : [$"'{path}' did not produce a manifest."])
+            : (manifest, errors);
+    }
+
+    /// <summary>Renders the scaffold manifest <c>rod mod init</c> writes:
+    /// every field present, the optional ones commented out, the OPSEC and
+    /// license fields carrying honest defaults an author must look at.</summary>
+    public static string RenderTemplate(
+        string name,
+        SemVer version,
+        ModuleEntryKind entry,
+        string license,
+        SemVer teamserverMin,
+        bool landsOnDisk,
+        string? description)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("# The module manifest (architecture.md Sec 15.2, ADR-009): the");
+        sb.AppendLine("# self-describing contract every rod module ships. `rod mod publish`");
+        sb.AppendLine("# signs this file's canonical form; `rod mod install` verifies it.");
+        sb.AppendLine();
+        sb.AppendLine("[module]");
+        sb.AppendLine($"name = {Quote(name)}");
+        sb.AppendLine($"version = {Quote(version.ToString())}");
+        sb.AppendLine($"entry = {Quote(ModuleEntryKindNames.ToString(entry))}  # server | implant | build-unit");
+        sb.AppendLine($"license = {Quote(license)}  # SPDX identifier; publish refuses UNLICENSED");
+        sb.AppendLine($"description = {Quote(description ?? "")}");
+        sb.AppendLine();
+        sb.AppendLine("[compatibility]");
+        sb.AppendLine($"teamserver = {Quote(teamserverMin.ToString())}  # minimum teamserver version");
+        sb.AppendLine();
+        sb.AppendLine("[opsec]");
+        sb.AppendLine($"lands-on-disk = {landsOnDisk.ToString().ToLowerInvariant()}  # what running the module leaves on the target");
+        sb.AppendLine();
+        sb.AppendLine("[attack]");
+        sb.AppendLine("techniques = []  # ATT&CK ids this module covers, e.g. [\"T1082\"]");
+        sb.AppendLine();
+        sb.AppendLine("# Optional packaging rules; uncomment to narrow what publish packs.");
+        sb.AppendLine("# [package]");
+        sb.AppendLine("# include = [\"src/**\"]");
+        sb.AppendLine("# exclude = [\"**/bin/**\", \"**/obj/**\"]");
+        sb.AppendLine();
+        sb.AppendLine("# Optional implant-side matrix; server-entry modules leave it empty.");
+        sb.AppendLine("# [[compatibility.targets]]");
+        sb.AppendLine("# implant-class = \"implant\"");
+        sb.AppendLine("# platform = \"linux\"");
+        sb.AppendLine("# arch = \"amd64\"");
+        return sb.ToString();
+    }
+
+    internal static string Quote(string value)
+    {
+        var sb = new StringBuilder("\"");
+        foreach (var c in value)
+        {
+            switch (c)
+            {
+                case '\\': sb.Append("\\\\"); break;
+                case '"': sb.Append("\\\""); break;
+                case '\n': sb.Append("\\n"); break;
+                case '\r': sb.Append("\\r"); break;
+                case '\t': sb.Append("\\t"); break;
+                default:
+                    if (char.IsControl(c))
+                        sb.Append("\\u").Append(((int)c).ToString("x4"));
+                    else
+                        sb.Append(c);
+                    break;
+            }
+        }
+        return sb.Append('"').ToString();
+    }
+
+    private static string? TrimOrNull(string? value)
+        => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+}

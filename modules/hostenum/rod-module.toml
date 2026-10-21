@@ -1,0 +1,34 @@
+# The first in-tree module manifest (architecture.md Sec 15.2, ADR-009):
+# hostenum rides the same package format, canonical form, and signature
+# chain an external module rides, exercised by the CLI's end-to-end tests
+# exactly like a template-repository module.
+
+[module]
+name = "hostenum"
+version = "1.0.0"
+entry = "server"
+license = "Apache-2.0"
+description = "Host enumeration reference module: server-side registration for recon.hostenum, execution in the implant-side plugin at src/implant/rust/modules/hostenum."
+
+[compatibility]
+teamserver = "1.0.0"
+
+[[compatibility.targets]]
+implant-class = "implant"
+platform = "linux"
+arch = "amd64"
+
+[[compatibility.targets]]
+implant-class = "implant"
+platform = "windows"
+arch = "amd64"
+
+[opsec]
+lands-on-disk = true
+notes = "Server-side assembly installs on operator infrastructure only. On the target, the implant half loads from staged task content: through a memfd on Linux (nothing on disk), mapped in memory on Windows."
+
+[attack]
+techniques = ["T1082"]
+
+[package]
+include = ["rod-module.toml", "*.cs", "*.csproj"]

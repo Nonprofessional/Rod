@@ -22,6 +22,10 @@
     <Project Path="tests/teamserver/Rod.Capabilities.Tests/Rod.Capabilities.Tests.csproj" />
   </Folder>
   <Folder Name="/src/" />
+  <Folder Name="/src/cli/" />
+  <Folder Name="/src/cli/dotnet/">
+    <Project Path="src/cli/dotnet/Rod.Cli.csproj" />
+  </Folder>
   <!-- The reference redirector (ADR 0009/0011): a standalone Native AOT forwarder
        with no in-house references. Ships in the solution for central build, test,
        and format coverage, unlike the external reference implant. -->
@@ -37,6 +41,10 @@
     <Project Path="modules/hostenum/Rod.Modules.Hostenum.csproj" />
   </Folder>
   <Folder Name="/tests/" />
+  <Folder Name="/tests/cli/" />
+  <Folder Name="/tests/cli/dotnet/">
+    <Project Path="tests/cli/dotnet/Rod.Cli.Tests.csproj" />
+  </Folder>
   <Folder Name="/tests/redirector/">
     <Project Path="tests/redirector/dotnet/Rod.Redirector.Tests.csproj" />
   </Folder>

@@ -51,5 +51,9 @@
          to the 10.0.13 patch both advisories name; the direct
          PackageReference in Rod.Transport applies it to the transitive. -->
     <PackageVersion Include="System.Security.Cryptography.Pkcs" Version="10.0.13" />
+    <!-- The operator CLI's contracts (architecture.md Sec 15.2): rod-module.toml
+         parsing, and Ed25519 manifest signatures (the BCL has no Ed25519). -->
+    <PackageVersion Include="Tomlyn" Version="2.10.1" />
+    <PackageVersion Include="BouncyCastle.Cryptography" Version="2.7.0" />
   </ItemGroup>
 </Project>
