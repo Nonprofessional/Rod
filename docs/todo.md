@@ -40,8 +40,6 @@ so the queue moved up by the file's own mechanics.
 - **Resumable file transfer** (Sec 15.3, ADR-010). _AC:_ an interrupted
   transfer resumes to matching both-side hashes; the DNS degraded path
   passes.
-- **MCP read-write** (Sec 15.3, ADR-006). _AC:_ writes land in
-  the audit chain; token scopes are enforced.
 - **Built-in diagnostics and stats page** (Sec 15.3, ADR-008). _AC:_
   ships with no new external dependency.
 - **Kernel/module layering landed** -- browser-hook assets and phishing

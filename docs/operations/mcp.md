@@ -1,8 +1,8 @@
 # MCP server (agent tooling over the operator surface)
 
 The operator front exposes an [MCP](https://modelcontextprotocol.io/)
-endpoint so an operator can drive Rod's read side from their own agent
-tooling -- any MCP client -- instead of a hand-switched console
+endpoint so an operator can drive Rod from their own agent tooling --
+any MCP client -- instead of a hand-switched console
 (architecture.md Sec 4, the operator layer's agent surface).
 
 ## Endpoint and authentication
@@ -13,6 +13,9 @@ tooling -- any MCP client -- instead of a hand-switched console
   presents an **operator API token** as its bearer credential and receives
   the same principal the console's session carries -- scope rules apply
   unchanged, and revoking the token cuts the agent off at its next call.
+  The token's scope caps the toolset exactly as it caps the operator API:
+  every scope reads, and the write tools (below) take the **operate**
+  floor, so a read-scoped token's write call refuses naming the scope.
 
 Mint a token from the console's operator routes (the secret is shown once):
 
@@ -69,14 +72,30 @@ action surface the deployment never opened.
 
 Open, the tools issue through the same `TaskService` path the console's
 task dialog drives, so every gate holds exactly as if an operator typed
-the command: per-class verb sets, ROE guardrails (a refusal is audited
-`TaskRoeRefused` like any other), carrier claims, closed engagements, and
-attribution to the token's operator. The engagement bar is the write bar:
-`issue_task` requires the token's operator to hold writer (or owner)
-standing on the engagement -- a reader's token reads "no such engagement,"
-the same concealment the operator API keeps -- and a snippet replays only
-within its own engagement, every step issued in order to the named
-implant.
+the command -- per-class verb sets, ROE guardrails (a refusal is audited
+`TaskRoeRefused` like any other), carrier claims, closed engagements,
+and attribution to the token's operator -- with one exception, the red
+line below. The write bar has three parts:
+
+- **The scope floor.** The write tools take the operate scope -- the
+  same rank the operator API's route gate gives an engagement-scoped
+  write, held at the tool level because the route table cannot see a
+  tool call's name inside the JSON-RPC body. A read-scoped token's
+  write call refuses naming the scope, so a directed agent can
+  self-correct; a cookie session carries no scope and passes untouched.
+- **The engagement standing.** `issue_task` requires the token's
+  operator to hold writer (or owner) standing on the engagement -- a
+  reader's token reads "no such engagement," the same concealment the
+  operator API keeps -- and a snippet replays only within its own
+  engagement, every step issued in order to the named implant.
+- **The unattended red line** (architecture.md Sec 10.4). However
+  directed, an agent is not a console: the write tools refuse the
+  channel verbs (there is no interactive input half to own) and every
+  verb the sensitivity policy names -- keylogging, memory dumps,
+  injection, the evasion/exploit namespaces -- the same answer the
+  automation engine reads off the same policy port. Operators issue
+  those from the console; a replay whose snippet carries one refuses
+  whole, before any step issues.
 
 Opening the gate is a deployment's automation decision
 (architecture.md Sec 10.4's unattended-execution posture applies): review
