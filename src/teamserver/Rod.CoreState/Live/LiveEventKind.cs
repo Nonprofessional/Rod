@@ -152,4 +152,43 @@ public enum LiveEventKind
     /// the audit trail's per-fact record.
     /// </summary>
     CampaignActivity,
+
+    /// <summary>
+    /// A collaboration comment was added (architecture.md Sec 15.3,
+    /// ADR-005). Carries the author as its operator and the task or
+    /// implant id when the comment attaches to one, so a console can bind
+    /// the refresh to its pane. Comments are mutable process knowledge:
+    /// they ride this bus and the timeline as ordinary events but never
+    /// enter the audit chain.
+    /// </summary>
+    CommentAdded,
+
+    /// <summary>
+    /// A collaboration comment's body was edited within its window
+    /// (architecture.md Sec 15.3, ADR-005). The mirror of
+    /// <see cref="CommentAdded"/> for a row that changed in place.
+    /// </summary>
+    CommentEdited,
+
+    /// <summary>
+    /// A collaboration comment was deleted within its window
+    /// (architecture.md Sec 15.3, ADR-005). Connected operators drop the
+    /// row from their panels and timeline reads.
+    /// </summary>
+    CommentDeleted,
+
+    /// <summary>
+    /// A chat channel was created on the engagement (architecture.md
+    /// Sec 15.3, ADR-005). Connected operators refresh their channel list.
+    /// </summary>
+    ChatChannelCreated,
+
+    /// <summary>
+    /// A chat message was sent on an engagement channel (architecture.md
+    /// Sec 15.3, ADR-005). The payload names the channel and carries the
+    /// body, so an open chat pane appends it without a refetch. Chat is
+    /// mutable process knowledge beside comments: it rides this bus and
+    /// the timeline, never the audit chain.
+    /// </summary>
+    ChatMessageSent,
 }

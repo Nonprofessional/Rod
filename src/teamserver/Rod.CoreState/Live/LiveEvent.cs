@@ -1,3 +1,4 @@
+using Rod.CoreState.Collaboration;
 using Rod.CoreState.Engagements;
 using Rod.CoreState.Implants;
 using Rod.CoreState.Operators;
@@ -235,4 +236,47 @@ public sealed record LiveEvent(
         string payload,
         DateTimeOffset at)
         => new(engagement, LiveEventKind.MembershipChanged, actingOwner, ImplantId: null, TaskId: null, payload, at);
+
+    /// <summary>
+    /// Builds a comment event -- added, edited, or deleted (architecture.md
+    /// Sec 15.3, ADR-005). Attributed to the author; the comment's task or
+    /// implant subject rides the matching id so a console binds the refresh
+    /// to its pane; the payload is <c>subject:body</c> (the subject rendered
+    /// as <c>task/&lt;id&gt;</c> and its kin), body omitted on delete.
+    /// Comments ride this bus and the timeline as ordinary, mutable events
+    /// and never enter the audit chain.
+    /// </summary>
+    public static LiveEvent Comment(
+        EngagementId engagement,
+        LiveEventKind kind,
+        OperatorId author,
+        CommentSubjectKind subjectKind,
+        Guid subjectId,
+        string payload,
+        DateTimeOffset at)
+        => new(
+            engagement,
+            kind,
+            author,
+            subjectKind == CommentSubjectKind.Implant ? new ImplantId(subjectId) : null,
+            subjectKind == CommentSubjectKind.Task ? new TaskId(subjectId) : null,
+            payload,
+            at);
+
+    /// <summary>
+    /// Builds a chat event -- a channel created or a message sent
+    /// (architecture.md Sec 15.3, ADR-005). Attributed to the acting
+    /// operator; no implant or task rides it; the payload is
+    /// <c>channel:body</c> for a message and the channel name for a
+    /// creation, so an open chat pane renders it directly. Chat rides this
+    /// bus and the timeline as ordinary, mutable events and never enters
+    /// the audit chain.
+    /// </summary>
+    public static LiveEvent Chat(
+        EngagementId engagement,
+        LiveEventKind kind,
+        OperatorId actor,
+        string payload,
+        DateTimeOffset at)
+        => new(engagement, kind, actor, ImplantId: null, TaskId: null, payload, at);
 }

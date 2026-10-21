@@ -198,6 +198,16 @@ public enum TaskRejectionReason
     /// the final account of what was tasked.
     /// </summary>
     EngagementClosed,
+
+    /// <summary>
+    /// The task input carries a task-reference token
+    /// (<c>@task-&lt;id&gt;</c> / <c>$cred-&lt;id&gt;</c>, architecture.md
+    /// Sec 15.3, ADR-005) that resolves to no task or credential of the
+    /// engagement. Refused at issuance, before the queue, with the offender
+    /// named -- a dangling reference reaching the implant reads as a
+    /// mysterious failure there instead.
+    /// </summary>
+    UnknownTaskReference,
 }
 
 /// <summary>

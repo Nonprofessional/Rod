@@ -1,3 +1,4 @@
+using Rod.CoreState.Collaboration;
 using Rod.CoreState.Engagements;
 using Rod.CoreState.Implants;
 using Rod.CoreState.Live;
@@ -53,6 +54,8 @@ public sealed class TaskService
     private readonly ILiveEventBus? _bus;
     private readonly ITaskCapabilityResolver _capabilities;
     private readonly ITaskDispatchWake? _wake;
+    private readonly TaskReferenceService? _references;
+    private readonly CredentialHarvester? _harvester;
 
     public TaskService(
         ITaskRepository tasks,
@@ -107,6 +110,31 @@ public sealed class TaskService
         ILiveEventBus? bus,
         ITaskCapabilityResolver capabilities,
         ITaskDispatchWake? wake)
+        : this(tasks, implants, engagements, clock, bus, capabilities, wake, references: null, harvester: null)
+    {
+    }
+
+    /// <summary>
+    /// The fullest construction: the wake, plus the collaboration halves
+    /// (architecture.md Sec 15.3, ADR-005) -- the reference validator that
+    /// keeps <c>@task-</c>/<c>$cred-</c> tokens in task input from dangling
+    /// (checked at issuance, before the queue, so the refusal names the
+    /// token), and the harvester that lands a credential-kind task's rows
+    /// when it completes. Both optional the same way the wake is: the
+    /// container selects this constructor only when the composition root
+    /// registers them, and their absence skips the behavior exactly as a
+    /// missing bus skips the publish.
+    /// </summary>
+    public TaskService(
+        ITaskRepository tasks,
+        IImplantRepository implants,
+        IEngagementRepository engagements,
+        TimeProvider clock,
+        ILiveEventBus? bus,
+        ITaskCapabilityResolver capabilities,
+        ITaskDispatchWake? wake,
+        TaskReferenceService? references,
+        CredentialHarvester? harvester)
     {
         _tasks = tasks;
         _implants = implants;
@@ -115,6 +143,8 @@ public sealed class TaskService
         _bus = bus;
         _capabilities = capabilities;
         _wake = wake;
+        _references = references;
+        _harvester = harvester;
     }
 
     /// <summary>
@@ -234,6 +264,26 @@ public sealed class TaskService
                 $"Engagement {engagement.Id} is closed for close-out" +
                 (engagement.IsRetired ? " (retired)" : " (frozen)") +
                 $"; it accepts no new tasking.");
+        }
+
+        // Task references in the input resolve now, not at dispatch
+        // (architecture.md Sec 15.3, ADR-005): every well-formed
+        // <c>@task-</c>/<c>$cred-</c> token must address an entity of this
+        // engagement, or the tasking is refused before the queue with the
+        // offender named. The token itself rides the task row and the trail
+        // in placeholder form; only the dispatch wire ever sees the
+        // credential's secret.
+        if (_references is not null)
+        {
+            var unresolved = await _references.UnresolvedAsync(command.EngagementId, command.Arguments, cancellationToken);
+            if (unresolved.Count > 0)
+            {
+                throw new TaskRejectedException(
+                    TaskRejectionReason.UnknownTaskReference,
+                    "Task input references "
+                    + string.Join(", ", unresolved.Select(t => t.Render()))
+                    + " -- no such task or credential in this engagement.");
+            }
         }
 
         var task = Task.Create(
@@ -508,7 +558,7 @@ public sealed class TaskService
             ?? throw new InvalidOperationException(
                 $"Task {id} is not known or is no longer dispatched; the first result stands.");
 
-        return new TaskCompleted(
+        var completed = new TaskCompleted(
             task.Id,
             task.EngagementId,
             task.ImplantId,
@@ -518,6 +568,16 @@ public sealed class TaskService
             task.Output!,
             task.Outcome!.Value,
             task.CompletedAt!.Value);
+
+        // A credential-kind task's output lands in the credential store as
+        // it completes (architecture.md Sec 15.3, ADR-005) -- the rows a
+        // task-reference placeholder addresses. Beside the completion, not
+        // inside the repository: the harvest is a product of the result,
+        // never a state of the task.
+        if (_harvester is not null)
+            await _harvester.CaptureAsync(completed, cancellationToken);
+
+        return completed;
     }
 
     /// <summary>

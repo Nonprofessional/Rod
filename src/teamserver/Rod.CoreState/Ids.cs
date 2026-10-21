@@ -373,3 +373,101 @@ public readonly record struct RedirectorCredentialId(Guid Value)
         return false;
     }
 }
+
+/// <summary>
+/// Identifies one collaboration comment (architecture.md Sec 15.3,
+/// ADR-005): mutable process knowledge attached to an entity of the
+/// engagement. Disposable with the engagement.
+/// </summary>
+public readonly record struct CommentId(Guid Value)
+{
+    public static CommentId New() => new(Guid.NewGuid());
+
+    public override string ToString() => Value.ToString("N");
+
+    /// <summary>
+    /// Parses a comment id from its string form. Accepts both the compact
+    /// "N" format and the hyphenated Guid form; returns false on anything
+    /// else.
+    /// </summary>
+    public static bool TryParse(string? text, out CommentId id)
+    {
+        if (Guid.TryParse(text, out var guid))
+        {
+            id = new CommentId(guid);
+            return true;
+        }
+
+        id = default;
+        return false;
+    }
+}
+
+/// <summary>
+/// Identifies one engagement-scoped chat channel (architecture.md
+/// Sec 15.3, ADR-005): the operators' coordination room. Disposable
+/// with the engagement.
+/// </summary>
+public readonly record struct ChatChannelId(Guid Value)
+{
+    public static ChatChannelId New() => new(Guid.NewGuid());
+
+    public override string ToString() => Value.ToString("N");
+
+    /// <summary>
+    /// Parses a channel id from its string form. Accepts both the compact
+    /// "N" format and the hyphenated Guid form; returns false on anything
+    /// else.
+    /// </summary>
+    public static bool TryParse(string? text, out ChatChannelId id)
+    {
+        if (Guid.TryParse(text, out var guid))
+        {
+            id = new ChatChannelId(guid);
+            return true;
+        }
+
+        id = default;
+        return false;
+    }
+}
+
+/// <summary>
+/// Identifies one message sent on an engagement chat channel
+/// (architecture.md Sec 15.3, ADR-005). Disposable with the engagement.
+/// </summary>
+public readonly record struct ChatMessageId(Guid Value)
+{
+    public static ChatMessageId New() => new(Guid.NewGuid());
+
+    public override string ToString() => Value.ToString("N");
+}
+
+/// <summary>
+/// Identifies one harvested-credential row (architecture.md Sec 15.3,
+/// ADR-005): the persisted landing of a credential-kind task's output,
+/// addressable by task references. Disposable with the engagement.
+/// </summary>
+public readonly record struct CredentialId(Guid Value)
+{
+    public static CredentialId New() => new(Guid.NewGuid());
+
+    public override string ToString() => Value.ToString("N");
+
+    /// <summary>
+    /// Parses a credential id from its string form. Accepts both the
+    /// compact "N" format and the hyphenated Guid form; returns false on
+    /// anything else.
+    /// </summary>
+    public static bool TryParse(string? text, out CredentialId id)
+    {
+        if (Guid.TryParse(text, out var guid))
+        {
+            id = new CredentialId(guid);
+            return true;
+        }
+
+        id = default;
+        return false;
+    }
+}
