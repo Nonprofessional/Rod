@@ -282,6 +282,19 @@ note): the engagement report never lies about what a transform produced.
 Remember the implant side is still yours -- nothing in-tree unwraps your
 bytes, so your decode stub travels with whatever artifact you ship.
 
+## Distributing and installing
+
+Both halves travel as one module through the ecosystem's file contracts
+([architecture.md Sec 15.2](../architecture.md)): `rod mod init`
+scaffolds the repository and generates the publisher's Ed25519 keypair,
+`rod mod publish` packages, signs, and writes the index entry for a pull
+request against `rod-registry`, and an operator `rod mod search`es the
+registry, `rod mod install`s with the signature and compatibility
+verified, and pins the result in `rod.modules.lock.json` -- usage detail
+lives in `rod mod help <verb>`. The in-tree `modules/hostenum` carries
+the same `rod-module.toml` an external module carries and rides the same
+chain; being in-tree changes nothing about the path here either.
+
 ## What the core ships, and where your module sits
 
 The reference set is the standard, documented surface (architecture.md

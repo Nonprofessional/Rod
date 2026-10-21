@@ -175,6 +175,13 @@ in-house. The dependency rule is enforced by architecture tests.
   (`POST /engagements/{engagementId}/listeners/{id}:repoint`)
   and retire with their audit writes -- a burned redirector is swapped
   end to end; see [operations/redirectors.md](operations/redirectors.md).
+- **Operator CLI.** The `rod` binary (`src/cli/dotnet/`, .NET console):
+  the `rod mod` module-lifecycle suite -- init, search, info, install,
+  verify, publish -- over the ecosystem's file contracts (Sec 15.2). It
+  references nothing in-house: like the redirector, it couples to the
+  platform only through files (the manifest, the registry index, the lock
+  file), so it builds and ships on its own and the contracts stay
+  language-neutral.
 - **Operator UI.** The web front end; lives in the teamserver project.
 
 ### 4.3 Source-tree map (`src/teamserver/`)
@@ -2920,14 +2927,47 @@ against the index); an operator runs `rod mod search` and
 `rod mod install name@version`, with signature and compatibility verified
 at install and a lock file recording what landed. OPSEC metadata ("lands
 on disk" / "memory only") shows at search and install, carrying the
-per-verb OPSEC labeling into the catalog. Open until P0 closes: the
-index's governance model (personal tap or organization) and the
-signing-key management story.
+per-verb OPSEC labeling into the catalog. **Shipped** (the `rod` CLI,
+`src/cli/dotnet/`, standing beside the tree with no in-house references --
+its contracts are files): the manifest, the canonical form, the signing
+chain, the six commands, and the reference module
+`modules/hostenum/rod-module.toml` riding the identical path, with the
+end-to-end acceptance (template repository through publish to install)
+encoded in `tests/cli/dotnet/`. Still open until the ADR-011 organization
+decision lands: the index's **governance model** (personal tap or
+organization) -- the mechanism is governance-agnostic, `--registry`
+takes any git URL or local checkout.
+
+**The trust chain** (ADR-002, ADR-009): publishers sign, the registry
+vouches for nothing. `rod mod init` generates an Ed25519 keypair beside
+the module (`rod-module.key` / `rod-module.pub`; raw 32/64-byte keys,
+language-neutral -- any minisign-shaped verifier reads them). The
+signature covers the manifest's **canonical form** -- every manifest
+field in a fixed line order, then one SHA-256 line per payload file
+sorted by path -- so a tampered OPSEC mark, compatibility floor, or
+payload byte each break verification. The registry entry carries the
+public key and signature beside the package digest; install verifies the
+digest, re-derives the canonical form from the extracted files (never
+from index metadata), checks the signature, checks the compatibility
+floor, and **pins the publisher key per module name in
+`rod.modules.lock.json`** (trust on first use, the fingerprint printed
+at search, info, install, and publish for out-of-band comparison). A
+later version arriving under a different key fails the install loudly;
+`rod mod verify` re-proves every installed tree against the lock offline
+(exit code 2 makes a tampered finding script-visible). Key management
+is deliberately per-publisher and local: a lost key is a new identity
+every pin will name, not a recovery flow the platform owes.
 
 **The manifest** (`rod-module.toml`): name, version, a compatibility
 matrix (implant class / platform / arch, minimum teamserver version),
 OPSEC metadata, ATT&CK mapping, the entry kind (server module, implant
-module, or build unit), license, and signature.
+module, or build unit), license, packaging rules, and signature. The
+registry is a git repository in the Homebrew-tap shape -- one JSON file
+per module under `modules/`, contributed by pull request, no server, no
+database, an optional GitHub Pages mirror; the lock file
+(`rod.modules.lock.json`) records per module the version, digest,
+signature, pinned key, and installed path, and is the only thing
+`rod mod install` ever changes.
 
 **The contract trilogy** (ADR-003) is what makes a from-zero ecosystem
 coherent -- Mythic's cross-agent consistency, re-implemented as contract
@@ -2986,7 +3026,7 @@ Where the program touches the existing layers:
 | `Rod.Capabilities` | Contract registry + in-tree module host (ADR-001; shipped, with the first reference module under `modules/`). |
 | `Rod.Persistence` | `tsvector` full-text indexes; comment and chat tables (ADR-005). |
 | `Rod.TeamServer` | Mounts the new components; the built-in diagnostics endpoint (ADR-008). |
-| `rod-cli` (new) | `rod mod init/search/info/install/verify/publish` (ADR-002, ADR-009). |
+| `rod-cli` (shipped, `src/cli/dotnet/`) | `rod mod init/search/info/install/verify/publish` over the manifest, signature, registry, and lock contracts (ADR-002, ADR-009); no in-house references. |
 
 - **Optional transports** (ADR-004). mTLS returns and WireGuard joins as
   in-tree optional transports behind `ITransportProvider`, disabled by

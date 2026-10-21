@@ -47,6 +47,11 @@ toolchain and language boundaries in Sec 12.2, capability surface in Sec 13.
   not kernel work: nothing under `src/teamserver` references them, and they
   load through the same config-listed path external modules take
   (architecture.md Sec 15.1); the architecture tests hold that boundary.
+- **Operator CLI: .NET console (`rod`).** `src/cli/dotnet/` -- the
+  `rod mod` module-lifecycle suite (init/search/info/install/verify/
+  publish). It references nothing in-house: it couples to the platform
+  only through the ecosystem's file contracts (`rod-module.toml`, the
+  static git registry index, `rod.modules.lock.json`).
 - Shared .NET build settings live in `Directory.Build.props` at the repo root
   (`Nullable` enabled, `TreatWarningsAsErrors` on, latest `LangVersion`). Do
   not duplicate these per-project.

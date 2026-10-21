@@ -31,11 +31,10 @@ engagement names the need.
 Phase P0 -- the replacement threshold (architecture.md Sec 15):
 
 - **GitHub organization + main-repository move** (Sec 15.4, ADR-011).
-  _AC:_ organization and repository names checked against existing
-  products; CI and doc links follow the move.
-- **`rod mod` CLI suite + signing** (Sec 15.2, ADR-002, ADR-009). _AC:_
-  the full flow -- template repository through publish to install -- runs
-  end to end.
+  Also settles rod-registry's governance -- personal tap or organization,
+  the open decision Sec 15.2 carries. _AC:_ organization and repository
+  names checked against existing products; CI and doc links follow the
+  move; the registry's hosting call is recorded.
 - **Capability-contract trilogy** -- parameter schemas, output taxonomy,
   version matrix (Sec 15.2, ADR-003). _AC:_ a module the framework never
   anticipated goes from `rod mod init` to full UI interaction with zero
