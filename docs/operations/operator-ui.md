@@ -174,7 +174,12 @@ carrier returns.
   entry gated on the implant's class, argument-bearing verbs opening a
   labeled dialog
   (marked with a right-edge ellipsis, the native "asks for more" menu
-  convention), zero-argument verbs issuing directly.
+  convention), zero-argument verbs issuing directly. The argument dialogs
+  are schema-driven: each verb's fields come from its declared parameter
+  schema in the capability catalog (architecture.md Sec 15.2), so a
+  module's verb renders a labeled form the moment it registers -- the UI
+  holds no per-verb table, and a verb nobody described falls back to the
+  raw-arguments form.
 - **Session console** (`#/engagements/{id}/implants/{implantId}`, the
   Interact link on a row) -- one implant, rendered as a terminal: a title
   bar naming the device, identity, and live state; a scrolling transcript of
@@ -447,7 +452,7 @@ hosts both read the same artifacts this panel produces.
 
 The Intel panel is the picture of what the engagement learned
 (architecture.md Sec 11.2) -- the read the operator consults instead of
-re-reading transcripts. Three sections share the card.
+re-reading transcripts. Four sections share the card.
 
 **Hosts** is the device dimension: implants grouped under the hostname
 they reported at enroll (case-insensitive; an implant that reported
@@ -461,7 +466,8 @@ recon can see what nothing occupies.
 
 **Loot** is the typed board over the artifact store: each row is an
 artifact the engagement captured or attached, classified by what
-gathered it (screenshot, credential, file, other) and carrying its
+gathered it (screenshot, credential, file, other -- the producing verb's
+declared output kind decides, any module verb included) and carrying its
 capture attribution -- the task and its verb, the implant, the credited
 operator; a pre-foothold workbench finding carries the running operator
 alone, there being no task to join. Screenshots open as an inline
@@ -471,13 +477,31 @@ you: reading a projection of the evidence is not an act on the
 engagement, but bytes leaving the platform are. "Load older" walks the
 pages.
 
+**Credentials** is the harvest board: one row per credential any
+completed task produced, parsed at read time from the output of every
+verb that declared credential output (the reference `collect.cred` and
+any module's harvest -- architecture.md Sec 15.2's second contract).
+Secrets stay masked until the row's reveal; each row carries its capture
+attribution (task, verb, implant). Nothing is stored -- the projection
+re-reads the task history, the same posture the topology holds, and the
+persisted credential entity (reuse, rotation marks) stays the entity
+model's work.
+
 **Topology** is the assembled network picture: hosts grouped from
 enrollments (accented) beside the ones only recon observed (dashed) or
 a note named, pivot links drawn outward along recorded parentage, and
 the recon observations listed underneath. Nothing is stored -- the
-projection re-reads the fleet, the trail, and the recon outputs (task
-outputs and the workbench's task-less findings artifacts alike) every
-time -- and a broken audit chain refuses to render over it.
+projection re-reads the fleet, the trail, and the enumeration-typed task
+outputs (task outputs and the workbench's task-less findings artifacts
+alike) every time -- and a broken audit chain refuses to render over it.
+
+The transcript surfaces ride the same taxonomy: a completed task's
+output block in the session console and the task log renders as the
+panel its verb declared (a process table, a file table, a credential
+table, a findings table, or the artifact with an inline preview for
+file and screenshot outputs) and falls back to plain text when the
+output does not parse -- the UI keeps working, the module just earns no
+panel (architecture.md Sec 15.2).
 
 ## Listeners
 

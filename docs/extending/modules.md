@@ -32,6 +32,79 @@ The teamserver never executes tradecraft (architecture.md Sec 10.2): it gates,
 forwards, and records. Execution lives where the target's filesystem, network,
 and credentials actually are.
 
+## The contract trilogy: declare the schema, the output, the version
+
+The descriptor carries more than the gate (architecture.md Sec 15.2,
+ADR-003). Its **parameter schema** is what the operator UI renders the task
+form from, its **output declaration** is what routes results to the generic
+panels, and the manifest's **verb rows** carry the module-scoped version each
+verb iterates under. A module that declares all three is fully interactive on
+a teamserver that has never heard of it -- no UI change, no framework change:
+
+```csharp
+public CapabilityDescriptor Descriptor { get; } = CapabilityDescriptor.Of(
+    "sweep.discover",
+    CapabilityCategory.Recon,
+    "0.3",
+    parameters: new[]
+    {
+        new VerbParameter("host", "Host", VerbParameterKind.String, Required: true),
+        new VerbParameter("range", "Port range", VerbParameterKind.String, Required: true),
+    },
+    output: new VerbOutput(VerbOutputKind.Enumeration,
+        "One JSON finding per line: host, port, state, service."));
+```
+
+**The parameter schema.** One `VerbParameter` per argument field, in the
+order the verb's grammar joins them. The serialization rule is fixed and
+shared: values join with single spaces in declaration order, empty optionals
+drop out, a `Trailing` final parameter takes everything after as the raw
+remainder (the trailing-command shape -- a value with spaces belongs there),
+and a `File` parameter rides the content arm -- inline base64 under the 1 MiB
+ceiling when `Inline` is true (the default), staged bytes otherwise, where the
+server binds the sha256 into the signed arguments. Kinds: `String`, `Text`
+(free text, renders wide), `Number`, `Boolean`, `Enum` (carries `Choices`),
+`File`, `Array` (a comma list). The wire is untouched: the UI builds the
+opaque argument string and the verb's own handler stays the parser
+(architecture.md Sec 10). Registration refuses a schema the UI cannot render
+(trailing not last, a duplicate name, an enum without choices).
+
+**The output declaration.** `VerbOutput` names the taxonomy kind the results
+speak; the grammar behind each row kind is JSON lines (one object per line,
+required fields present, unknown fields ignored):
+
+| Kind | Grammar (one JSON object per line) | The panel it earns |
+|------|------------------------------------|--------------------|
+| `Enumeration` | `host` required; `port`, `state`, `service`, `addresses`, `os`, `arch` optional | the topology view and the task row's structure table |
+| `ProcessList` | `pid`, `image` required; `ppid`, `user` optional | the process table |
+| `FileList` | `name` required; `dir`, `size`, `mtime` optional | the file table |
+| `Credential` | `kind`, `principal` required; `secret`, `source`, `host`, `note` optional | the credentials board (Intel tab) and the task row's credential table |
+| `File` | no inline grammar -- the bulk rides the exfil chunk path into the artifact store | the loot board's file kind, the task row's artifact download |
+| `Screenshot` | a PNG artifact through the exfil chunk path | the loot board's screenshot kind, the inline preview |
+| `Text` | none | the transcript alone (the default and the degradation target) |
+
+A verb whose output does not parse against its declared kind degrades to
+plain text: the UI keeps working, the module just earns no panels. Secret
+material in `Credential` rows renders masked until revealed, and never enters
+the audit chain.
+
+**The version rows.** The manifest carries one `[[verbs]]` row per verb --
+its module-scoped version and an optional per-verb `teamserver` floor -- so a
+verb iterates independently of the package and install refuses a version
+whose verbs outrun the deployment, naming the verb:
+
+```toml
+[[verbs]]
+name = "sweep.discover"
+version = "0.3.0"
+# teamserver = "1.4.0"   # optional per-verb floor
+```
+
+The rows ride the signed canonical form (a tampered verb version breaks
+`rod mod verify` exactly like a tampered payload byte) and mirror into the
+registry entry, where `rod mod search` finds a module by verb name and
+`rod mod info` lists the rows.
+
 ## Server-side half: register a module
 
 Implement `ICapabilityModule` -- a registration-only contract carrying exactly
@@ -179,10 +252,12 @@ reads a module verb exactly like a built-in one.
 
 ## Recon output grammar (the topology contract)
 
-Recon findings are the one task output the server reads back structurally:
-the engagement's topology view ([architecture.md Sec
-11.2](../architecture.md)) parses the completed output of `recon.portscan`
-and `recon.hostenum` tasks into the picture's observed hosts and ports.
+Recon findings are the structural output the server reads back widest: the
+engagement's topology view ([architecture.md Sec
+11.2](../architecture.md)) parses the completed output of every task whose
+verb declares the `Enumeration` output kind -- the built-in
+`recon.portscan` and `recon.hostenum` and any module verb that declares the
+kind -- into the picture's observed hosts and ports.
 The grammar is JSON lines -- one finding per line, `host` required,
 everything else optional, unknown fields ignored:
 
@@ -289,10 +364,11 @@ Both halves travel as one module through the ecosystem's file contracts
 scaffolds the repository and generates the publisher's Ed25519 keypair,
 `rod mod publish` packages, signs, and writes the index entry for a pull
 request against `rod-registry`, and an operator `rod mod search`es the
-registry, `rod mod install`s with the signature and compatibility
-verified, and pins the result in `rod.modules.lock.json` -- usage detail
-lives in `rod mod help <verb>`. The in-tree `modules/hostenum` carries
-the same `rod-module.toml` an external module carries and rides the same
+registry, `rod mod install`s with the signature, compatibility, and
+per-verb floors verified, and pins the result in `rod.modules.lock.json`
+-- usage detail lives in `rod mod help <verb>`. The in-tree
+`modules/hostenum` carries the same `rod-module.toml` an external module
+carries (verb row included) and rides the same
 chain; being in-tree changes nothing about the path here either.
 
 ## What the core ships, and where your module sits

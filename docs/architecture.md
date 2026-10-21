@@ -2946,9 +2946,10 @@ vouches for nothing. `rod mod init` generates an Ed25519 keypair beside
 the module (`rod-module.key` / `rod-module.pub`; raw 32/64-byte keys,
 language-neutral -- any minisign-shaped verifier reads them). The
 signature covers the manifest's **canonical form** -- every manifest
-field in a fixed line order, then one SHA-256 line per payload file
-sorted by path -- so a tampered OPSEC mark, compatibility floor, or
-payload byte each break verification. The registry entry carries the
+field in a fixed line order, one line per declared verb (name, version,
+floor), then one SHA-256 line per payload file
+sorted by path -- so a tampered OPSEC mark, compatibility floor, verb row,
+or payload byte each break verification. The registry entry carries the
 public key and signature beside the package digest; install verifies the
 digest, re-derives the canonical form from the extracted files (never
 from index metadata), checks the signature, checks the compatibility
@@ -2964,7 +2965,9 @@ every pin will name, not a recovery flow the platform owes.
 **The manifest** (`rod-module.toml`): name, version, a compatibility
 matrix (implant class / platform / arch, minimum teamserver version),
 OPSEC metadata, ATT&CK mapping, the entry kind (server module, implant
-module, or build unit), license, packaging rules, and signature. The
+module, or build unit), the verb rows of the version matrix (each verb's
+module-scoped version and optional per-verb teamserver floor), license,
+packaging rules, and signature. The
 registry is a git repository in the Homebrew-tap shape -- one JSON file
 per module under `modules/`, contributed by pull request, no server, no
 database, an optional GitHub Pages mirror; the lock file
@@ -2994,6 +2997,27 @@ completeness instead of implementation uniformity:
    ADR-009), and verbs carry module-scoped versions so modules iterate
    independently.
 
+**Shipped** (the trilogy, over the descriptor and the manifest): the
+`CapabilityDescriptor` carries its `Parameters` schema (kind, order,
+required, choices, the trailing-remainder and inline/staged file flags) and
+its `Output` taxonomy kind; the catalog (`GET /capabilities`) exposes both
+so the operator UI renders the tasking form and the typed output panels
+generically, no verb table anywhere in the client; the read-side
+projections (topology, loot classification, the credentials view) resolve
+a verb's kind through the core-state `IVerbOutputResolver` port with the
+registry-backed implementation the composition root swaps in -- a module's
+structured output reaches its panels at registration. The manifest's
+`[[verbs]]` rows carry the module-scoped versions and optional per-verb
+teamserver floors, ride the signed canonical form, mirror into the
+registry entries, and are checked at install. The acceptance is encoded at
+three levels: `tests/cli/dotnet` (scaffold through verify, including a
+tampered verb row breaking the signature), the server-side
+`ContractTrilogyTests` (a `sweep.*` module the framework never anticipated,
+from registration to schema-rendered catalog to structured products in the
+topology, credentials, and loot panels, zero framework changes), and the
+client's vitest suite (the generic form builder and the taxonomy parsers
+over a novel schema).
+
 There is **no carry-over from existing ecosystems**: no BOF/COFF execution
 layer, no Armory migration. The ecosystem accumulates from zero, quality
 before quantity -- slowly, but every new module pays interest into the
@@ -3020,7 +3044,7 @@ Where the program touches the existing layers:
 
 | Layer | Evolution |
 |-------|--------------|
-| `Rod.CoreState` | Verbs gain the ATT&CK technique mapping (ADR-007); comment and chat aggregates (ADR-005). |
+| `Rod.CoreState` | Verbs gain the ATT&CK technique mapping (ADR-007); comment and chat aggregates (ADR-005); the output-taxonomy resolver port ships (shipped with Sec 15.2's trilogy). |
 | `Rod.Audit` | Chain semantics tighten: mutable content never enters the chain (ADR-005). |
 | `Rod.Protocol` | Frame-negotiation fields for the optional transports (ADR-004). |
 | `Rod.Transport` | `ITransportProvider` abstraction; the four in-tree families become the reference implementations; optional mTLS and WireGuard, default-disabled (ADR-004). |

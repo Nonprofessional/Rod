@@ -30,10 +30,6 @@ engagement names the need.
 
 Phase P0 -- the replacement threshold (architecture.md Sec 15):
 
-- **Capability-contract trilogy** -- parameter schemas, output taxonomy,
-  version matrix (Sec 15.2, ADR-003). _AC:_ a module the framework never
-  anticipated goes from `rod mod init` to full UI interaction with zero
-  framework changes.
 - **Comments, chat, global search** (Sec 15.3, ADR-005). _AC:_ tsvector
   search answers under 100 ms at ten-thousand events; the audit chain
   carries no mutable content.

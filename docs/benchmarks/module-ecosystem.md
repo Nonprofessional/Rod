@@ -44,9 +44,11 @@ construction.
   index is a pointer set, not a second source of truth (ADR-009).
 - **Search-time metadata richness** (Metasploit's `search`; Armory's
   catalog listing). An operator picking a module sees the OPSEC marks
-  and the ATT&CK techniques before installing anything; the catalog is
-  a decision surface, not a name list. Lands in the CLI output today,
-  in the UI when the contract trilogy renders it (ADR-003, ADR-013).
+  and the ATT&CK techniques before installing anything; the catalog is a
+  decision surface, not a name list. Lands in the CLI output and in the
+  UI, where the contract trilogy's schema renders the task form and the
+  output taxonomy routes results to the panels for any registered verb
+  (ADR-003, ADR-013 -- shipped).
 - **Install-time verification and a lock file** (Cargo's lock with
   checksums). `rod mod install name@version` verifies the package
   digest and the signature before anything lands; the lock file
@@ -84,16 +86,21 @@ construction.
 
 ## Divergences Rod already owns
 
-Every tool above vouches by platform: Mythic trusts the containers it
-is handed, Armory trusts the repositories it clones, Metasploit trusts
-its own tree. Rod's registry vouches for nothing -- the signature does:
+Every tool above vouches by platform: Mythic trusts the containers it is
+handed, Armory trusts the repositories it clones, Metasploit trusts its
+own tree. Rod's registry vouches for nothing -- the signature does:
 every entry carries the publisher's Ed25519 public key and a signature
 over the manifest's canonical form plus every payload digest, pinned
 per module name in the lock at first install, and re-provable offline
 by `rod mod verify` against any installed tree. No benchmark tool
 carries OPSEC metadata in its package format either ("lands on disk" /
 "memory only" as catalog fields, ADR-009) or checks a compatibility
-matrix -- implant class, platform, arch, minimum teamserver -- before
-letting a version land (ADR-003's third contract). The catalog states
+matrix -- implant class, platform, arch, minimum teamserver, and the
+per-verb floors of the version matrix -- before letting a version land
+(ADR-003's third contract). And none ships the typed contracts the
+trilogy adds on top: parameter schemas that render the tasking form for
+a verb the UI has never met, and an output taxonomy that routes any
+module's structured results into the credential, file, process, and
+topology panels (ADR-003 -- shipped). The catalog states
 what a module does to the target before an operator ever fetches it;
 the field's catalogs state what a module does at most.
