@@ -7,6 +7,7 @@ import {
   listChatMessages,
   sendChatMessage,
 } from '../api'
+import { collectChatHistory } from '../collabFormat'
 
 // The engagement's coordination room (architecture.md Sec 15.3, ADR-005):
 // channels and messages, append-only, riding the timeline and the live
@@ -48,16 +49,10 @@ export function ChatPanel({
     if (!active) return
     void (async () => {
       try {
-        // Newest window first: walk pages until the history is whole --
-        // chat history is bounded by the watch, not the engagement.
-        const collected: ChatMessageRow[] = []
-        let cursor: string | undefined
-        do {
-          const page = await listChatMessages(engagementId, active, cursor)
-          collected.unshift(...page.items)
-          cursor = page.nextCursor ?? undefined
-        } while (cursor)
-        setMessages(collected)
+        // Newest window first, walked to the beginning by the shared
+        // collector -- chat history is bounded by the watch, not the
+        // engagement.
+        setMessages(await collectChatHistory((cursor) => listChatMessages(engagementId, active, cursor)))
         setError(null)
       } catch (e) {
         setError(String(e))
@@ -76,24 +71,13 @@ export function ChatPanel({
     try {
       await sendChatMessage(engagementId, active, body)
       setDraft('')
-      setMessages(await collect(engagementId, active))
+      setMessages(await collectChatHistory((cursor) => listChatMessages(engagementId, active, cursor)))
       setError(null)
     } catch (e) {
       setError(String(e))
     } finally {
       setBusy(false)
     }
-  }
-
-  const collect = async (engagement: string, channel: string): Promise<ChatMessageRow[]> => {
-    const collected: ChatMessageRow[] = []
-    let cursor: string | undefined
-    do {
-      const page = await listChatMessages(engagement, channel, cursor)
-      collected.unshift(...page.items)
-      cursor = page.nextCursor ?? undefined
-    } while (cursor)
-    return collected
   }
 
   return (

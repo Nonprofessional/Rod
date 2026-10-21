@@ -7,21 +7,23 @@ import {
   editComment,
   listComments,
 } from '../api'
+import { refTokenLabel, splitCommentBody } from '../collabFormat'
 
 // Renders @task-<id> and $cred-<id> tokens as chips so a reference reads as
 // a link, not as a wall of guid. The server resolved the reference at
-// publish -- nothing here needs to look anything up.
+// publish -- nothing here needs to look anything up. The split and label
+// rules live in collabFormat, checked beside the wire grammar they mirror.
 function CommentBodyText({ body }: { body: string }) {
-  const parts = body.split(/(@task-[\da-fA-F-]+|\$cred-[\da-fA-F-]+)/g)
+  const parts = splitCommentBody(body)
   return (
     <>
       {parts.map((part, i) =>
-        part.startsWith('@task-') || part.startsWith('$cred-') ? (
-          <code key={i} className="ref-token" title={part}>
-            {part.startsWith('@task-') ? 'task' : 'cred'}·{part.slice(part.length - 4)}
-          </code>
+        part.kind === 'text' ? (
+          <span key={i}>{part.text}</span>
         ) : (
-          <span key={i}>{part}</span>
+          <code key={i} className="ref-token" title={part.text}>
+            {refTokenLabel(part.text)}
+          </code>
         ),
       )}
     </>

@@ -13,6 +13,7 @@ import {
 } from '../api'
 import { loadCapabilityGroups, verbAttributes, type CapabilityGroup } from '../capabilities'
 import type { CapabilityDescriptor } from '../api'
+import { searchHitHash } from '../collabFormat'
 import { fuzzyBest } from '../fuzzy'
 import { osIconFor } from '../osKind'
 import { NAV_GROUPS } from '../tabs'
@@ -64,24 +65,8 @@ const SECTION_LABELS: Record<Section, string> = {
 
 const MAX_ENTRIES = 14
 
-// Where a search hit lands: the surface that shows the corpus it came from.
-// Comments and tasks live in the task log, credentials and artifacts in the
-// intel picture, chat in the mutable timeline -- the audit view.
-function hitHash(engagementId: string, hit: SearchHitRow): string {
-  const base = `#/engagements/${engagementId}`
-  switch (hit.corpus) {
-    case 'comment':
-    case 'task_output':
-      return `${base}/tasking`
-    case 'credential':
-    case 'artifact':
-      return `${base}/intel`
-    case 'chat_message':
-      return `${base}/audit`
-    default:
-      return base
-  }
-}
+// Where a search hit lands is collabFormat's routing (checked beside the
+// corpus vocabulary it switches on); the palette only renders the entry.
 
 export function CommandPalette({
   engagementId,
@@ -298,7 +283,7 @@ export function CommandPalette({
           detail: hit.excerpt,
           keywords: [hit.excerpt],
           bonus: 20,
-          run: () => navigate(hitHash(engagementId, hit)),
+          run: () => navigate(searchHitHash(engagementId, hit)),
         })
       }
     }
