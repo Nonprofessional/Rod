@@ -205,6 +205,43 @@ public class TimelineAndReportTests
     }
 
     [Fact]
+    public async Task AttackLayer_ExportsTheTechniquesThatWereDone()
+    {
+        await using var env = await TestEnv.StartAsync();
+        var (engagementId, _, implantId) = await DriveLifecycleAsync(env);
+
+        // A queued-but-never-dispatched task proves nothing: issue one against
+        // the live implant and leave it unclaimed, so only the lifecycle's
+        // dispatched shell.exec may appear on the layer.
+        var queued = await env.Http.PostAsJsonAsync(
+            $"/engagements/{engagementId}/tasks",
+            new { ImplantId = implantId.ToString(), Verb = "fs.list", Arguments = "/" });
+        Assert.Equal(HttpStatusCode.Created, queued.StatusCode);
+        queued.Dispose();
+
+        var layer = await env.Http.GetFromJsonAsync<AttackLayer>(
+            $"/engagements/{engagementId}/report/attack-layer");
+
+        Assert.NotNull(layer);
+        Assert.Equal("Rod: Operation Smokeshow", layer!.Name);
+        Assert.Equal("enterprise-attack", layer.Domain);
+        Assert.False(string.IsNullOrWhiteSpace(layer.Versions.Attack));
+        Assert.False(string.IsNullOrWhiteSpace(layer.Versions.Navigator));
+
+        // The dispatched shell.exec maps to both shell techniques, scored by
+        // its task count, with the verb named in the metadata; the queued
+        // fs.list (T1083) is absent -- dispatched tasks are what was done.
+        Assert.Equal(2, layer.Techniques.Count);
+        Assert.All(layer.Techniques, t => Assert.Equal(1, t.Score));
+        Assert.Contains(layer.Techniques, t => t.TechniqueID == "T1059.003");
+        Assert.Contains(layer.Techniques, t => t.TechniqueID == "T1059.004");
+        Assert.DoesNotContain(layer.Techniques, t => t.TechniqueID == "T1083");
+        var unix = layer.Techniques.Single(t => t.TechniqueID == "T1059.004");
+        Assert.True(unix.Enabled);
+        Assert.Contains(unix.Metadata, m => m.Name == "shell.exec" && m.Value == "1");
+    }
+
+    [Fact]
     public async Task TimelineAndReport_Return404_ForUnknownEngagement()
     {
         await using var env = await TestEnv.StartAsync();
@@ -216,6 +253,9 @@ public class TimelineAndReportTests
 
         var report = await env.Http.GetAsync($"/engagements/{foreign}/report");
         Assert.Equal(HttpStatusCode.NotFound, report.StatusCode);
+
+        var layer = await env.Http.GetAsync($"/engagements/{foreign}/report/attack-layer");
+        Assert.Equal(HttpStatusCode.NotFound, layer.StatusCode);
     }
 
     [Fact]
@@ -413,6 +453,38 @@ public class TimelineAndReportTests
         public List<ReportTask> Tasks { get; set; } = new();
         public List<ReportArtifactIndexEntry> Artifacts { get; set; } = new();
         public List<TimelineEntry> Timeline { get; set; } = new();
+    }
+
+    // --- The Navigator layer export (ADR-007), deserialized by its wire shape. ---
+
+    private sealed class AttackLayer
+    {
+        public string Name { get; set; } = "";
+        public AttackLayerVersions Versions { get; set; } = new();
+        public string Domain { get; set; } = "";
+        public string Description { get; set; } = "";
+        public List<AttackLayerTechnique> Techniques { get; set; } = new();
+    }
+
+    private sealed class AttackLayerVersions
+    {
+        public string Attack { get; set; } = "";
+        public string Navigator { get; set; } = "";
+    }
+
+    private sealed class AttackLayerTechnique
+    {
+        public string TechniqueID { get; set; } = "";
+        public int Score { get; set; }
+        public string Comment { get; set; } = "";
+        public bool Enabled { get; set; }
+        public List<AttackLayerMetadata> Metadata { get; set; } = new();
+    }
+
+    private sealed class AttackLayerMetadata
+    {
+        public string Name { get; set; } = "";
+        public string Value { get; set; } = "";
     }
 
     /// <summary>

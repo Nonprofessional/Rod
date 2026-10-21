@@ -63,6 +63,7 @@ public static class ReportEndpoints
             .RequireAuthorization().AddEndpointFilter(new EngagementAccessFilter(EngagementAccessRequirement.Read));
         group.MapGet("/timeline", GetTimelineAsync).WithName(nameof(GetTimelineAsync));
         group.MapGet("/report", GetReportAsync).WithName(nameof(GetReportAsync));
+        group.MapGet("/report/attack-layer", GetAttackLayerAsync).WithName(nameof(GetAttackLayerAsync));
         group.MapGet("/handoff-digest", GetHandoffDigestAsync).WithName(nameof(GetHandoffDigestAsync));
         return endpoints;
     }
@@ -121,6 +122,38 @@ public static class ReportEndpoints
         return format is { } f && IsMarkdown(f)
             ? MarkdownReport(report)
             : Results.Ok(report);
+    }
+
+    private static async Task<IResult> GetAttackLayerAsync(
+        string engagementId,
+        IVerbTechniqueResolver techniques,
+        IEngagementRepository engagements,
+        IAuditStore audit,
+        IArtifactStore artifacts,
+        IOperatorRepository operators,
+        IImplantRepository implants,
+        ITaskRepository tasks,
+        IEngagementMembershipStore memberships,
+        CancellationToken cancellationToken)
+    {
+        // The "what was done" face of the ATT&CK mapping (ADR-007): an
+        // engagement-scoped Navigator layer over the same projection the
+        // report renders, resolved through the same technique resolver the
+        // coverage matrix reads. Transport cannot reach the capabilities
+        // layer, so the resolver arrives through the core-state port -- the
+        // same dependency shape the other read-side projections use.
+        if (!Guid.TryParse(engagementId, out var engagementValue))
+            return Results.BadRequest(new Problem("Engagement id is not a valid identifier."));
+
+        var engagement = await engagements.FindAsync(new EngagementId(engagementValue), cancellationToken);
+        if (engagement is null)
+            return Results.NotFound(new Problem("Engagement does not exist."));
+
+        var builder = await ReportBuilder.BuildAsync(
+            engagement, audit, artifacts, operators, implants, tasks, memberships, cancellationToken);
+
+        var report = builder.Report(engagement);
+        return Results.Ok(AttackNavigatorLayer.Build(report, techniques));
     }
 
     private static async Task<IResult> GetHandoffDigestAsync(
@@ -957,4 +990,142 @@ public sealed record HandoffDigest(
     string? ChainBreak,
     HandoffDigestSummary Summary,
     IReadOnlyList<TimelineEntry> Entries);
+
+// --- The ATT&CK Navigator layer export (architecture.md Sec 15.3, ADR-007).
+//     One shape, two faces: this is the "what was done" half -- the techniques
+//     the engagement's dispatched tasks actually exercised, resolved through
+//     the same verb-to-technique mapping the coverage matrix renders. ---
+
+/// <summary>
+/// An ATT&CK Navigator layer (format 4.5) over an engagement's executed
+/// techniques: loadable into the Navigator as proof of coverage, with each
+/// technique scored by dispatched-task count and carrying per-verb metadata.
+/// </summary>
+public sealed record AttackLayer(
+    string Name,
+    AttackLayerVersions Versions,
+    string Domain,
+    string Description,
+    IReadOnlyList<AttackLayerTechnique> Techniques,
+    AttackLayerLayout Layout,
+    AttackLayerGradient Gradient,
+    IReadOnlyList<AttackLayerMetadata> Metadata,
+    IReadOnlyList<object> LegendItems,
+    IReadOnlyList<object> Links,
+    bool HideDisabled,
+    int Sorting,
+    bool ShowTacticRowBackground,
+    string TacticRowBackground,
+    bool SelectTechniquesAcrossTactics,
+    bool SelectSubtechniquesWithParent);
+
+/// <summary>The ATT&CK and Navigator format versions the layer targets.</summary>
+public sealed record AttackLayerVersions(string Attack, string Navigator);
+
+/// <summary>One technique the engagement exercised, with its per-verb attribution.</summary>
+public sealed record AttackLayerTechnique(
+    string TechniqueID,
+    int Score,
+    string Comment,
+    bool Enabled,
+    IReadOnlyList<AttackLayerMetadata> Metadata);
+
+/// <summary>A Navigator metadata cell: a name/value pair rendered in the technique or layer details.</summary>
+public sealed record AttackLayerMetadata(string Name, string Value);
+
+/// <summary>The Navigator layout block; the fixed readable default.</summary>
+public sealed record AttackLayerLayout(
+    string Layout,
+    string AggregateFunction,
+    bool ShowID,
+    bool ShowName,
+    bool ShowAggregateScores,
+    bool CountUnscored);
+
+/// <summary>
+/// The score gradient: task counts map onto it, so heavier-used techniques
+/// render darker. MaxValue is the layer's own maximum count (at least one).
+/// </summary>
+public sealed record AttackLayerGradient(IReadOnlyList<string> Colors, int MinValue, int MaxValue);
+
+/// <summary>
+/// Builds the Navigator layer from the engagement report projection: every
+/// technique a dispatched task's verb maps to, scored by task count, each
+/// carrying per-verb counts as metadata. A task that never reached its
+/// implant (queued and cancelled) proved nothing, so only dispatched tasks
+/// count; a verb with no mapping (proc.kill, the plumbing families) honestly
+/// appears nowhere.
+/// </summary>
+internal static class AttackNavigatorLayer
+{
+    private const string NavigatorVersion = "4.9.1";
+
+    public static AttackLayer Build(EngagementReport report, IVerbTechniqueResolver techniques)
+    {
+        // Verb -> dispatched-task count, in first-dispatch order for stable
+        // metadata; a verb dispatched zero times is not on the layer.
+        var dispatched = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        foreach (var task in report.Tasks)
+        {
+            if (task.DispatchedAt is null)
+                continue;
+            dispatched[task.Verb] = dispatched.TryGetValue(task.Verb, out var count) ? count + 1 : 1;
+        }
+
+        var rows = new List<AttackLayerTechnique>();
+        foreach (var (verb, count) in dispatched)
+        {
+            var ids = techniques.Techniques(verb);
+            if (ids is null)
+                continue;
+
+            foreach (var id in ids)
+            {
+                var existing = rows.FirstOrDefault(r => string.Equals(r.TechniqueID, id, StringComparison.OrdinalIgnoreCase));
+                if (existing is null)
+                {
+                    rows.Add(new AttackLayerTechnique(
+                        id, count, $"{verb}: {count} task(s)", Enabled: true,
+                        Metadata: [new AttackLayerMetadata(verb, count.ToString())]));
+                }
+                else
+                {
+                    var index = rows.IndexOf(existing);
+                    rows[index] = existing with
+                    {
+                        Score = existing.Score + count,
+                        Comment = $"{existing.Comment}; {verb}: {count} task(s)",
+                        Metadata = [.. existing.Metadata, new AttackLayerMetadata(verb, count.ToString())],
+                    };
+                }
+            }
+        }
+
+        var ordered = rows.OrderBy(r => r.TechniqueID, StringComparer.Ordinal).ToArray();
+        return new AttackLayer(
+            Name: $"Rod: {report.Engagement.Name}",
+            Versions: new AttackLayerVersions(AttackTechniqueCatalog.AttackVersion, NavigatorVersion),
+            Domain: "enterprise-attack",
+            Description:
+                "Techniques exercised by dispatched tasks in this engagement, "
+                + "generated by the Rod teamserver from the engagement's audit-trail projection.",
+            Techniques: ordered,
+            Layout: new AttackLayerLayout("side", "average", ShowID: false, ShowName: true, ShowAggregateScores: false, CountUnscored: false),
+            Gradient: new AttackLayerGradient(
+                ["#ffffff", "#ff6666"], 0, Math.Max(1, ordered.Max(r => r.Score))),
+            Metadata:
+            [
+                new AttackLayerMetadata("engagement", report.Engagement.Name),
+                new AttackLayerMetadata("generatedAt", report.GeneratedAt.ToString("O")),
+            ],
+            LegendItems: [],
+            Links: [],
+            HideDisabled: false,
+            Sorting: 0,
+            ShowTacticRowBackground: false,
+            TacticRowBackground: "#dddddd",
+            SelectTechniquesAcrossTactics: true,
+            SelectSubtechniquesWithParent: false);
+    }
+}
 
