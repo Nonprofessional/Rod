@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Logging;
 using Rod.Audit;
@@ -325,29 +326,45 @@ public static class OperatorAuthEndpoints
     // identity. A token is independent of the password credential -- each
     // revokes through its own route -- so rotating one never silently
     // invalidates the other.
-    private static async Task<IResult> MintTokenAsync(
+    private static async Task<Results<Ok<MintedTokenResponse>, BadRequest<Problem>, ForbidHttpResult, NotFound<Problem>>> MintTokenAsync(
         string operatorId,
         ClaimsPrincipal user,
         IOperatorRepository operators,
         IOperatorApiTokenStore tokens,
         IAuditStore audit,
         TimeProvider clock,
-        CancellationToken cancellationToken)
+        MintTokenRequest? body = null,
+        CancellationToken cancellationToken = default)
     {
         if (!Guid.TryParse(operatorId, out var operatorValue))
-            return Results.BadRequest(new Problem("Operator id is not a valid identifier."));
+            return TypedResults.BadRequest(new Problem("Operator id is not a valid identifier."));
         if (!MayActOn(user, new OperatorId(operatorValue)))
-            return Results.Forbid();
+            return TypedResults.Forbid();
 
         var target = await operators.FindAsync(new OperatorId(operatorValue), cancellationToken);
         if (target is null)
-            return Results.NotFound(new Problem($"Operator {operatorId} does not exist."));
+            return TypedResults.NotFound(new Problem($"Operator {operatorId} does not exist."));
 
-        var minted = await tokens.MintAsync(target.Id, clock.GetUtcNow(), cancellationToken);
+        // The mint names the capability floor the credential is capped at
+        // (ADR-006). Absent the field, the mint is read-scoped: least
+        // privilege is the default, and an operator reaching for more says
+        // so explicitly. An unknown name is refused, not guessed at.
+        var scope = OperatorTokenScope.Read;
+        if (body?.Scope is { } named)
+        {
+            if (!OperatorTokenScopes.TryFromName(named, out scope))
+                return TypedResults.BadRequest(new Problem(
+                    $"Scope '{named}' is not one of: {OperatorTokenScopes.ReadName}, {OperatorTokenScopes.OperateName}, {OperatorTokenScopes.AdminName}."));
+        }
+
+        var minted = await tokens.MintAsync(target.Id, scope, clock.GetUtcNow(), cancellationToken);
         await RecordAccountChangeAsync(audit, user.TryGetOperatorId()!.Value, target.Id,
-            "operator.token-minted", $"API token minted for '{target.Handle}' (the secret is shown once, never stored)", clock, cancellationToken);
-        return Results.Ok(new MintedTokenResponse(
+            "operator.token-minted",
+            $"API token minted for '{target.Handle}' at scope '{OperatorTokenScopes.ToName(scope)}' (the secret is shown once, never stored)",
+            clock, cancellationToken);
+        return TypedResults.Ok(new MintedTokenResponse(
             minted.TokenId.ToString(),
+            OperatorTokenScopes.ToName(minted.Scope),
             minted.Secret,
             minted.CreatedAt));
     }
@@ -369,7 +386,7 @@ public static class OperatorAuthEndpoints
             return Results.NotFound(new Problem($"Operator {operatorId} does not exist."));
 
         var rows = await tokens.ListAsync(target.Id, cancellationToken);
-        return Results.Ok(rows.Select(r => new TokenResponse(r.TokenId.ToString(), r.CreatedAt)));
+        return Results.Ok(rows.Select(r => new TokenResponse(r.TokenId.ToString(), OperatorTokenScopes.ToName(r.Scope), r.CreatedAt)));
     }
 
     private static async Task<IResult> RevokeTokenAsync(
@@ -435,7 +452,7 @@ public static class OperatorAuthEndpoints
         return Results.Ok(new { operatorId = target.Id.ToString() });
     }
 
-    private static async Task<IResult> LoginAsync(
+    private static async Task<Results<Ok<OperatorAuthSummary>, BadRequest<Problem>, UnauthorizedHttpResult, JsonHttpResult<Problem>>> LoginAsync(
         LoginRequest body,
         OperatorAuthService auth,
         LoginThrottle throttle,
@@ -444,7 +461,7 @@ public static class OperatorAuthEndpoints
         CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(body?.Handle) || string.IsNullOrWhiteSpace(body?.Password))
-            return Results.BadRequest(new Problem("Handle and password are required."));
+            return TypedResults.BadRequest(new Problem("Handle and password are required."));
 
         var handle = body.Handle.Trim();
         var logger = loggerFactory.CreateLogger("Rod.Operators.Endpoints.OperatorAuthEndpoints");
@@ -457,7 +474,7 @@ public static class OperatorAuthEndpoints
         if (!throttle.IsAllowed(handle, remote))
         {
             logger.LogWarning("Login for handle {Handle} from {Remote} refused: cooldown active.", handle, remote);
-            return Results.Json(new Problem("Too many failed attempts; try again later."),
+            return TypedResults.Json(new Problem("Too many failed attempts; try again later."),
                 statusCode: StatusCodes.Status429TooManyRequests);
         }
 
@@ -466,7 +483,7 @@ public static class OperatorAuthEndpoints
         {
             throttle.RecordFailure(handle, remote);
             logger.LogWarning("Login for handle {Handle} from {Remote} failed.", handle, remote);
-            return Results.Unauthorized();
+            return TypedResults.Unauthorized();
         }
 
         throttle.Reset(handle);
@@ -474,7 +491,7 @@ public static class OperatorAuthEndpoints
         await context.SignInAsync(
             OperatorAuthConstants.AuthenticationScheme,
             result.Principal);
-        return Results.Ok(ToSummary(result.Operator));
+        return TypedResults.Ok(ToSummary(result.Operator));
     }
 
     private static async Task<IResult> LogoutAsync(HttpContext context, CancellationToken cancellationToken)
@@ -483,20 +500,20 @@ public static class OperatorAuthEndpoints
         return Results.Ok(new { status = "ok" });
     }
 
-    private static async Task<IResult> MeAsync(
+    private static async Task<Results<Ok<OperatorAuthSummary>, UnauthorizedHttpResult>> MeAsync(
         ClaimsPrincipal user,
         IOperatorRepository operators,
         CancellationToken cancellationToken)
     {
         var opId = user.TryGetOperatorId();
         if (opId is null)
-            return Results.Unauthorized();
+            return TypedResults.Unauthorized();
 
         var op = await operators.FindAsync(opId.Value, cancellationToken);
         if (op is null)
-            return Results.Unauthorized();
+            return TypedResults.Unauthorized();
 
-        return Results.Ok(ToSummary(op));
+        return TypedResults.Ok(ToSummary(op));
     }
 
     private static OperatorAuthSummary ToSummary(Operator op)
@@ -539,10 +556,13 @@ public sealed record OperatorAuthSummary(string Id, string Handle, DateTimeOffse
 /// A freshly minted API token: the secret is shown exactly once, here -- only
 /// its digest is stored afterwards.
 /// </summary>
-public sealed record MintedTokenResponse(string TokenId, string Token, DateTimeOffset CreatedAt);
+/// <summary>The mint request: the scope the new token is capped at.</summary>
+public sealed record MintTokenRequest(string? Scope);
+
+public sealed record MintedTokenResponse(string TokenId, string Scope, string Token, DateTimeOffset CreatedAt);
 
 /// <summary>A minted API token as a listing row (identity and lifetime, never the secret).</summary>
-public sealed record TokenResponse(string TokenId, DateTimeOffset CreatedAt);
+public sealed record TokenResponse(string TokenId, string Scope, DateTimeOffset CreatedAt);
 
 /// <summary>
 /// A roster row as <c>GET /operators</c> returns it: the account's identity,

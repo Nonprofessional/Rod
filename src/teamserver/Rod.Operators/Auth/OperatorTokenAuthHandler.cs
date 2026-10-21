@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
+using System.Security.Claims;
 using Rod.CoreState.Operators;
 
 namespace Rod.Operators.Auth;
@@ -52,11 +53,11 @@ internal sealed class OperatorTokenAuthHandler : AuthenticationHandler<Authentic
         if (secret.Length == 0)
             return AuthenticateResult.Fail("The bearer token is empty.");
 
-        var operatorId = await _tokens.FindOperatorAsync(secret, Context.RequestAborted);
-        if (operatorId is null)
+        var resolved = await _tokens.FindOperatorAsync(secret, Context.RequestAborted);
+        if (resolved is null)
             return AuthenticateResult.Fail("The API token is unknown or revoked.");
 
-        var op = await _operators.FindAsync(operatorId.Value, Context.RequestAborted);
+        var op = await _operators.FindAsync(resolved.OperatorId, Context.RequestAborted);
         if (op is null)
             return AuthenticateResult.Fail("The API token resolves to no operator.");
 
@@ -67,6 +68,12 @@ internal sealed class OperatorTokenAuthHandler : AuthenticationHandler<Authentic
             return AuthenticateResult.Fail("The API token resolves to a disabled operator.");
 
         var principal = OperatorAuthService.CreatePrincipal(op);
+        // The token's scope rides the principal as its claim (ADR-006): the
+        // same principal shape the cookie session carries, plus the floor
+        // this credential is capped at. The scope gate in transport reads it
+        // back; a cookie session never carries one, so it is never scoped.
+        principal.Identities.First().AddClaim(
+            new Claim(OperatorClaims.TokenScopeClaimType, OperatorTokenScopes.ToName(resolved.Scope)));
         return AuthenticateResult.Success(
             new AuthenticationTicket(principal, OperatorAuthConstants.TokenScheme));
     }

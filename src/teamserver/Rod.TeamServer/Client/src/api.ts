@@ -271,13 +271,17 @@ export async function setOperatorPassword(
 
 export interface OperatorTokenRow {
   tokenId: string
+  scope: string
   createdAt: string
 }
 
 // The one-time bearer secret. It is shown exactly once, at mint; only the
-// digest is stored afterwards, so a closed panel cannot bring it back.
+// digest is stored afterwards, so a closed panel cannot bring it back. The
+// scope names the capability floor the credential is capped at (read /
+// operate / admin); absent a choice the mint is read-scoped.
 export interface MintedOperatorToken {
   tokenId: string
+  scope: string
   token: string
   createdAt: string
 }
@@ -303,8 +307,12 @@ export async function listOperatorTokens(operatorId: string): Promise<OperatorTo
   return jsonOrThrow(await fetch(`operators/${operatorId}/tokens`))
 }
 
-export async function mintOperatorToken(operatorId: string): Promise<MintedOperatorToken> {
-  const response = await fetch(`operators/${operatorId}/tokens`, { method: 'POST' })
+export async function mintOperatorToken(operatorId: string, scope: string): Promise<MintedOperatorToken> {
+  const response = await fetch(`operators/${operatorId}/tokens`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ scope }),
+  })
   return jsonOrThrow<MintedOperatorToken>(response)
 }
 

@@ -17,21 +17,33 @@ public readonly record struct OperatorApiTokenId(Guid Value)
 /// A freshly minted API token: the id (for listing and revocation) and the
 /// plaintext secret, shown exactly once at mint. Only the secret's digest is
 /// stored afterwards -- the same hash-only rule the deploy-token and password
-/// stores keep.
+/// stores keep. The scope names the capability floor the token carries
+/// (ADR-006): it rides the row, not the secret.
 /// </summary>
 public sealed record MintedOperatorApiToken(
     OperatorApiTokenId TokenId,
     OperatorId OperatorId,
+    OperatorTokenScope Scope,
     string Secret,
     DateTimeOffset CreatedAt);
 
 /// <summary>
-/// A minted token as a listing row: identity and lifetime, never the secret.
+/// A minted token as a listing row: identity, scope, and lifetime, never the
+/// secret.
 /// </summary>
 public sealed record OperatorApiTokenRecord(
     OperatorApiTokenId TokenId,
     OperatorId OperatorId,
+    OperatorTokenScope Scope,
     DateTimeOffset CreatedAt);
+
+/// <summary>
+/// What a presented token secret resolves to: the operator it authenticates
+/// and the scope that caps what the token may do.
+/// </summary>
+public sealed record ResolvedOperatorApiToken(
+    OperatorId OperatorId,
+    OperatorTokenScope Scope);
 
 /// <summary>
 /// Persistence port for operator API tokens (architecture.md Sec 9 -- the
@@ -51,20 +63,21 @@ public sealed record OperatorApiTokenRecord(
 public interface IOperatorApiTokenStore
 {
     /// <summary>
-    /// Mints a token for an operator and returns it with the plaintext secret
-    /// (shown exactly once). The digest is what persists.
+    /// Mints a token for an operator at the named scope and returns it with
+    /// the plaintext secret (shown exactly once). The digest is what persists.
     /// </summary>
     Task<MintedOperatorApiToken> MintAsync(
         OperatorId operatorId,
+        OperatorTokenScope scope,
         DateTimeOffset at,
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Resolves the operator a presented secret belongs to, or null when the
-    /// token is unknown or revoked. Read fresh on every attempt -- the
+    /// Resolves the operator and scope a presented secret belongs to, or null
+    /// when the token is unknown or revoked. Read fresh on every attempt -- the
     /// revocation shape the credential store keeps.
     /// </summary>
-    Task<OperatorId?> FindOperatorAsync(
+    Task<ResolvedOperatorApiToken?> FindOperatorAsync(
         string secret,
         CancellationToken cancellationToken = default);
 
@@ -97,33 +110,34 @@ public sealed class InMemoryOperatorApiTokenStore : IOperatorApiTokenStore
 {
     private readonly ConcurrentDictionary<OperatorApiTokenId, Stored> _tokens = new();
 
-    private sealed record Stored(OperatorId OperatorId, byte[] Hash, DateTimeOffset CreatedAt);
+    private sealed record Stored(OperatorId OperatorId, OperatorTokenScope Scope, byte[] Hash, DateTimeOffset CreatedAt);
 
     public Task<MintedOperatorApiToken> MintAsync(
         OperatorId operatorId,
+        OperatorTokenScope scope,
         DateTimeOffset at,
         CancellationToken cancellationToken = default)
     {
         var (secret, digest) = SecretDigest.Mint();
         var tokenId = OperatorApiTokenId.New();
-        _tokens[tokenId] = new Stored(operatorId, digest, at);
-        return Task.FromResult(new MintedOperatorApiToken(tokenId, operatorId, secret, at));
+        _tokens[tokenId] = new Stored(operatorId, scope, digest, at);
+        return Task.FromResult(new MintedOperatorApiToken(tokenId, operatorId, scope, secret, at));
     }
 
-    public Task<OperatorId?> FindOperatorAsync(
+    public Task<ResolvedOperatorApiToken?> FindOperatorAsync(
         string secret,
         CancellationToken cancellationToken = default)
     {
         var digest = SecretDigest.DigestOf(secret);
         if (digest is null)
-            return Task.FromResult<OperatorId?>(null); // malformed never reaches the lookup
+            return Task.FromResult<ResolvedOperatorApiToken?>(null); // malformed never reaches the lookup
 
         foreach (var stored in _tokens.Values)
         {
             if (CryptographicOperations.FixedTimeEquals(digest, stored.Hash))
-                return Task.FromResult<OperatorId?>(stored.OperatorId);
+                return Task.FromResult<ResolvedOperatorApiToken?>(new ResolvedOperatorApiToken(stored.OperatorId, stored.Scope));
         }
-        return Task.FromResult<OperatorId?>(null);
+        return Task.FromResult<ResolvedOperatorApiToken?>(null);
     }
 
     public Task RevokeAsync(
@@ -145,7 +159,7 @@ public sealed class InMemoryOperatorApiTokenStore : IOperatorApiTokenStore
         var rows = _tokens
             .Where(pair => pair.Value.OperatorId == operatorId)
             .OrderBy(pair => pair.Value.CreatedAt)
-            .Select(pair => new OperatorApiTokenRecord(pair.Key, operatorId, pair.Value.CreatedAt))
+            .Select(pair => new OperatorApiTokenRecord(pair.Key, operatorId, pair.Value.Scope, pair.Value.CreatedAt))
             .ToArray();
         return Task.FromResult<IReadOnlyList<OperatorApiTokenRecord>>(rows);
     }

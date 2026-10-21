@@ -20,6 +20,7 @@ internal sealed class PostgresOperatorApiTokenStore : IOperatorApiTokenStore
 
     public async Task<MintedOperatorApiToken> MintAsync(
         OperatorId operatorId,
+        OperatorTokenScope scope,
         DateTimeOffset at,
         CancellationToken cancellationToken = default)
     {
@@ -34,14 +35,15 @@ internal sealed class PostgresOperatorApiTokenStore : IOperatorApiTokenStore
             TokenId = tokenId,
             OperatorId = operatorId,
             Hash = digest,
+            Scope = OperatorTokenScopes.ToName(scope),
             CreatedAt = at,
         });
         await db.SaveChangesAsync(cancellationToken);
 
-        return new MintedOperatorApiToken(tokenId, operatorId, secret, at);
+        return new MintedOperatorApiToken(tokenId, operatorId, scope, secret, at);
     }
 
-    public async Task<OperatorId?> FindOperatorAsync(
+    public async Task<ResolvedOperatorApiToken?> FindOperatorAsync(
         string secret,
         CancellationToken cancellationToken = default)
     {
@@ -52,7 +54,13 @@ internal sealed class PostgresOperatorApiTokenStore : IOperatorApiTokenStore
         await using var db = await _factory.CreateDbContextAsync(cancellationToken);
         var row = await db.Set<StoredOperatorApiToken>().AsNoTracking()
             .FirstOrDefaultAsync(t => t.Hash == digest, cancellationToken);
-        return row?.OperatorId;
+        if (row is null)
+            return null;
+        // An unknown scope name in an old row reads as the read floor -- the
+        // same least-privilege default the column's database default keeps.
+        if (!OperatorTokenScopes.TryFromName(row.Scope, out var scope))
+            scope = OperatorTokenScope.Read;
+        return new ResolvedOperatorApiToken(row.OperatorId, scope);
     }
 
     public async Task RevokeAsync(
@@ -79,6 +87,10 @@ internal sealed class PostgresOperatorApiTokenStore : IOperatorApiTokenStore
             .Where(t => t.OperatorId == operatorId)
             .OrderBy(t => t.CreatedAt)
             .ToArrayAsync(cancellationToken);
-        return rows.Select(r => new OperatorApiTokenRecord(r.TokenId, r.OperatorId, r.CreatedAt)).ToArray();
+        return rows.Select(r => new OperatorApiTokenRecord(
+            r.TokenId,
+            r.OperatorId,
+            OperatorTokenScopes.TryFromName(r.Scope, out var scope) ? scope : OperatorTokenScope.Read,
+            r.CreatedAt)).ToArray();
     }
 }

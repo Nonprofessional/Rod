@@ -38,6 +38,32 @@ public static class OperatorClaims
     public const string DeploymentRoleClaimType = "rod:deployment-role";
 
     /// <summary>
+    /// The claim that carries an API token's scope, as its wire name
+    /// ("read" / "operate" / "admin", <see cref="OperatorTokenScopes"/>).
+    /// Stamped only on token-authenticated principals -- a cookie session
+    /// carries no scope, because a signed-in operator is governed by the
+    /// deployment role and the engagement memberships alone. The auth layer
+    /// in <c>Rod.Operators</c> stamps it at token resolution; the transport
+    /// layer's scope gate reads it back, the same division of labor the
+    /// operator-id claim keeps.
+    /// </summary>
+    public const string TokenScopeClaimType = "rod:token-scope";
+
+    /// <summary>
+    /// Reads the API token's scope off a principal, or null when the
+    /// principal carries no scope claim (a cookie session, an anonymous
+    /// caller, or a malformed value -- the floor logic skips all three the
+    /// same way).
+    /// </summary>
+    public static OperatorTokenScope? TryGetTokenScope(this ClaimsPrincipal principal)
+    {
+        var claim = principal.FindFirst(TokenScopeClaimType);
+        if (claim is null)
+            return null;
+        return OperatorTokenScopes.TryFromName(claim.Value, out var scope) ? scope : null;
+    }
+
+    /// <summary>
     /// Whether the principal carries the admin deployment role -- the role
     /// the deployment's management surfaces (other operators' accounts, the
     /// redirector fleet, the runtime settings) gate on. False for members

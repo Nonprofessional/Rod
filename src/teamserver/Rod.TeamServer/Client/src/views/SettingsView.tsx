@@ -689,9 +689,12 @@ function AccountCard({ operator }: { operator: SessionOperator }) {
 // is shown exactly once, at mint; only the digest is stored afterwards.
 // Revocation bites at the token's next use, and a disabled account's
 // tokens refuse until it is enabled again.
+const TOKEN_SCOPES = ['read', 'operate', 'admin'] as const
+
 function TokenShelf({ operatorId }: { operatorId: string }) {
   const [tokens, setTokens] = useState<OperatorTokenRow[]>([])
   const [minted, setMinted] = useState<MintedOperatorToken | null>(null)
+  const [scope, setScope] = useState<(typeof TOKEN_SCOPES)[number]>('read')
   const [secretCopied, setSecretCopied] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -710,7 +713,7 @@ function TokenShelf({ operatorId }: { operatorId: string }) {
 
   const onMint = async () => {
     try {
-      setMinted(await mintOperatorToken(operatorId))
+      setMinted(await mintOperatorToken(operatorId, scope))
       setSecretCopied(false)
       setError(null)
       await reload()
@@ -753,6 +756,17 @@ function TokenShelf({ operatorId }: { operatorId: string }) {
         </div>
       )}
       <div>
+        <select
+          value={scope}
+          onChange={(e) => setScope(e.target.value as (typeof TOKEN_SCOPES)[number])}
+          title="The capability floor the minted token is capped at: read reads, operate additionally acts inside engagements, admin additionally reaches the deployment management surface."
+        >
+          {TOKEN_SCOPES.map((s) => (
+            <option key={s} value={s}>
+              {s}
+            </option>
+          ))}
+        </select>{' '}
         <button className="sm" onClick={() => void onMint()}>
           Mint token
         </button>
@@ -762,7 +776,7 @@ function TokenShelf({ operatorId }: { operatorId: string }) {
           {tokens.map((t) => (
             <li key={t.tokenId}>
               <code>{t.tokenId.slice(0, 8)}</code>
-              <span className="muted"> minted {new Date(t.createdAt).toLocaleDateString()}</span>
+              <span className="muted"> {t.scope} -- minted {new Date(t.createdAt).toLocaleDateString()}</span>
               <button
                 className="ghost sm"
                 onClick={() => void onRevoke(t.tokenId)}

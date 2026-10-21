@@ -1271,6 +1271,13 @@ namespace Rod.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("operator_id");
 
+                    b.Property<string>("Scope")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("text")
+                        .HasDefaultValue("read")
+                        .HasColumnName("scope");
+
                     b.HasKey("TokenId");
 
                     b.HasIndex("Hash")

@@ -23,6 +23,11 @@ internal sealed class StoredOperatorApiToken
     public OperatorApiTokenId TokenId { get; set; }
     public OperatorId OperatorId { get; set; }
     public byte[] Hash { get; set; } = Array.Empty<byte>();
+    // The capability floor the mint named (ADR-006), stored as its wire name.
+    // Rows minted before scopes existed read as "read": least privilege is
+    // the default a pre-scope token falls back to, and the operator who
+    // needs more mints again at the scope they meant.
+    public string Scope { get; set; } = Rod.CoreState.Operators.OperatorTokenScopes.ReadName;
     public DateTimeOffset CreatedAt { get; set; }
 }
 
@@ -46,6 +51,11 @@ internal sealed class StoredOperatorApiTokenConfiguration
         // the mint draws 256 random bits.
         builder.Property(t => t.Hash).HasColumnName("hash").IsRequired();
         builder.HasIndex(t => t.Hash).IsUnique().HasDatabaseName("ix_operator_api_tokens_hash");
+
+        builder.Property(t => t.Scope)
+            .HasColumnName("scope")
+            .IsRequired()
+            .HasDefaultValue(Rod.CoreState.Operators.OperatorTokenScopes.ReadName);
 
         builder.Property(t => t.CreatedAt).HasColumnName("created_at");
 

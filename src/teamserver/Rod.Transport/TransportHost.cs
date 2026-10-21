@@ -876,7 +876,11 @@ public static class TransportHost
         => app
             .UseWebSockets()
             .UseAuthentication()
-            .UseAuthorization();
+            .UseAuthorization()
+            // The token-scope floor (ADR-006) runs after the auth pair and
+            // before any mapped endpoint executes, in this shared pipeline so
+            // the composition root and the test hosts keep one shape.
+            .UseOperatorTokenScopeGate();
 }
 
 /// <summary>
