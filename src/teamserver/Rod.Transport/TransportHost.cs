@@ -834,6 +834,10 @@ public static class TransportHost
                 configureServices?.Invoke(services);
             })
             .Configure(app => app
+                // The versioned operator-API alias (architecture.md Sec 15.3,
+                // ADR-006) must run ahead of routing, for the same reason the
+                // composition root installs it there.
+                .UseOperatorApiVersionAlias()
                 .UseRouting()
                 .UseRodTransportCore()
                 .UseEndpoints(endpoints =>

@@ -131,6 +131,14 @@ app.Use(async (context, next) =>
     await next(context);
 });
 
+// The versioned operator-API alias (architecture.md Sec 15.3, ADR-006):
+// /api/v1/<path> addresses the same operator endpoints the console reaches
+// unversioned. The rewrite must precede route resolution, so routing is pinned
+// here explicitly instead of left to WebApplication's leading implicit
+// insertion (which would resolve the route before the alias could version it).
+app.UseOperatorApiVersionAlias();
+app.UseRouting();
+
 // Serve the built operator UI (Vite output under wwwroot). index.html is
 // no-cache because it references hashed asset names and must be fresh after a
 // rebuild; the hashed /assets/* files are immutable and cache for a year.
