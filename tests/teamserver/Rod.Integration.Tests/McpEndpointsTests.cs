@@ -381,6 +381,96 @@ public class McpEndpointsTests
         }
     }
 
+    /// <summary>
+    /// The unattended red line (architecture.md Sec 10.4) holds on the write
+    /// face: the channel verbs and every verb the sensitivity policy names
+    /// refuse -- the same answer the automation engine reads off the same
+    /// port -- and a snippet carrying one refuses whole, before any step
+    /// issues, so the trail carries nothing from a refused replay.
+    /// </summary>
+    [Fact]
+    public async Task Mcp_WriteTools_RefuseTheUnattendedRedLine()
+    {
+        var (mcp, host, operatorId, engagement, implant) = await SeedGatedAsync();
+        using (host)
+        using (mcp)
+        {
+            await HandshakeAsync(mcp);
+
+            var sensitive = RefusalTextOf(await RpcAsync(mcp, new
+            {
+                jsonrpc = "2.0",
+                id = 2,
+                method = "tools/call",
+                @params = new
+                {
+                    name = "issue_task",
+                    arguments = new
+                    {
+                        engagementId = engagement.ToString(),
+                        implantId = implant.Id.ToString(),
+                        verb = "collect.minidump",
+                    },
+                },
+            }));
+            Assert.Contains("sensitive", sensitive);
+
+            var channel = RefusalTextOf(await RpcAsync(mcp, new
+            {
+                jsonrpc = "2.0",
+                id = 3,
+                method = "tools/call",
+                @params = new
+                {
+                    name = "issue_task",
+                    arguments = new
+                    {
+                        engagementId = engagement.ToString(),
+                        implantId = implant.Id.ToString(),
+                        verb = "shell.interact",
+                    },
+                },
+            }));
+            Assert.Contains("live channel", channel);
+
+            var snippets = host.Services.GetRequiredService<Rod.CoreState.Snippets.ITaskSnippetStore>();
+            var snippet = Rod.CoreState.Snippets.TaskSnippet.Create(
+                Rod.CoreState.TaskSnippetId.New(),
+                new EngagementId(engagement),
+                "sweep-with-a-blocked-step",
+                new[]
+                {
+                    new Rod.CoreState.Snippets.TaskSnippetStep("shell.exec", "hostname"),
+                    new Rod.CoreState.Snippets.TaskSnippetStep("collect.keylog", "60"),
+                },
+                DateTimeOffset.UtcNow,
+                operatorId);
+            await snippets.SaveAsync(snippet);
+
+            var replay = RefusalTextOf(await RpcAsync(mcp, new
+            {
+                jsonrpc = "2.0",
+                id = 4,
+                method = "tools/call",
+                @params = new
+                {
+                    name = "replay_snippet",
+                    arguments = new
+                    {
+                        engagementId = engagement.ToString(),
+                        snippetId = snippet.Id.ToString(),
+                        implantId = implant.Id.ToString(),
+                    },
+                },
+            }));
+            Assert.Contains("sensitive", replay);
+
+            var audit = host.Services.GetRequiredService<Rod.Audit.IAuditStore>();
+            var trail = await audit.ListAsync(engagement);
+            Assert.DoesNotContain(trail, e => e.Kind == Rod.Audit.AuditEventKind.TaskIssued);
+        }
+    }
+
     // One JSON-RPC post, decoding either wire form the Streamable HTTP
     // transport answers with (bare JSON or an SSE frame carrying one message).
     private static async Task<JsonElement> RpcAsync(HttpClient client, object payload)

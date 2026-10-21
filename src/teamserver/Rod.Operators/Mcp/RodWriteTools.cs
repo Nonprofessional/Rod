@@ -22,7 +22,11 @@ namespace Rod.Operators.Mcp;
 /// carrier claims, closed engagements, attribution to the token's operator
 /// -- beside the token's scope floor: the write tools take the operate rank
 /// the route gate gives every engagement-scoped write, held at the tool
-/// level because the route table cannot see a tool call's name. This class
+/// level because the route table cannot see a tool call's name. One gate
+/// holds beyond the console's: the unattended red line (Sec 10.4) -- the
+/// channel verbs and every verb the sensitivity policy names refuse here,
+/// the same answer the automation engine reads, because an agent client is
+/// not a console and cannot witness what those verbs do. This class
 /// registers only when the deployment opens the write gate
 /// (<c>Mcp:AllowWriteTools</c>); the read toolset never carries it, so an
 /// agent client cannot act on an engagement by drift.
@@ -37,6 +41,7 @@ public sealed class RodWriteTools
     private readonly TaskService _tasks;
     private readonly ITaskSnippetStore _snippets;
     private readonly IAuditStore _audit;
+    private readonly ISensitiveVerbPolicy _sensitive;
     private readonly IHttpContextAccessor _http;
 
     public RodWriteTools(
@@ -45,6 +50,7 @@ public sealed class RodWriteTools
         TaskService tasks,
         ITaskSnippetStore snippets,
         IAuditStore audit,
+        ISensitiveVerbPolicy sensitive,
         IHttpContextAccessor http)
     {
         _engagements = engagements;
@@ -52,11 +58,12 @@ public sealed class RodWriteTools
         _tasks = tasks;
         _snippets = snippets;
         _audit = audit;
+        _sensitive = sensitive;
         _http = http;
     }
 
     [McpServerTool(Name = "issue_task")]
-    [Description("Issue one task to an engagement's implant, through the same issuance gates the console's task dialog applies (verb set, ROE, carriers, closed state). Returns the queued task's id.")]
+    [Description("Issue one task to an engagement's implant, through the same issuance gates the console's task dialog applies (verb set, ROE, carriers, closed state) except the unattended red line: channel verbs and sensitive verbs refuse. Returns the queued task's id.")]
     public async Task<CallToolResult> IssueTask(
         [Description("The engagement id, as returned by list_engagements.")] string engagementId,
         [Description("The implant to task, as returned by list_implants.")] string implantId,
@@ -80,7 +87,7 @@ public sealed class RodWriteTools
     }
 
     [McpServerTool(Name = "replay_snippet")]
-    [Description("Replay a saved task snippet's steps as tasks to one implant, in order, through the same issuance gates as issue_task. Returns the queued tasks' ids in step order.")]
+    [Description("Replay a saved task snippet's steps as tasks to one implant, in order, through the same gates as issue_task; a snippet carrying a refused verb refuses whole. Returns the queued tasks' ids in step order.")]
     public async Task<CallToolResult> ReplaySnippet(
         [Description("The engagement id, as returned by list_engagements.")] string engagementId,
         [Description("The snippet id to replay.")] string snippetId,
@@ -102,6 +109,12 @@ public sealed class RodWriteTools
             var snippet = await _snippets.FindAsync(new TaskSnippetId(snippetValue), cancellationToken);
             if (snippet is null || snippet.EngagementId != engagement.Id)
                 throw new McpException("No such snippet in this engagement.");
+
+            // The red line holds for the whole snippet before any step
+            // issues: one blocked step refuses the replay entire, rather
+            // than half a snippet firing and the rest dying mid-trail.
+            foreach (var step in snippet.Steps)
+                RequireIssuableVerb(step.Verb);
 
             var implant = new ImplantId(implantValue);
             var issued = new List<string>(snippet.Steps.Count);
@@ -139,6 +152,7 @@ public sealed class RodWriteTools
     {
         if (string.IsNullOrWhiteSpace(verb))
             throw new McpException("Task verb is required.");
+        RequireIssuableVerb(verb);
 
         try
         {
@@ -154,6 +168,23 @@ public sealed class RodWriteTools
             // the tool's error, the same text the console would surface.
             throw new McpException(ex.Message);
         }
+    }
+
+    // The unattended red line (architecture.md Sec 10.4), read off the same
+    // ISensitiveVerbPolicy port the automation engine refuses on: however
+    // directed, an agent client is not a console -- it can own neither an
+    // interactive channel half nor the verbs a human must witness. The
+    // refusal happens before TaskService, as the tool's error the way the
+    // console's validation rejections read; the issuance gates' own
+    // refusals (ROE, class sets) still ride their audited paths inside.
+    private void RequireIssuableVerb(string verb)
+    {
+        if (Rod.CoreState.Tasks.ChannelVerbs.IsChannelVerb(verb))
+            throw new McpException(
+                $"The verb '{verb}' runs as a live channel, and an agent client cannot own an interactive input half.");
+        if (_sensitive.IsSensitive(verb))
+            throw new McpException(
+                $"The verb '{verb}' is sensitive and never fires unattended; the sensitivity policy names it. Issue it from the console.");
     }
 
     // The write half of the read toolset's choke point: the credential's
