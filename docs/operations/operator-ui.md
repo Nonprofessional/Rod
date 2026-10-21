@@ -264,6 +264,15 @@ implant is the context and one Enter issues against it. The palette is a
 dispatcher, not a surface of its own -- every entry routes to the handler
 the mouse would reach, and no verb, gate, or panel exists only inside it.
 
+Inside an engagement the same field is also the **global search**: from
+three characters on, the query asks the teamserver's full-text index
+(Postgres `tsvector` under the covers; no external engine) and the
+answers ride above the local entries -- hits across task output,
+comments, artifact metadata, credentials, and chat, each routing to the
+surface that shows its corpus. The search is engagement-scoped by
+construction, and a credential's secret is never matchable text: the
+index covers its metadata only.
+
 ## Task snippets
 
 A **task snippet** is a named sequence of issue commands,
@@ -1216,3 +1225,32 @@ shape, if ever needed, is operator-controlled like retire: a row action
 sets the new date, the server records it (so its handshake gate agrees),
 and the change rides the next contact as tasking the implant applies to
 its own fuse -- beacon.sleep's cadence control is the template.
+
+## Comments, chat, and task references
+
+**Comments** are the engagement's mutable process knowledge: free text an
+operator attaches to a task (the task log's expanded row), an implant
+(the session console), an artifact (the loot board's rows), the
+engagement itself (the Members panel), or an operator (the member rows).
+The author may edit or delete within the deployment's edit window
+(`Collaboration:CommentEditWindowMinutes`, default one day); after that
+the comment is read-only until the engagement ends. Comments ride the
+timeline and the live stream as ordinary, explicitly mutable events and
+never enter the hash-chained audit trail -- process knowledge and
+evidence are different things, and the console keeps them apart.
+
+**Chat** is the watch's room: the Chat toggle in the engagement's lower
+right opens a docked panel with the engagement's channels -- `general`
+exists from the first read -- where messages are append-only (a
+correction is a new message). Chat rides the timeline beside comments,
+never the chain.
+
+**Task references** work wherever operators type: `@task-<id>` links a
+task, `$cred-<id>` addresses a harvested credential row (the credentials
+panel carries each row's id). In comments and chat the server validates
+every well-formed token at publish -- a dangling reference is refused
+with the offender named -- and the placeholder stays a placeholder. In
+task input the validation runs at issuance and the substitution runs on
+the dispatch wire alone: the task row, the live stream, and the audit
+trail carry the placeholder form, the implant alone receives the secret,
+so the plaintext never lands in a store.

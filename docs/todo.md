@@ -30,9 +30,6 @@ engagement names the need.
 
 Phase P0 -- the replacement threshold (architecture.md Sec 15):
 
-- **Comments, chat, global search** (Sec 15.3, ADR-005). _AC:_ tsvector
-  search answers under 100 ms at ten-thousand events; the audit chain
-  carries no mutable content.
 - **`/api/v1` + OpenAPI + Python SDK** (Sec 15.3, ADR-006). _AC:_ SDK
   smoke run -- login, create an engagement, issue a task, collect the
   artifact.
