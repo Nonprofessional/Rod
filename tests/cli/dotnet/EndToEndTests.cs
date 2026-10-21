@@ -1,0 +1,276 @@
+using System.Text.Json;
+
+namespace Rod.Cli.Tests;
+
+/// <summary>
+/// The acceptance run for the ecosystem item (todo's AC: template
+/// repository through publish to install, end to end): init scaffolds the
+/// template repository, publish packages and signs it into a local
+/// rod-registry, search and info read the index back, install fetches,
+/// verifies, and lands it under the lock, and verify re-proves the tree --
+/// then the same machinery proves the negative paths: a tampered tree, a
+/// hostile publisher key, and a stale version pin.
+/// </summary>
+public class EndToEndTests
+{
+    [Fact]
+    public void TemplateRepositoryThroughPublishToInstall_RunsEndToEnd()
+    {
+        using var root = new TempRoot();
+        var module = root["demo-sweep"];
+        var registry = root["registry"];
+        var install = root["install"];
+
+        // init: the template repository.
+        var init = CliRun.Run("mod", "init", "demo-sweep", "--path", module, "--entry", "server");
+        Assert.True(init.Code == 0, init.Error);
+        Assert.True(File.Exists(Path.Combine(module, "rod-module.toml")));
+        Assert.True(File.Exists(Path.Combine(module, Rod.Cli.Signing.KeyFiles.SecretFileName)));
+        Assert.True(File.Exists(Path.Combine(module, Rod.Cli.Signing.KeyFiles.PublicFileName)));
+
+        // Author the module: a real license, a version, a payload file.
+        var manifestPath = Path.Combine(module, "rod-module.toml");
+        var manifest = File.ReadAllText(manifestPath)
+            .Replace("license = \"UNLICENSED\"", "license = \"MIT\"")
+            .Replace("version = \"0.1.0\"", "version = \"1.0.0\"")
+            .Replace("techniques = []", "techniques = [\"T1082\"]");
+        File.WriteAllText(manifestPath, manifest);
+        Directory.CreateDirectory(Path.Combine(module, "src"));
+        File.WriteAllText(Path.Combine(module, "src", "payload.cs"), "payload-v1");
+        File.WriteAllText(Path.Combine(module, "unrelated.key"), "should never ship");
+
+        // publish: package, sign, index entry into the local registry.
+        var publish = CliRun.Run("mod", "publish", "--path", module, "--registry", registry);
+        Assert.True(publish.Code == 0, publish.Error);
+        Assert.True(File.Exists(Path.Combine(registry, "modules", "demo-sweep.json")));
+        Assert.True(File.Exists(Path.Combine(module, "dist", "demo-sweep-1.0.0.zip")));
+        Assert.Contains("signed by", publish.Output);
+
+        // search and info: the catalog over the static index.
+        var search = CliRun.Run("mod", "search", "sweep", "--registry", registry);
+        Assert.True(search.Code == 0, search.Error);
+        Assert.Contains("demo-sweep", search.Output);
+        Assert.Contains("disk", search.Output); // the OPSEC mark rides the listing
+
+        var info = CliRun.Run("mod", "info", "demo-sweep", "--registry", registry);
+        Assert.True(info.Code == 0, info.Error);
+        Assert.Contains("T1082", info.Output);
+        Assert.Contains("MIT", info.Output);
+
+        // install: fetch, digest, signature, compat, pin, land.
+        var installRun = CliRun.Run("mod", "install", "demo-sweep", "--registry", registry,
+            "--dir", install, "--teamserver", "1.0.0");
+        Assert.True(installRun.Code == 0, installRun.Error);
+        var installedManifest = Path.Combine(install, "modules", "demo-sweep", "1.0.0", "rod-module.toml");
+        Assert.True(File.Exists(installedManifest));
+        Assert.True(File.Exists(Path.Combine(install, "modules", "demo-sweep", "1.0.0", "src", "payload.cs")));
+        Assert.False(File.Exists(Path.Combine(install, "modules", "demo-sweep", "1.0.0", "unrelated.key")));
+
+        var lockFile = ModuleLock.Load(Path.Combine(install, ModuleLock.FileName));
+        var locked = lockFile.Module("demo-sweep");
+        Assert.NotNull(locked);
+        Assert.Equal("1.0.0", locked!.Version);
+        Assert.Equal("server", locked.Entry);
+        Assert.NotNull(lockFile.TrustedKeyFor("demo-sweep"));
+        Assert.Equal(registry, lockFile.Registry);
+
+        // verify: the offline re-proof.
+        var verify = CliRun.Run("mod", "verify", "--dir", install);
+        Assert.True(verify.Code == 0, verify.Error);
+        Assert.Contains("PASS demo-sweep@1.0.0", verify.Output);
+
+        // A tampered payload byte reads as a failure with exit code 2.
+        File.WriteAllText(Path.Combine(install, "modules", "demo-sweep", "1.0.0", "src", "payload.cs"), "tampered");
+        var tampered = CliRun.Run("mod", "verify", "--dir", install);
+        Assert.Equal(RodCli.ExitTrustFailure, tampered.Code);
+        Assert.Contains("FAIL demo-sweep@1.0.0", tampered.Output);
+    }
+
+    [Fact]
+    public void Reinstalling_IsIdempotent_UpgradesReplace_RepublishingRefusesDrift()
+    {
+        using var root = new TempRoot();
+        var module = root["demo-sweep"];
+        var registry = root["registry"];
+        var install = root["install"];
+        CliRun.Run("mod", "init", "demo-sweep", "--path", module);
+        Author(module, "1.0.0", "payload-v1");
+        CliRun.Run("mod", "publish", "--path", module, "--registry", registry);
+        CliRun.Run("mod", "install", "demo-sweep", "--registry", registry, "--dir", install, "--teamserver", "1.0.0");
+
+        // Same tree, same version: the registry entry is unchanged.
+        var again = CliRun.Run("mod", "publish", "--path", module, "--registry", registry);
+        Assert.True(again.Code == 0, again.Error);
+        Assert.Contains("already indexed with this digest", again.Output);
+
+        // Same version, different content: the registry refuses the drift.
+        File.WriteAllText(Path.Combine(module, "src", "payload.cs"), "payload-v1-EDITED");
+        var drifted = CliRun.Run("mod", "publish", "--path", module, "--registry", registry);
+        Assert.Equal(RodCli.ExitUsage, drifted.Code);
+        Assert.Contains("bump module.version", drifted.Error);
+
+        // A bumped version installs as an upgrade: one row in the lock, one
+        // directory on disk -- the lock is the record, not the directory.
+        Author(module, "1.1.0", "payload-v2");
+        var upgrade = CliRun.Run("mod", "publish", "--path", module, "--registry", registry);
+        Assert.True(upgrade.Code == 0, upgrade.Error);
+        var installUpgrade = CliRun.Run("mod", "install", "demo-sweep@1.1.0", "--registry", registry,
+            "--dir", install, "--teamserver", "1.0.0");
+        Assert.True(installUpgrade.Code == 0, installUpgrade.Error);
+        Assert.True(Directory.Exists(Path.Combine(install, "modules", "demo-sweep", "1.1.0")));
+        Assert.False(Directory.Exists(Path.Combine(install, "modules", "demo-sweep", "1.0.0")));
+        var lockFile = ModuleLock.Load(Path.Combine(install, ModuleLock.FileName));
+        Assert.Equal("1.1.0", lockFile.Module("demo-sweep")!.Version);
+        Assert.Single(lockFile.Modules);
+    }
+
+    [Fact]
+    public void AHostilePublisherKey_IsRefusedByThePin()
+    {
+        using var root = new TempRoot();
+        var module = root["demo-sweep"];
+        var hostile = root["hostile"];
+        var keySeed = root["keyseed"];
+        var registry = root["registry"];
+        var install = root["install"];
+
+        CliRun.Run("mod", "init", "demo-sweep", "--path", module);
+        Author(module, "1.0.0", "payload-v1");
+        CliRun.Run("mod", "publish", "--path", module, "--registry", registry);
+        var first = CliRun.Run("mod", "install", "demo-sweep", "--registry", registry, "--dir", install, "--teamserver", "1.0.0");
+        Assert.True(first.Code == 0, first.Error);
+
+        // The same module name under a different key: an attacker (or a
+        // lost key) publishing 1.1.0.
+        CopyDirectory(module, hostile);
+        Directory.Delete(Path.Combine(hostile, "dist"), recursive: true);
+        CliRun.Run("mod", "init", "seed", "--path", keySeed); // generates a second identity
+        File.Copy(Path.Combine(keySeed, "rod-module.key"), Path.Combine(hostile, "rod-module.key"), overwrite: true);
+        File.Copy(Path.Combine(keySeed, "rod-module.pub"), Path.Combine(hostile, "rod-module.pub"), overwrite: true);
+        Author(hostile, "1.1.0", "payload-hostile");
+        var publish = CliRun.Run("mod", "publish", "--path", hostile, "--registry", registry);
+        Assert.True(publish.Code == 0, publish.Error);
+
+        var second = CliRun.Run("mod", "install", "demo-sweep@1.1.0", "--registry", registry,
+            "--dir", install, "--teamserver", "1.0.0");
+        Assert.Equal(RodCli.ExitTrustFailure, second.Code);
+        Assert.Contains("publisher key changed", second.Error);
+        // Nothing landed.
+        Assert.False(Directory.Exists(Path.Combine(install, "modules", "demo-sweep", "1.1.0")));
+    }
+
+    [Fact]
+    public void APackageDigestMismatch_IsRefusedBeforeAnythingLands()
+    {
+        using var root = new TempRoot();
+        var module = root["demo-sweep"];
+        var registry = root["registry"];
+        var install = root["install"];
+
+        CliRun.Run("mod", "init", "demo-sweep", "--path", module);
+        Author(module, "1.0.0", "payload-v1");
+        CliRun.Run("mod", "publish", "--path", module, "--registry", registry);
+
+        // Corrupt the artifact the index points at: digest check fires
+        // before signature or compatibility run.
+        var entryPath = Path.Combine(registry, "modules", "demo-sweep.json");
+        var entry = JsonDocument.Parse(File.ReadAllText(entryPath));
+        var url = entry.RootElement.GetProperty("versions")[0].GetProperty("url").GetString()!;
+        File.WriteAllText(url.Replace("file://", ""), "corrupted bytes");
+
+        var installRun = CliRun.Run("mod", "install", "demo-sweep", "--registry", registry,
+            "--dir", install, "--teamserver", "1.0.0");
+        Assert.Equal(RodCli.ExitTrustFailure, installRun.Code);
+        Assert.Contains("digest mismatch", installRun.Error);
+    }
+
+    [Fact]
+    public void ACompatibilityFloor_AboveTheTeamserver_RefusesInstall()
+    {
+        using var root = new TempRoot();
+        var module = root["demo-sweep"];
+        var registry = root["registry"];
+
+        CliRun.Run("mod", "init", "demo-sweep", "--path", module);
+        Author(module, "1.0.0", "payload-v1", teamserver: "2.0.0");
+        var publish = CliRun.Run("mod", "publish", "--path", module, "--registry", registry);
+        Assert.True(publish.Code == 0, publish.Error);
+
+        var install = CliRun.Run("mod", "install", "demo-sweep", "--registry", registry,
+            "--dir", root["install"], "--teamserver", "1.5.0");
+        Assert.Equal(RodCli.ExitUsage, install.Code);
+        Assert.Contains("needs teamserver >= 2.0.0", install.Error);
+    }
+
+    [Fact]
+    public void PublishRefuses_UnlicensedModules_AndEmptyPackages()
+    {
+        using var root = new TempRoot();
+        var module = root["demo-sweep"];
+        var registry = root["registry"];
+
+        CliRun.Run("mod", "init", "demo-sweep", "--path", module);
+        // The scaffold ships UNLICENSED; publish must refuse it.
+        var unlicensed = CliRun.Run("mod", "publish", "--path", module, "--registry", registry);
+        Assert.Equal(RodCli.ExitUsage, unlicensed.Code);
+        Assert.Contains("UNLICENSED", unlicensed.Error);
+
+        // A license but packaging rules that select nothing: an empty
+        // package is a mistake, not a module.
+        Author(module, "1.0.0", payload: null);
+        var toml = File.ReadAllText(Path.Combine(module, "rod-module.toml")) + "\n[package]\ninclude = [\"nothing/**\"]\n";
+        File.WriteAllText(Path.Combine(module, "rod-module.toml"), toml);
+        var empty = CliRun.Run("mod", "publish", "--path", module, "--registry", registry);
+        Assert.Equal(RodCli.ExitUsage, empty.Code);
+        Assert.Contains("empty beyond the manifest", empty.Error);
+    }
+
+    [Fact]
+    public void SearchFinds_AttackTechniquesAndDescriptions()
+    {
+        using var root = new TempRoot();
+        var module = root["cred-sweep"];
+        var registry = root["registry"];
+        CliRun.Run("mod", "init", "cred-sweep", "--path", module);
+        Author(module, "1.0.0", "payload", description: "Credential store sweep");
+        var toml = File.ReadAllText(Path.Combine(module, "rod-module.toml"))
+            .Replace("techniques = []", "techniques = [\"T1555\"]");
+        File.WriteAllText(Path.Combine(module, "rod-module.toml"), toml);
+        CliRun.Run("mod", "publish", "--path", module, "--registry", registry);
+
+        Assert.Contains("cred-sweep", CliRun.Run("mod", "search", "T1555", "--registry", registry).Output);
+        Assert.Contains("cred-sweep", CliRun.Run("mod", "search", "credential", "--registry", registry).Output);
+        Assert.Contains("cred-sweep", CliRun.Run("mod", "search", "CRED", "--registry", registry).Output);
+        Assert.DoesNotContain("cred-sweep", CliRun.Run("mod", "search", "nonexistent-term", "--registry", registry).Output);
+    }
+
+    private static void Author(string module, string version, string? payload, string teamserver = "1.0.0", string? description = null)
+    {
+        // Regex edits rather than Replace(): the scaffold fills version and
+        // description itself, so later authoring passes see lines the naive
+        // Replace() patterns no longer match.
+        var toml = File.ReadAllText(Path.Combine(module, "rod-module.toml"));
+        toml = System.Text.RegularExpressions.Regex.Replace(toml, @"^version = .*$", $"version = \"{version}\"", System.Text.RegularExpressions.RegexOptions.Multiline);
+        toml = System.Text.RegularExpressions.Regex.Replace(toml, @"^teamserver = .*$", $"teamserver = \"{teamserver}\"", System.Text.RegularExpressions.RegexOptions.Multiline);
+        toml = System.Text.RegularExpressions.Regex.Replace(toml, @"^description = .*$", $"description = \"{description ?? "A test module."}\"", System.Text.RegularExpressions.RegexOptions.Multiline);
+        toml = toml.Replace("license = \"UNLICENSED\"", "license = \"MIT\"");
+        File.WriteAllText(Path.Combine(module, "rod-module.toml"), toml);
+        if (payload is not null)
+        {
+            Directory.CreateDirectory(Path.Combine(module, "src"));
+            File.WriteAllText(Path.Combine(module, "src", "payload.cs"), payload);
+        }
+    }
+
+    private static void CopyDirectory(string source, string destination)
+    {
+        Directory.CreateDirectory(destination);
+        foreach (var file in Directory.GetFiles(source, "*", SearchOption.AllDirectories))
+        {
+            var relative = Path.GetRelativePath(source, file);
+            var target = Path.Combine(destination, relative);
+            Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+            File.Copy(file, target);
+        }
+    }
+}
