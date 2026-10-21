@@ -23,9 +23,12 @@ namespace Rod.Transport;
 /// -- take <c>admin</c> for any mutation. Finer authority (which engagement,
 /// which verb) stays where it already lives: the engagement access filter and
 /// the sensitive-verb policy run behind this gate and make their own calls
-/// the same way they do for an operator's session. The MCP server is exempt
-/// for now -- its tools call the services in-process, off this route table,
-/// and MCP-side scope enforcement is the P1 widening ADR-006 schedules.
+/// the same way they do for an operator's session. The MCP surface is exempt
+/// by shape, not by omission: its toolset speaks JSON-RPC inside one POST
+/// route, so this method-and-path gate can never see which tool a call
+/// drives. The write toolset holds the operate floor at the tool level (the
+/// same floor this gate gives every engagement-scoped write), so the
+/// exemption opens no gap.
 /// </remarks>
 public static class OperatorTokenScopeGate
 {
@@ -57,8 +60,9 @@ public static class OperatorTokenScopeGate
         if (HttpMethods.IsGet(method) || HttpMethods.IsHead(method))
             return true;
 
-        // The MCP surface is exempt this round: its in-process toolset does
-        // not ride these routes (ADR-006's P1 item tightens it under scopes).
+        // The MCP surface stays exempt by shape: one POST route carrying
+        // JSON-RPC, so no method-and-path rule can see the tool a call
+        // drives. The write toolset holds the operate floor itself.
         if (path.StartsWithSegments("/mcp"))
             return true;
 

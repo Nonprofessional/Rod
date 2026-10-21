@@ -71,9 +71,9 @@ public class McpEndpointsTests
         return (mcp, host, operatorId, engagement, implant, task);
     }
 
-    private static async Task<string> MintTokenAsync(HttpClient client, OperatorId operatorId)
+    private static async Task<string> MintTokenAsync(HttpClient client, OperatorId operatorId, string? scope = null)
     {
-        var response = await client.PostAsJsonAsync($"/operators/{operatorId.Value}/tokens", new { });
+        var response = await client.PostAsJsonAsync($"/operators/{operatorId.Value}/tokens", new { scope });
         response.EnsureSuccessStatusCode();
         var json = await response.Content.ReadFromJsonAsync<JsonElement>();
         return json.GetProperty("token").GetString()!;
@@ -182,7 +182,8 @@ public class McpEndpointsTests
     /// the same TaskService path the console's task dialog drives, with the
     /// identical audit fact.
     /// </summary>
-    private static async Task<(HttpClient Mcp, IHost Host, OperatorId Operator, Guid Engagement, Implant Implant)> SeedGatedAsync()
+    private static async Task<(HttpClient Mcp, IHost Host, OperatorId Operator, Guid Engagement, Implant Implant)> SeedGatedAsync(
+        string scope = "operate")
     {
         var (client, host, operatorId) = AuthenticatedHost.Create(
             extendConfig: dict => dict["Mcp:AllowWriteTools"] = "true",
@@ -196,7 +197,10 @@ public class McpEndpointsTests
         var engagement = Guid.Parse(created!.EngagementId);
         var implant = await EngagementSetup.EnrollImplantAsync(host, new EngagementId(engagement));
 
-        var bearer = await MintTokenAsync(client, operatorId);
+        // The write tools take the operate floor -- the same rank the route
+        // gate gives an engagement-scoped write -- so the acceptance mints
+        // there and the refusal tests mint below it.
+        var bearer = await MintTokenAsync(client, operatorId, scope);
         var server = host.Services.GetRequiredService<IServer>() as TestServer
             ?? throw new InvalidOperationException("TestServer was not registered.");
         var mcp = new HttpClient(server.CreateHandler()) { BaseAddress = new Uri("http://localhost") };
@@ -336,6 +340,47 @@ public class McpEndpointsTests
         }
     }
 
+    [Fact]
+    public async Task Mcp_WriteTools_RefuseATokenBelowTheOperateFloor()
+    {
+        var (mcp, host, _, engagement, implant) = await SeedGatedAsync(scope: "read");
+        using (host)
+        using (mcp)
+        {
+            await HandshakeAsync(mcp);
+
+            // The gate is the deployment's, so the tool is named; the floor
+            // is the credential's, so the call refuses -- a read-scoped
+            // token observes the engagement but cannot act on it, whatever
+            // the deployment opened for other credentials.
+            var tools = ResultOf(await RpcAsync(mcp, new { jsonrpc = "2.0", id = 2, method = "tools/list" }));
+            Assert.Contains("issue_task", tools.GetProperty("tools").EnumerateArray()
+                .Select(t => t.GetProperty("name").GetString()));
+
+            var refusal = RefusalTextOf(await RpcAsync(mcp, new
+            {
+                jsonrpc = "2.0",
+                id = 3,
+                method = "tools/call",
+                @params = new
+                {
+                    name = "issue_task",
+                    arguments = new
+                    {
+                        engagementId = engagement.ToString(),
+                        implantId = implant.Id.ToString(),
+                        verb = "shell.exec",
+                    },
+                },
+            }));
+            Assert.Contains("scope does not cover this action", refusal);
+
+            // Reads ride the read floor every mintable scope carries.
+            var implants = await CallToolAsync(mcp, 4, "list_implants", new { engagementId = engagement.ToString() });
+            Assert.Contains(implant.Id.ToString(), implants);
+        }
+    }
+
     // One JSON-RPC post, decoding either wire form the Streamable HTTP
     // transport answers with (bare JSON or an SSE frame carrying one message).
     private static async Task<JsonElement> RpcAsync(HttpClient client, object payload)
@@ -355,10 +400,42 @@ public class McpEndpointsTests
         return await response.Content.ReadFromJsonAsync<JsonElement>();
     }
 
+    // The protocol handshake every stateless session repeats: initialize,
+    // then the initialized notification, before the working calls.
+    private static async Task HandshakeAsync(HttpClient client)
+    {
+        await RpcAsync(client, new
+        {
+            jsonrpc = "2.0",
+            id = 1,
+            method = "initialize",
+            @params = new
+            {
+                protocolVersion = "2025-06-18",
+                capabilities = new { },
+                clientInfo = new { name = "rod-test-client", version = "1.0" },
+            },
+        });
+        await NotifyAsync(client, new { jsonrpc = "2.0", method = "notifications/initialized" });
+    }
+
     // Unwraps the JSON-RPC result member; the error member is the caller's to
     // inspect when a call is expected to fail.
     private static JsonElement ResultOf(JsonElement message)
         => message.GetProperty("result");
+
+    // The refusal text off either wire shape a failed tool call answers
+    // with: a JSON-RPC error member, or a result carrying isError with the
+    // tool's text.
+    private static string RefusalTextOf(JsonElement message)
+    {
+        if (message.TryGetProperty("error", out var error))
+            return error.GetProperty("message").GetString()!;
+        var result = message.GetProperty("result");
+        Assert.True(result.TryGetProperty("isError", out var isError) && isError.GetBoolean(),
+            $"The call was expected to fail: {message.GetRawText()}");
+        return result.GetProperty("content")[0].GetProperty("text").GetString()!;
+    }
 
     private static async Task NotifyAsync(HttpClient client, object payload)
     {
