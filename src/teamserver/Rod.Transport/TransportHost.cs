@@ -332,6 +332,13 @@ public static class TransportHost
         // OPSEC metadata; hosts without the layer keep the floor.
         services.AddSingleton<ISensitiveVerbPolicy, DefaultSensitiveVerbPolicy>();
 
+        // Output taxonomy -> the static-fallback resolver over the built-in
+        // verbs whose grammar the read-side projections parse. AddRodCapabilities
+        // replaces this with the registry-backed resolver so every registered
+        // verb's declared output kind drives the panels; hosts without the
+        // layer keep the built-in floor.
+        services.AddSingleton<IVerbOutputResolver, DefaultVerbOutputResolver>();
+
         services.AddSingleton(TimeProvider.System);
         services.AddSingleton<EngagementService>();
         services.AddSingleton<EnrollmentService>();
@@ -681,6 +688,11 @@ public static class TransportHost
         // hosts, pivot links, and recon observations assembled at read time --
         // a projection of the fleet, the trail, and the recon outputs.
         endpoints.MapTopologyEndpoints();
+        // The credential rows of the assets layer (architecture.md Sec 15.2's
+        // second contract): a read-time projection over every completed task
+        // whose verb declares credential output -- any module's harvest, no
+        // verb list to maintain.
+        endpoints.MapCredentialEndpoints();
         endpoints.MapListenerEndpoints();
         // The redirector control channel (architecture.md Sec 8): the
         // deployment-scoped WebSocket nodes dial home on. Unauthenticated at

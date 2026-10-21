@@ -117,6 +117,13 @@ public static class RodCapabilitiesHost
         services.Replace(ServiceDescriptor.Singleton<ISensitiveVerbPolicy>(sp =>
             new CapabilityRegistrySensitiveVerbPolicy(sp.GetRequiredService<ICapabilityRegistry>())));
 
+        // And on the output-taxonomy axis (Sec 15.2's second contract): the
+        // registry-backed resolver so the read-side projections parse any
+        // registered verb's structured output from its declared kind, never a
+        // hardcoded verb list.
+        services.Replace(ServiceDescriptor.Singleton<IVerbOutputResolver>(sp =>
+            new CapabilityRegistryVerbOutputResolver(sp.GetRequiredService<ICapabilityRegistry>())));
+
         return services;
     }
 

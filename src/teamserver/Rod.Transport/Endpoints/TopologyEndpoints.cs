@@ -17,12 +17,14 @@ namespace Rod.Transport.Endpoints;
 /// The engagement's network picture (architecture.md Sec 11.2): assembled,
 /// never stored. Hosts group from the implants' own enrollment hostnames,
 /// pivot links from the parentage the child-enrollment path records, and
-/// observed hosts and ports from completed recon task outputs parsed at read
-/// time against the documented JSON-lines grammar (extending/tradecraft.md)
-/// -- a line that does not parse is not a finding, so unparseable output
-/// stays in the transcript instead of erroring the view. Chain state
-/// surfaces the way every evidence projection holds it: a broken chain says
-/// so rather than silently rendering.
+/// observed hosts and ports from completed task outputs parsed at read time
+/// against the documented JSON-lines grammar -- every verb whose descriptor
+/// declares the enumeration output kind (architecture.md Sec 15.2's second
+/// contract), not a hardcoded verb list, so a module's sweep feeds the
+/// picture the moment it declares the kind. A line that does not parse is
+/// not a finding, so unparseable output stays in the transcript instead of
+/// erroring the view. Chain state surfaces the way every evidence projection
+/// holds it: a broken chain says so rather than silently rendering.
 ///
 /// Read-only by construction, like the report projections: everything here is
 /// durable and attributed already, and the topology is a projection of it --
@@ -32,12 +34,10 @@ namespace Rod.Transport.Endpoints;
 /// </summary>
 public static class TopologyEndpoints
 {
-    // The recon verbs whose output the projection parses. Transport cannot
-    // reference the capabilities layer that owns the names (the layer rule), so
-    // the strings stand here with the capability catalog as their authority
-    // and the grammar as the contract.
+    // The recon verbs named for the workbench artifact prefixes below.
+    // Task-side parsing keys on the declared output kind through
+    // <see cref="IVerbOutputResolver"/>, never on these strings.
     private const string PortscanVerb = "recon.portscan";
-    private const string HostenumVerb = "recon.hostenum";
     private const string SubdomainsVerb = "recon.subdomains";
     private const string ResolveVerb = "recon.resolve";
 
@@ -72,6 +72,7 @@ public static class TopologyEndpoints
         ITaskRepository tasks,
         IAuditStore audit,
         IArtifactStore artifacts,
+        IVerbOutputResolver outputKinds,
         CancellationToken cancellationToken)
     {
         if (!Guid.TryParse(engagementId, out var engagementValue))
@@ -106,7 +107,7 @@ public static class TopologyEndpoints
                 labelsByHost.GetValueOrDefault(host, []).Select(l => l.Label).ToArray());
         }
 
-        var observations = await ParseTaskObservationsAsync(tasks, engagementKey, cancellationToken);
+        var observations = await ParseTaskObservationsAsync(tasks, engagementKey, outputKinds, cancellationToken);
         observations.AddRange(await ParseArtifactObservationsAsync(artifacts, engagementValue, cancellationToken));
         var observedAttributes = new Dictionary<string, (string? Os, string? Arch)>(StringComparer.Ordinal);
         foreach (var observation in observations)
@@ -187,12 +188,15 @@ public static class TopologyEndpoints
             chainBreak?.ToString()));
     }
 
-    // One recon finding parsed off a completed task's output. The grammar is
+    // One finding parsed off a completed task's output. The grammar is
     // the documented JSON-lines contract: one object per line, "host"
-    // required, the rest optional and unknown fields ignored.
+    // required, the rest optional and unknown fields ignored. Which tasks
+    // carry findings is decided by the declared output kind -- any verb that
+    // declares enumeration output parses here, module verbs included.
     private static async Task<List<TopologyObservation>> ParseTaskObservationsAsync(
         ITaskRepository tasks,
         EngagementId engagement,
+        IVerbOutputResolver outputKinds,
         CancellationToken cancellationToken)
     {
         var observations = new List<TopologyObservation>();
@@ -200,7 +204,7 @@ public static class TopologyEndpoints
         foreach (var task in history)
         {
             if (task.Status != Rod.CoreState.Tasks.TaskStatus.Completed
-                || (task.Verb != PortscanVerb && task.Verb != HostenumVerb)
+                || outputKinds.OutputKind(task.Verb) != TaskOutputKind.Enumeration
                 || string.IsNullOrEmpty(task.Output))
             {
                 continue;

@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Routing;
 using Rod.Audit;
 using Rod.CoreState;
 using Rod.CoreState.Engagements;
+using Rod.CoreState.Implants;
 using Rod.CoreState.Operators;
 using Rod.CoreState.Tasks;
 
@@ -222,10 +223,11 @@ public static class ArtifactEndpoints
     }
 
     // The loot kinds: what gathered the artifact, the read-time judgment the
-    // loot view classifies by. The verbs are the collection-family names the
-    // capability catalog carries; transport cannot reference the tradecraft
-    // layer that owns them (the layer rule), so the strings stand here with
-    // the catalog as their authority.
+    // loot view classifies by. The classification keys on the producing verb's
+    // declared output kind through <see cref="IVerbOutputResolver"/> -- any
+    // registered verb's declaration classifies its artifacts, module verbs
+    // included (architecture.md Sec 15.2's second contract) -- with the
+    // content type catching what a verb-less record still declares.
     internal const string LootKindScreenshot = "screenshot";
     internal const string LootKindCredential = "credential";
     internal const string LootKindFile = "file";
@@ -244,6 +246,7 @@ public static class ArtifactEndpoints
         IEngagementRepository engagements,
         IArtifactStore artifacts,
         ITaskRepository tasks,
+        IVerbOutputResolver outputKinds,
         CancellationToken cancellationToken)
     {
         if (!Guid.TryParse(engagementId, out var engagementValue))
@@ -284,7 +287,7 @@ public static class ArtifactEndpoints
                 }
             }
 
-            var lootKind = ClassifyLoot(task?.Verb, artifact.ContentType);
+            var lootKind = ClassifyLoot(task?.Verb, artifact.ContentType, outputKinds);
             if (kind is not null && !string.Equals(lootKind, kind, StringComparison.OrdinalIgnoreCase))
                 continue;
 
@@ -304,29 +307,27 @@ public static class ArtifactEndpoints
         return Results.Ok(new LootListResponse([.. items], page.NextCursor));
     }
 
-    // The classification: the producing verb names the intent, the content
-    // type catches what a verb-less record still declares (an operator
-    // attaching a PNG needs no task verb to be a screenshot in the view).
-    // Anything else is still loot -- "other" keeps the view complete rather
-    // than silently dropping what the vocabulary has not met.
-    private static string ClassifyLoot(string? verb, string contentType)
+    // The classification: the producing verb's declared output kind names the
+    // intent (screenshot, credential, file), the content type catches what a
+    // verb-less or undeclared record still declares (an operator attaching a
+    // PNG needs no task verb to be a screenshot in the view). Anything else is
+    // still loot -- "other" keeps the view complete rather than silently
+    // dropping what the vocabulary has not met.
+    private static string ClassifyLoot(string? verb, string contentType, IVerbOutputResolver outputKinds)
     {
-        if (string.Equals(verb, "collect.screenshot", StringComparison.OrdinalIgnoreCase)
+        var declared = verb is null ? null : outputKinds.OutputKind(verb);
+        if (declared == TaskOutputKind.Screenshot
             || contentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
         {
             return LootKindScreenshot;
         }
 
-        if (string.Equals(verb, "collect.cred", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(verb, "collect.minidump", StringComparison.OrdinalIgnoreCase))
+        if (declared == TaskOutputKind.Credential)
         {
             return LootKindCredential;
         }
 
-        if (string.Equals(verb, "file.pull", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(verb, "file.push", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(verb, "exfil.push", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(verb, "exfil.stage", StringComparison.OrdinalIgnoreCase))
+        if (declared == TaskOutputKind.File)
         {
             return LootKindFile;
         }
