@@ -944,10 +944,42 @@ export interface CapabilityDescriptor {
   attributes: Record<string, string>
   parameters: VerbParameter[] | null
   output: VerbOutput | null
+  techniques: string[]
 }
 
 export async function listCapabilities(): Promise<CapabilityDescriptor[]> {
   return jsonOrThrow(await fetch('capabilities'))
+}
+
+// The ATT&CK coverage matrix (ADR-007): one row per technique the running
+// deployment can task, naming the verb, module, and implant classes that
+// carry it. The status vocabulary is the server's computed implementation
+// status -- core (an in-tree reference implementation), module (a loaded
+// capability module), gap (declared only: the work queue).
+export interface CoverageCarrier {
+  verb: string
+  status: 'core' | 'module' | 'gap'
+  module: string | null
+  implantClasses: string[]
+}
+
+export interface CoverageTechnique {
+  techniqueId: string
+  name: string
+  tactics: string[]
+  carriers: CoverageCarrier[]
+  platforms: string[]
+}
+
+export interface CapabilityCoverage {
+  attackVersion: string
+  tactics: string[]
+  platforms: string[]
+  techniques: CoverageTechnique[]
+}
+
+export async function getCapabilityCoverage(): Promise<CapabilityCoverage> {
+  return jsonOrThrow(await fetch('capabilities/coverage'))
 }
 
 // --- Paged lists --------------------------------------------------

@@ -12,6 +12,7 @@ import { HomeView } from './views/HomeView'
 import { SettingsView } from './views/SettingsView'
 import { SystemView } from './views/SystemView'
 import { RedirectorsView } from './views/RedirectorsView'
+import { CoverageView } from './views/CoverageView'
 import { LoginView } from './views/LoginView'
 
 // Operator UI shell: the topbar carries what is global -- the breadcrumb,
@@ -32,6 +33,7 @@ type Route =
   | { kind: 'home' }
   | { kind: 'engagements' }
   | { kind: 'engagement'; engagementId: string; tab: string; implantId?: string }
+  | { kind: 'coverage' }
   | { kind: 'settings' }
   | { kind: 'system' }
   | { kind: 'redirectors' }
@@ -51,6 +53,7 @@ function parseHash(): Route {
   if (match) return { kind: 'engagement', engagementId: match[1], tab: 'implants' }
   if (/^\/engagements\/?$/.test(hash)) return { kind: 'engagements' }
   if (/^\/redirectors\/?$/.test(hash)) return { kind: 'redirectors' }
+  if (/^\/coverage\/?$/.test(hash)) return { kind: 'coverage' }
   if (/^\/settings\/?$/.test(hash)) return { kind: 'settings' }
   if (/^\/system\/?$/.test(hash)) return { kind: 'system' }
   // Everything else -- the bare hash, #/home, and any unrecognized link --
@@ -228,6 +231,7 @@ function Topbar({
             {route.kind === 'settings' ? 'Settings' : route.kind === 'redirectors' ? 'Redirectors' : 'System'}
           </span>
         )}
+        {route.kind === 'coverage' && <span className="current">Coverage</span>}
       </div>
       <div className="topbar-actions">
         <button
@@ -292,6 +296,14 @@ function Topbar({
         >
           <Icon name="radio" />
           <span className="label">Redirectors</span>
+        </a>
+        <a
+          className={`topbar-link${route.kind === 'coverage' ? ' active' : ''}`}
+          href="#/coverage"
+          title="The ATT&CK coverage matrix: what this deployment can do, and the gaps that read as the work queue"
+        >
+          <Icon name="target" />
+          <span className="label">Coverage</span>
         </a>
         <a
           className={`topbar-link${route.kind === 'settings' ? ' active' : ''}`}
@@ -494,6 +506,8 @@ function App() {
             <SystemView />
           ) : route.kind === 'redirectors' ? (
             <RedirectorsView operator={operator} />
+          ) : route.kind === 'coverage' ? (
+            <CoverageView />
           ) : (
             <EngagementView
               engagementId={route.engagementId}

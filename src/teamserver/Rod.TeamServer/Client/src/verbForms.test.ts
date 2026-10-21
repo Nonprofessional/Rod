@@ -18,6 +18,7 @@ function descriptor(parameters: VerbParameter[] | null): CapabilityDescriptor {
     attributes: {},
     parameters,
     output: null,
+    techniques: [],
   }
 }
 
