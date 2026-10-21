@@ -75,10 +75,20 @@ public static class CollectCapabilities
     /// </summary>
     public static readonly CapabilityDescriptor[] All =
     {
-        CapabilityDescriptor.Of(Cred, CapabilityCategory.Collect, "1.0", ReadsCredential),
+        CapabilityDescriptor.Of(Cred, CapabilityCategory.Collect, "1.0", ReadsCredential,
+        parameters:
+        [
+            new VerbParameter("source", "Store (optional)", VerbParameterKind.String,
+                Placeholder: "ssh, aws, or cmdkey",
+                Help: "Empty enumerates every standard store the implant reaches."),
+        ],
+        output: new VerbOutput(VerbOutputKind.Credential,
+            "One JSON row per finding: kind, principal, source, and the fields the store carried.")),
         CapabilityDescriptor.Of(Keylog, CapabilityCategory.Collect, "1.0", ReadsInputAndPersists),
-        CapabilityDescriptor.Of(Screenshot, CapabilityCategory.Collect, "1.0", ReadsScreen),
-        CapabilityDescriptor.Of(Minidump, CapabilityCategory.Collect, "1.0", ReadsProcessMemory),
+        CapabilityDescriptor.Of(Screenshot, CapabilityCategory.Collect, "1.0", ReadsScreen,
+        output: new VerbOutput(VerbOutputKind.Screenshot)),
+        CapabilityDescriptor.Of(Minidump, CapabilityCategory.Collect, "1.0", ReadsProcessMemory,
+        output: new VerbOutput(VerbOutputKind.File)),
     };
 
     /// <summary>Every collect verb string, in declared order.</summary>

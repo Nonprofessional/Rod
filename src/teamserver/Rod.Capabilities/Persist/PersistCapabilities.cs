@@ -52,8 +52,22 @@ public static class PersistCapabilities
     /// </summary>
     public static readonly CapabilityDescriptor[] All =
     {
-        CapabilityDescriptor.Of(Install, CapabilityCategory.Persist, "1.0", WritesDiskAndPersists),
-        CapabilityDescriptor.Of(Remove, CapabilityCategory.Persist, "1.0", WritesToDisk),
+        CapabilityDescriptor.Of(Install, CapabilityCategory.Persist, "1.0", WritesDiskAndPersists,
+        parameters:
+        [
+            new VerbParameter("mechanism", "Mechanism", VerbParameterKind.Enum, Required: true,
+                Choices: ["runkey", "schtask", "service", "cron", "systemd"]),
+            new VerbParameter("name", "Name", VerbParameterKind.String, Required: true, Placeholder: "update-service"),
+            new VerbParameter("payload", "Payload", VerbParameterKind.Text, Required: true, Trailing: true,
+                Placeholder: "the command or unit body the mechanism runs"),
+        ]),
+        CapabilityDescriptor.Of(Remove, CapabilityCategory.Persist, "1.0", WritesToDisk,
+        parameters:
+        [
+            new VerbParameter("mechanism", "Mechanism", VerbParameterKind.Enum, Required: true,
+                Choices: ["runkey", "schtask", "service", "cron", "systemd"]),
+            new VerbParameter("name", "Name", VerbParameterKind.String, Required: true, Placeholder: "update-service"),
+        ]),
         CapabilityDescriptor.Of(List, CapabilityCategory.Persist, "1.0"),
     };
 

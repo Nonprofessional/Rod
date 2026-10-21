@@ -53,8 +53,20 @@ public static class ModuleCapabilities
     /// </summary>
     public static readonly CapabilityDescriptor[] All =
     {
-        CapabilityDescriptor.Of(ModuleLoad, CapabilityCategory.Module, "1.0", ExecutesCode),
-        CapabilityDescriptor.Of(ModuleUnload, CapabilityCategory.Module, "1.0"),
+        CapabilityDescriptor.Of(ModuleLoad, CapabilityCategory.Module, "1.0", ExecutesCode,
+        parameters:
+        [
+            new VerbParameter("name", "Module name", VerbParameterKind.String, Required: true,
+                Placeholder: "hostenum",
+                Help: "Letters, digits, dot, dash, underscore; 64 bytes at most. The name the module family registers under."),
+            new VerbParameter("file", "Module binary", VerbParameterKind.File, Required: true, Inline: false,
+                Help: "The plugin the build unit produced for the target's platform (a dll on Windows, the executable shape on Linux). Rides the staged content arm; the server binds its sha256 into the signed tasking."),
+        ]),
+        CapabilityDescriptor.Of(ModuleUnload, CapabilityCategory.Module, "1.0",
+        parameters:
+        [
+            new VerbParameter("name", "Module name", VerbParameterKind.String, Required: true, Placeholder: "hostenum"),
+        ]),
         CapabilityDescriptor.Of(ModuleList, CapabilityCategory.Module, "1.0"),
     };
 

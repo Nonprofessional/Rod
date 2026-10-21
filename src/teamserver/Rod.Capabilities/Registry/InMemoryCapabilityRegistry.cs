@@ -31,6 +31,18 @@ public sealed class InMemoryCapabilityRegistry : ICapabilityRegistry
 
     public Task RegisterAsync(ICapabilityModule module, CancellationToken cancellationToken = default)
     {
+        // A malformed parameter schema is a registration failure, not a
+        // catalog quirk: the UI renders the schema it is handed, so a form
+        // that cannot render is a verb the operator cannot task. Loud at
+        // startup, where every other misconfiguration already lands.
+        var schemaErrors = module.Descriptor.ValidateParameters();
+        if (schemaErrors.Count > 0)
+        {
+            throw new InvalidOperationException(
+                $"capability module for '{module.Descriptor.Verb}' declares an invalid parameter schema: "
+                + string.Join(" ", schemaErrors));
+        }
+
         var verb = module.Descriptor.Verb;
         _byVerb[verb] = module;
 

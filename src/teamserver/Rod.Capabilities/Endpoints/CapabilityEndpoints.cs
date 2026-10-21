@@ -48,23 +48,70 @@ public static class CapabilityEndpoints
     // --- DTOs. camelCase JSON is the framework default; records stay clean. ---
 
     /// <summary>
+    /// One parameter of a verb's schema: the field the operator UI renders
+    /// generically (architecture.md Sec 15.2, the trilogy's first contract).
+    /// </summary>
+    public sealed record VerbParameterResponse(
+        string Name,
+        string Label,
+        string Kind,
+        bool Required,
+        string? Help,
+        string? Placeholder,
+        IReadOnlyList<string>? Choices,
+        bool Trailing,
+        bool Inline)
+    {
+        public static VerbParameterResponse Of(Capabilities.VerbParameter p)
+            => new(
+                p.Name,
+                p.Label,
+                p.Kind.ToString(),
+                p.Required,
+                p.Help,
+                p.Placeholder,
+                p.Choices,
+                p.Trailing,
+                p.Inline);
+    }
+
+    /// <summary>
+    /// A verb's declared output: the taxonomy kind that routes its results to
+    /// the generic panels (architecture.md Sec 15.2, the trilogy's second
+    /// contract), plus the one-sentence description of what the results hold.
+    /// Null when the verb declared none -- plain text, the honest fallback.
+    /// </summary>
+    public sealed record VerbOutputResponse(string Kind, string? Help)
+    {
+        public static VerbOutputResponse? Of(Capabilities.VerbOutput? o)
+            => o is null ? null : new(o.Kind.ToString(), o.Help);
+    }
+
+    /// <summary>
     /// One capability a registered module provides. The verb is the tasking
     /// identifier (<c>namespace.action</c>); <see cref="Category"/> groups it for
     /// the UI; <see cref="Attributes"/> is the per-verb OPSEC surface
-    /// (architecture.md Sec 7) the UI surfaces as risk badges.
+    /// (architecture.md Sec 7) the UI surfaces as risk badges;
+    /// <see cref="Parameters"/> is the task-form schema and
+    /// <see cref="Output"/> the output-taxonomy declaration (architecture.md
+    /// Sec 15.2) -- everything the UI needs to task a verb it has never met.
     /// </summary>
     public sealed record CapabilityDescriptorResponse(
         string Verb,
         string Category,
         string Version,
-        IReadOnlyDictionary<string, string> Attributes)
+        IReadOnlyDictionary<string, string> Attributes,
+        IReadOnlyList<VerbParameterResponse>? Parameters,
+        VerbOutputResponse? Output)
     {
         public static CapabilityDescriptorResponse Of(Capabilities.CapabilityDescriptor d)
             => new(
                 d.Verb,
                 d.Category.ToString(),
                 d.Version,
-                d.Attributes);
+                d.Attributes,
+                d.Parameters?.Select(VerbParameterResponse.Of).ToArray(),
+                VerbOutputResponse.Of(d.Output));
     }
 
 }

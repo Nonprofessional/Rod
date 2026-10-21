@@ -91,10 +91,29 @@ public static class BrowserCapabilities
     {
         CapabilityDescriptor.Of(Fingerprint, CapabilityCategory.Browser, "1.0"),
         CapabilityDescriptor.Of(Cookies, CapabilityCategory.Browser, "1.0", ReadsCookies),
-        CapabilityDescriptor.Of(Dom, CapabilityCategory.Browser, "1.0", ReadsPage),
-        CapabilityDescriptor.Of(Screenshot, CapabilityCategory.Browser, "1.0", CapturesScreen),
-        CapabilityDescriptor.Of(Redirect, CapabilityCategory.Browser, "1.0", NavigatesAway),
-        CapabilityDescriptor.Of(Prompt, CapabilityCategory.Browser, "1.0", ReadsInput),
+        CapabilityDescriptor.Of(Dom, CapabilityCategory.Browser, "1.0", ReadsPage,
+        parameters:
+        [
+            new VerbParameter("selector", "CSS selector (optional)", VerbParameterKind.String,
+                Placeholder: "#session-table",
+                Help: "Empty returns the whole document; output truncates at 1 MiB."),
+        ]),
+        CapabilityDescriptor.Of(Screenshot, CapabilityCategory.Browser, "1.0", CapturesScreen,
+        output: new VerbOutput(VerbOutputKind.Screenshot)),
+        CapabilityDescriptor.Of(Redirect, CapabilityCategory.Browser, "1.0", NavigatesAway,
+        parameters:
+        [
+            new VerbParameter("url", "URL", VerbParameterKind.String, Required: true,
+                Placeholder: "https://portal.example/login",
+                Help: "Navigating destroys the page and the hook with it."),
+        ]),
+        CapabilityDescriptor.Of(Prompt, CapabilityCategory.Browser, "1.0", ReadsInput,
+        parameters:
+        [
+            new VerbParameter("text", "Text", VerbParameterKind.Text, Required: true, Trailing: true,
+                Placeholder: "Your session expired. Re-enter your password.",
+                Help: "Returns what the user answered (or that they dismissed it)."),
+        ]),
     };
 
     /// <summary>Every browser verb string, in declared order.</summary>

@@ -28,10 +28,16 @@ public sealed class HostEnumCapabilityModule : ICapabilityModule
     /// registers <c>recon.hostenum</c> against the plugin SDK, and this
     /// descriptor registers the same verb with the server-side registry. The
     /// string -- not a shared type -- is the contract between them
-    /// (architecture.md Sec 10).
+    /// (architecture.md Sec 10). The output declaration is the module's half
+    /// of the contract trilogy (architecture.md Sec 15.2): the plugin prints
+    /// the recon JSON-lines grammar, so the topology panel picks the findings
+    /// up -- this module earns its panel through metadata alone.
     /// </summary>
     public CapabilityDescriptor Descriptor { get; } = CapabilityDescriptor.Of(
         "recon.hostenum",
         CapabilityCategory.Recon,
-        "1.0");
+        "1.1",
+        output: new VerbOutput(
+            VerbOutputKind.Enumeration,
+            "One JSON finding per line: host, os, arch, user, path."));
 }

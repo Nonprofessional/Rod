@@ -44,8 +44,22 @@ public static class ExfilCapabilities
     /// </summary>
     public static readonly CapabilityDescriptor[] All =
     {
-        CapabilityDescriptor.Of(Push, CapabilityCategory.Exfil, "1.0", TouchesNetwork),
-        CapabilityDescriptor.Of(Stage, CapabilityCategory.Exfil, "1.0"),
+        CapabilityDescriptor.Of(Push, CapabilityCategory.Exfil, "1.0", TouchesNetwork,
+        parameters:
+        [
+            new VerbParameter("path", "Remote path", VerbParameterKind.String, Required: true,
+                Placeholder: "/home/user/loot.docx",
+                Help: "The bytes stream over the C2 channel into the engagement artifact store, joined to this task."),
+        ],
+        output: new VerbOutput(VerbOutputKind.File)),
+        CapabilityDescriptor.Of(Stage, CapabilityCategory.Exfil, "1.0",
+        parameters:
+        [
+            new VerbParameter("path", "Local staging path", VerbParameterKind.String, Required: true,
+                Placeholder: "evidence/loot.docx",
+                Help: "Stages already-collected bytes on the teamserver, joined to this task."),
+        ],
+        output: new VerbOutput(VerbOutputKind.File)),
     };
 
     /// <summary>Every exfil verb string, in declared order.</summary>

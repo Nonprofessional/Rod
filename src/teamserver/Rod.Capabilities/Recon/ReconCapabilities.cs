@@ -46,14 +46,36 @@ public static class ReconCapabilities
 
     /// <summary>
     /// Descriptors for every recon verb, in declared order. The composition root
-    /// registers these so the registry lists the full recon set.
+    /// registers these so the registry lists the full recon set. The findings
+    /// verbs declare the enumeration output kind -- their JSON-lines grammar is
+    /// what the topology view parses (architecture.md Sec 15.2's second
+    /// contract) -- and <see cref="Ps"/> declares the process-list kind the
+    /// process panel renders.
     /// </summary>
     public static readonly CapabilityDescriptor[] All =
     {
-        CapabilityDescriptor.Of(PortScan, CapabilityCategory.Recon, "1.0", TouchesNetwork),
-        CapabilityDescriptor.Of(HostEnum, CapabilityCategory.Recon, "1.0"),
-        CapabilityDescriptor.Of(Service, CapabilityCategory.Recon, "1.0", TouchesNetwork),
-        CapabilityDescriptor.Of(Ps, CapabilityCategory.Recon, "1.0"),
+        CapabilityDescriptor.Of(PortScan, CapabilityCategory.Recon, "1.0", TouchesNetwork,
+        parameters:
+        [
+            new VerbParameter("host", "Host", VerbParameterKind.String, Required: true, Placeholder: "10.0.0.5"),
+            new VerbParameter("range", "Port range", VerbParameterKind.String, Required: true,
+                Placeholder: "1-1024", Help: "Inclusive start-end."),
+        ],
+        output: new VerbOutput(VerbOutputKind.Enumeration,
+            "One JSON finding per line: host, port, state, service.")),
+        CapabilityDescriptor.Of(HostEnum, CapabilityCategory.Recon, "1.0",
+        output: new VerbOutput(VerbOutputKind.Enumeration,
+            "One JSON finding per line: host, addresses, os, arch.")),
+        CapabilityDescriptor.Of(Service, CapabilityCategory.Recon, "1.0", TouchesNetwork,
+        parameters:
+        [
+            new VerbParameter("host", "Host", VerbParameterKind.String, Required: true, Placeholder: "10.0.0.5"),
+            new VerbParameter("ports", "Ports", VerbParameterKind.Array, Required: true,
+                Placeholder: "22,80,443", Help: "Comma-separated port list."),
+        ]),
+        CapabilityDescriptor.Of(Ps, CapabilityCategory.Recon, "1.0",
+        output: new VerbOutput(VerbOutputKind.ProcessList,
+            "One JSON row per process: pid, ppid, user, image.")),
     };
 
     /// <summary>Every recon verb string, in declared order.</summary>

@@ -81,17 +81,55 @@ public static class CoreCapabilities
 
     /// <summary>
     /// Descriptors for every core verb, in declared order. The composition root
-    /// registers these so the registry lists the full core set.
+    /// registers these so the registry lists the full core set. Each carries
+    /// its parameter schema (the task form the operator UI renders generically)
+    /// and, where its results speak a documented grammar, its output kind
+    /// (architecture.md Sec 15.2) -- the same declaration a module's descriptor
+    /// makes, because the built-ins ride the identical contract.
     /// </summary>
     public static readonly CapabilityDescriptor[] All =
     {
-        CapabilityDescriptor.Of(ShellExec, CapabilityCategory.Core, "1.0"),
+        CapabilityDescriptor.Of(ShellExec, CapabilityCategory.Core, "1.0", parameters: new[]
+        {
+            new VerbParameter("command", "Command", VerbParameterKind.Text, Required: true,
+                Placeholder: "whoami", Trailing: true),
+        }),
         CapabilityDescriptor.Of(ShellInteract, CapabilityCategory.Core, "1.0"),
-        CapabilityDescriptor.Of(FilePush, CapabilityCategory.Core, "1.0", WritesToDisk),
-        CapabilityDescriptor.Of(FilePull, CapabilityCategory.Core, "1.0", ReadsFilesystem),
-        CapabilityDescriptor.Of(FsList, CapabilityCategory.Core, "1.0", ReadsFilesystem),
-        CapabilityDescriptor.Of(ProcKill, CapabilityCategory.Core, "1.0", KillsProcess),
-        CapabilityDescriptor.Of(BeaconSleep, CapabilityCategory.Core, "1.0"),
+        CapabilityDescriptor.Of(FilePush, CapabilityCategory.Core, "1.0", WritesToDisk, new[]
+        {
+            new VerbParameter("file", "Local file", VerbParameterKind.File, Required: true),
+            new VerbParameter("path", "Remote path", VerbParameterKind.String, Required: true,
+                Placeholder: "/tmp/tool.exe",
+                Help: "The remote absolute path the bytes land at. Larger uploads stage server-side and stream to the implant."),
+        }),
+        CapabilityDescriptor.Of(FilePull, CapabilityCategory.Core, "1.0", ReadsFilesystem,
+        parameters: new[]
+        {
+            new VerbParameter("path", "Remote path", VerbParameterKind.String, Required: true,
+                Placeholder: "/etc/hostname",
+                Help: "Small files return inline in the task output; larger ones stream back as a downloadable artifact."),
+        },
+        output: new VerbOutput(VerbOutputKind.File)),
+        CapabilityDescriptor.Of(FsList, CapabilityCategory.Core, "1.0", ReadsFilesystem,
+        parameters:
+        [
+            new VerbParameter("path", "Directory", VerbParameterKind.String, Required: true,
+                Placeholder: "/",
+                Help: "Names, entry kinds, sizes, and modification times, one JSON entry per line."),
+        ],
+        output: new VerbOutput(VerbOutputKind.FileList)),
+        CapabilityDescriptor.Of(ProcKill, CapabilityCategory.Core, "1.0", KillsProcess, new[]
+        {
+            new VerbParameter("pid", "PID", VerbParameterKind.Number, Required: true, Placeholder: "4242"),
+        }),
+        CapabilityDescriptor.Of(BeaconSleep, CapabilityCategory.Core, "1.0", parameters: new[]
+        {
+            new VerbParameter("sleep", "Contact every", VerbParameterKind.String, Required: true,
+                Placeholder: "10s, 5m, or bare seconds (0 = back-to-back)",
+                Help: "Go duration (30s, 5m) or bare seconds. 0 contacts continuously -- the interactive-as-poll posture."),
+            new VerbParameter("jitter", "Randomize +/-", VerbParameterKind.String,
+                Placeholder: "2s -- empty keeps the current jitter"),
+        }),
     };
 
     /// <summary>Every core verb string, in declared order.</summary>
