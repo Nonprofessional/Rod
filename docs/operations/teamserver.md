@@ -288,7 +288,7 @@ were cut from. The repository is public, so the deploy host needs no
 authentication:
 
 ```
-curl -fsSL https://github.com/Nonprofessional/Rod/releases/latest/download/install.sh \
+curl -fsSL https://github.com/rodframework/Rod/releases/latest/download/install.sh \
   | sudo bash
 ```
 

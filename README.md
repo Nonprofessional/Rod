@@ -12,7 +12,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Nonprofessional/Rod/actions/workflows/ci.yml"><img src="https://github.com/Nonprofessional/Rod/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/rodframework/Rod/actions/workflows/ci.yml"><img src="https://github.com/rodframework/Rod/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <img src="https://img.shields.io/badge/.NET_10-512BD4?logo=dotnet&logoColor=white" alt=".NET 10">
   <img src="https://img.shields.io/badge/Rust-DEA584?logo=rust&logoColor=black" alt="Rust">
   <img src="https://img.shields.io/badge/React_19-61DAFB?logo=react&logoColor=black" alt="React 19">
