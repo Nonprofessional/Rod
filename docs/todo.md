@@ -28,16 +28,9 @@ engagement names the need.
 
 ## Active
 
-Phase P0 -- the replacement threshold (architecture.md Sec 15):
-
-- **ATT&CK mapping + coverage matrix** (Sec 15.3, ADR-007). _AC:_
-  verb-to-technique mapping stored; the matrix view filters by tactic and
-  platform; reports carry a Navigator layer.
-
-## On hold
-
-Phase P1 -- long-board parity (architecture.md Sec 15).
-Parked on P0; P0 shipped is the reopen condition.
+Phase P1 -- long-board parity (architecture.md Sec 15). P0 (the
+replacement threshold, ADR-007) shipped; the parking condition cleared,
+so the queue moved up by the file's own mechanics.
 
 - **Transport-provider abstraction + optional mTLS/WireGuard, default
   disabled** (Sec 8, Sec 15.3, ADR-004). _AC:_ the three-platform build
@@ -62,6 +55,8 @@ Parked on P0; P0 shipped is the reopen condition.
   main screen, command palette (Sec 15.4, ADR-013). _AC:_ a new domain
   lands without navigation changes; entity detail pages carry the
   related-entities sidebar.
+
+## On hold
 
 Phase P2 -- ecosystem and trust (architecture.md Sec 15).
 Parked on P1; P1 shipped is the reopen condition.

@@ -235,8 +235,10 @@ Comments in the source tree still cite the ids, so they resolve here:
 One consequence of the layer rule: an endpoint backed by data in an outer layer
 is exposed by that layer itself and mapped at the composition root, not hosted
 in transport. `Rod.Operators` does this for its SSE
-stream and `Rod.Capabilities` for `GET /capabilities` (the capability catalog):
-transport may depend on neither, so each owns its endpoint the way it owns its
+stream and `Rod.Capabilities` for `GET /capabilities` (the capability
+catalog) and `GET /capabilities/coverage` (the ATT&CK coverage matrix,
+ADR-007 -- registry metadata under the same rule): transport may depend on
+neither, so each owns its endpoint the way it owns its
 data. The catalog is a process-global read of the loaded module set -- registry
 metadata, not engagement-scoped domain state -- so it earns no CoreState port
 and no parallel DTO; an operator-scoped capability concern would be a *separate*
@@ -3044,7 +3046,7 @@ Where the program touches the existing layers:
 
 | Layer | Evolution |
 |-------|--------------|
-| `Rod.CoreState` | Verbs gain the ATT&CK technique mapping (ADR-007); comment and chat aggregates (ADR-005; shipped, with the credential landing store and the task-reference resolver); the output-taxonomy resolver port ships (shipped with Sec 15.2's trilogy). |
+| `Rod.CoreState` | Verbs gain the ATT&CK technique mapping (ADR-007; shipped -- the kernel data file behind the `IVerbTechniqueResolver` port, with the class platform surface beside the class verb sets); comment and chat aggregates (ADR-005; shipped, with the credential landing store and the task-reference resolver); the output-taxonomy resolver port ships (shipped with Sec 15.2's trilogy). |
 | `Rod.Audit` | Chain semantics tighten: mutable content never enters the chain (ADR-005). |
 | `Rod.Protocol` | Frame-negotiation fields for the optional transports (ADR-004). |
 | `Rod.Transport` | `ITransportProvider` abstraction; the four in-tree families become the reference implementations; optional mTLS and WireGuard, default-disabled (ADR-004). The `/api/v1` versioned alias, the OpenAPI 3.1 contract generation, and the token-scope floor gate (ADR-006; shipped). |
@@ -3096,17 +3098,23 @@ Where the program touches the existing layers:
   queue, every write entering the audit chain like an operator's action.
   This is the replacement for Mythic's scripting and Sliver's gRPC
   client libraries -- the integration hard floor.
-- **ATT&CK coverage matrix** (ADR-007). The verb-to-technique mapping
-  becomes first-class data (a data file; modules declare coverage through
-  the manifest, so community contributions extend it), and the platform
-  gains a **coverage matrix view** -- technique x platform x
-  implementation status, naming the verb, module, and implant class that
-  carry each technique -- with known gaps reading as the work queue. Two
+- **ATT&CK coverage matrix** (ADR-007; shipped). The verb-to-technique
+  mapping is first-class data -- a kernel data file in core state
+  (verb -> technique ids, plus name/tactic reference metadata for the
+  techniques it maps), reached through the `IVerbTechniqueResolver` port
+  with a registry-backed implementation swapped in at the composition
+  root, so a module's declaration replaces the kernel's whole entry for
+  its verb and community contributions extend coverage without a kernel
+  edit. The platform carries a **coverage matrix view** -- technique x
+  platform x implementation status, naming the verb, module, and implant
+  class that carry each technique (`GET /capabilities/coverage`, a global
+  catalog concern under Sec 4.3's placement rule; the operator UI's
+  Coverage surface) -- with known gaps reading as the work queue. Two
   faces, one source: report exports carry the ATT&CK Navigator layer
-  proving *what was done*, and the matrix shows operators *what can be
-  done*, both from the same mapping data. Coverage advances module by
-  module, ordered by real engagement need -- the matrix is a dashboard,
-  not a completion deadline.
+  proving *what was done* (the engagement's dispatched tasks through the
+  same resolver), and the matrix shows operators *what can be done*.
+  Coverage advances module by module, ordered by real engagement need --
+  the matrix is a dashboard, not a completion deadline.
 - **Built-in observability** (ADR-008). No Prometheus. A diagnostics
   endpoint and a UI stats page over PG and in-process counters: beacon
   latency distribution, task queue depth, SSE connection count, build
