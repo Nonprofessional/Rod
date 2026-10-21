@@ -62,6 +62,14 @@ public static class TransportHost
     {
         services.AddRouting();
         services.AddProblemDetails();
+        // The operator API's OpenAPI 3.1 document (architecture.md Sec 15.3,
+        // ADR-006): generated off the final route table by the first-party
+        // generator, shaped to the versioned operator surface by
+        // OperatorApiDocumentShaping, and served by MapRodEndpoints at
+        // /openapi/v1.json. Registered here so every host shape -- the
+        // composition root and the test hosts alike -- serves the same
+        // document the SDK contract is cut from.
+        services.AddOpenApi(options => options.AddDocumentTransformer<OperatorApiDocumentShaping>());
         // The pipeline UseRodTransportCore installs always runs the auth pair,
         // so their middleware plumbing is registered with the layer that owns
         // the pipeline -- every host gets it whether or not an outer layer
@@ -790,6 +798,12 @@ public static class TransportHost
         endpoints.MapDnsOverHttpsEndpoints();
         // A trivial health probe so the listener is observably up.
         endpoints.MapGet("/health", () => Results.Ok(new { status = "ok" }));
+        // The operator API contract (architecture.md Sec 15.3, ADR-006): the
+        // OpenAPI 3.1 document over the versioned operator surface. It sits
+        // behind the operator authentication gate like the surface it
+        // describes -- the route inventory of a teamserver is not public
+        // information.
+        endpoints.MapOpenApi().RequireAuthorization();
     }
 
     /// <summary>

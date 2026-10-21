@@ -34,6 +34,7 @@
        transitive (see Directory.Packages.props for the advisory). -->
   <ItemGroup>
     <PackageReference Include="MailKit" />
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
     <PackageReference Include="System.Security.Cryptography.Pkcs" />
   </ItemGroup>
 

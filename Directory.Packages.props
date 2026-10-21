@@ -23,6 +23,11 @@
          own docs mark not-recommended: the send engine needs a maintained
          client that speaks STARTTLS, implicit TLS, and AUTH correctly. -->
     <PackageVersion Include="MailKit" Version="4.18.1" />
+    <!-- The operator API's OpenAPI 3.1 document (architecture.md Sec 15.3,
+         ADR-006): first-party generation off the mapped minimal-API route
+         table, served at /openapi/v1.json and scoped to the versioned
+         operator surface. -->
+    <PackageVersion Include="Microsoft.AspNetCore.OpenApi" Version="10.0.13" />
     <PackageVersion Include="Microsoft.AspNetCore.TestHost" Version="10.0.10" />
     <PackageVersion Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.10" />
     <PackageVersion Include="NetArchTest.Rules" Version="1.3.2" />
