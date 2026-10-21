@@ -26,9 +26,10 @@ public sealed class RegistryStore
         carry the publisher's Ed25519 public key and signature; operators
         pin them in their lock file at first install.
 
-        Hosting/governance of this repository is the open decision
-        architecture.md Sec 15.2 records (personal tap or organization);
-        this readme states whichever answer its owner lands.
+        Governance: the canonical rod-registry lives under the GitHub
+        organization (ADR-011) -- pull-request review in, merge rights
+        held by the organization. Third-party taps are legitimate
+        registries of their own; this one is the default.
         """;
 
     private RegistryStore(string root)

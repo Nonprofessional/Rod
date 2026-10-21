@@ -11,9 +11,9 @@ the reference pair) and the `rod mod` suite over them: `init`,
 lock file recording what landed. The field's module ecosystems are the
 benchmark; so are the general-purpose package managers whose
 distribution shape the registry deliberately ports (the Homebrew tap).
-The index's hosting call -- personal tap or organization -- is the
-governance decision Sec 15.2 still carries open; everything below is
-independent of it.
+The index's governance is decided: an organization tap under the GitHub
+organization ADR-011 creates, third-party taps available by
+construction.
 
 ## The tools
 

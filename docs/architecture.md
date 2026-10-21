@@ -2933,10 +2933,13 @@ its contracts are files): the manifest, the canonical form, the signing
 chain, the six commands, and the reference module
 `modules/hostenum/rod-module.toml` riding the identical path, with the
 end-to-end acceptance (template repository through publish to install)
-encoded in `tests/cli/dotnet/`. Still open until the ADR-011 organization
-decision lands: the index's **governance model** (personal tap or
-organization) -- the mechanism is governance-agnostic, `--registry`
-takes any git URL or local checkout.
+encoded in `tests/cli/dotnet/`. The index's **governance model** is
+decided: the canonical rod-registry is an **organization tap** -- hosted
+under the GitHub organization ADR-011 creates, entries landing by pull
+request with review, merge rights held by the organization. Third-party
+taps remain available by construction (`--registry` takes any git URL
+or local checkout); an organization tap is where the default registry
+lives, not a monopoly on hosting.
 
 **The trust chain** (ADR-002, ADR-009): publishers sign, the registry
 vouches for nothing. `rod mod init` generates an Ed25519 keypair beside
