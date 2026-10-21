@@ -3316,6 +3316,29 @@
         }
       }
     },
+    "/engagements/{engagementId}/report/attack-layer": {
+      "get": {
+        "tags": [
+          "ReportEndpoints"
+        ],
+        "operationId": "GetAttackLayerAsync",
+        "parameters": [
+          {
+            "name": "engagementId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/engagements/{engagementId}/handoff-digest": {
       "get": {
         "tags": [
