@@ -163,3 +163,4 @@ consumes this pass as its consolidation input.
 | [recon.md](recon.md) | Recon | One workbench, one findings grammar: adopt breadth-then-depth and the transform workflow; skip a panel per tool and any second system of record. |
 | [phishing.md](phishing.md) | Phishing campaigns | Adopt GoPhish's object decomposition and the per-recipient board; skip the standalone product shape and everything bulk. |
 | [browser-hook.md](browser-hook.md) | Browser hook | The hooked browser is an implant like any other: adopt fingerprint-first and compatibility-at-task-time; skip the command zoo and the second console. |
+| [module-ecosystem.md](module-ecosystem.md) | Module ecosystem | Adopt the git-repo-as-registry tap shape, the self-describing manifest, and the lock; skip the running service, the container packaging, and every install-time hook -- signatures are the trust chain, not platform vouching. |
