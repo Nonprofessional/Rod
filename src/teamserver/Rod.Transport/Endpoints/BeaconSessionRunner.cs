@@ -319,7 +319,7 @@ internal sealed class BeaconSessionRunner
         if (dispatched is null)
             return;
 
-        var frame = _tasking.MarshalFrame(dispatched, session.Implant);
+        var frame = await _tasking.MarshalFrameAsync(dispatched, session.Implant, cancellationToken);
 
         // Write downstream first: the dispatch audit records a task the implant
         // actually received. When the write fails, the task returns to the queue

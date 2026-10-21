@@ -1,40 +1,31 @@
-using System.Text.Json;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Rod.CoreState;
+using Rod.CoreState.Collaboration;
 using Rod.CoreState.Engagements;
-using Rod.CoreState.Implants;
-using Rod.CoreState.Tasks;
 
 namespace Rod.Transport.Endpoints;
 
 /// <summary>
-/// The engagement's credential rows (architecture.md Sec 15.2, the contract
-/// trilogy's second contract): assembled at read time, never stored. Every
-/// completed task whose verb declares the credential output kind parses
-/// against the documented JSON-lines grammar -- one row per line, unknown
-/// fields ignored, a line that does not parse stays in the transcript -- so
-/// the credential panel reads any module's harvest, framework verb or not,
-/// the same way the topology projection reads enumeration findings. The
-/// persisted credential entity (reuse through task references, rotation
-/// marks) is the entity-model item's work, not this projection's.
+/// The engagement's credential rows (architecture.md Sec 15.2's output
+/// grammar, landed by Sec 15.3's collaboration work): what a completed
+/// credential-kind task harvested, persisted once at capture with the
+/// stable ids task references address (<c>$cred-&lt;id&gt;</c>) and the
+/// search index reads. The store is the single source -- the harvest path
+/// and this read share it, so the panel and the placeholder resolver can
+/// never disagree.
 ///
 /// Read-only by construction and scoped by engagement (architecture.md
-/// Sec 3): the engagement id in the path binds every task the projection
-/// walks. Secret material renders masked by default in the UI; the row
+/// Sec 3). Secret material renders masked by default in the UI; the row
 /// carries it because the operator's report needs what was actually
-/// harvested, and it never enters the audit chain (Sec 11's mutable-content
-/// rule cuts the other way: chain events carry operational facts, not
-/// harvest payloads).
+/// harvested, and it never enters the audit chain (Sec 11's
+/// mutable-content rule cuts the other way: chain events carry
+/// operational facts, not harvest payloads) and never enters a search
+/// index.
 /// </summary>
 public static class CredentialEndpoints
 {
-    // A harvest against a large environment can print a lot of lines; past
-    // this the parse stops per task, the read stays bounded no matter what a
-    // handler printed -- the same ceiling the topology parse holds.
-    private const int MaxRowsPerTask = 10_000;
-
     public static IEndpointRouteBuilder MapCredentialEndpoints(this IEndpointRouteBuilder endpoints)
     {
         endpoints.MapGet("/engagements/{engagementId}/credentials", ListHarvestAsync)
@@ -46,8 +37,8 @@ public static class CredentialEndpoints
     private static async Task<IResult> ListHarvestAsync(
         string engagementId,
         IEngagementRepository engagements,
-        ITaskRepository tasks,
-        IVerbOutputResolver outputKinds,
+        ICredentialStore credentials,
+        Rod.CoreState.Tasks.ITaskRepository tasks,
         CancellationToken cancellationToken)
     {
         if (!Guid.TryParse(engagementId, out var engagementValue))
@@ -57,100 +48,47 @@ public static class CredentialEndpoints
         if (engagement is null)
             return Results.NotFound(new Problem("Engagement does not exist."));
 
-        var rows = new List<CredentialRowResponse>();
-        var history = await tasks.ListByEngagementAsync(new EngagementId(engagementValue), cancellationToken);
-        foreach (var task in history)
+        var rows = await credentials.ListByEngagementAsync(new EngagementId(engagementValue), cancellationToken);
+
+        // The verb column renders the capturing task's verb; the store keeps
+        // only ids, so the source task resolves once per distinct task and a
+        // vanished task (an engagement whose rows predate a store reset, the
+        // degenerate case) still renders.
+        var verbs = new Dictionary<Guid, string>();
+        var items = new List<CredentialRowResponse>(rows.Count);
+        foreach (var r in rows)
         {
-            if (task.Status != Rod.CoreState.Tasks.TaskStatus.Completed
-                || outputKinds.OutputKind(task.Verb) != TaskOutputKind.Credential
-                || string.IsNullOrEmpty(task.Output))
+            if (!verbs.TryGetValue(r.SourceTaskId.Value, out var verb))
             {
-                continue;
+                var task = await tasks.FindAsync(r.SourceTaskId, cancellationToken);
+                verb = task?.Verb ?? string.Empty;
+                verbs[r.SourceTaskId.Value] = verb;
             }
 
-            var parsed = 0;
-            foreach (var line in task.Output.Split('\n'))
-            {
-                if (string.IsNullOrWhiteSpace(line))
-                    continue;
-                if (parsed >= MaxRowsPerTask)
-                    break;
-
-                CredentialRowResponse? row;
-                try
-                {
-                    row = ParseRow(line);
-                }
-                catch (JsonException)
-                {
-                    continue; // Not a row this view can read; the transcript keeps it.
-                }
-
-                if (row is null)
-                    continue;
-
-                parsed++;
-                rows.Add(row with
-                {
-                    TaskId = task.Id.ToString(),
-                    ImplantId = task.ImplantId.ToString(),
-                    Verb = task.Verb,
-                    CapturedAt = task.CompletedAt ?? task.CreatedAt,
-                });
-            }
+            items.Add(new CredentialRowResponse(
+                r.Kind,
+                r.Principal,
+                r.Secret,
+                r.Source,
+                r.Host,
+                r.Note,
+                r.Id.Value.ToString(),
+                r.SourceTaskId.ToString(),
+                r.SourceImplantId.ToString(),
+                verb,
+                r.CapturedAt));
         }
 
-        return Results.Ok(new CredentialListResponse([.. rows
-            .OrderBy(r => r.CapturedAt)
-            .ThenBy(r => r.Principal, StringComparer.Ordinal)]));
-    }
-
-    // One credential row: the grammar is one JSON object per line with
-    // "kind" and "principal" required, everything else optional and unknown
-    // fields ignored -- the same leniency the recon finding grammar holds.
-    private static CredentialRowResponse? ParseRow(string line)
-    {
-        using var doc = JsonDocument.Parse(line);
-        var root = doc.RootElement;
-        if (root.ValueKind != JsonValueKind.Object)
-            return null;
-
-        if (!root.TryGetProperty("kind", out var kindElement)
-            || kindElement.ValueKind != JsonValueKind.String
-            || kindElement.GetString() is not { Length: > 0 } kind)
-        {
-            return null;
-        }
-
-        if (!root.TryGetProperty("principal", out var principalElement)
-            || principalElement.ValueKind != JsonValueKind.String
-            || principalElement.GetString() is not { Length: > 0 } principal)
-        {
-            return null;
-        }
-
-        string? StringProperty(string name)
-            => root.TryGetProperty(name, out var element) && element.ValueKind == JsonValueKind.String
-                ? element.GetString()
-                : null;
-
-        return new CredentialRowResponse(
-            kind,
-            principal,
-            StringProperty("secret"),
-            StringProperty("source"),
-            StringProperty("host"),
-            StringProperty("note"),
-            TaskId: null,
-            ImplantId: null,
-            Verb: null!,
-            CapturedAt: default);
+        return Results.Ok(new CredentialListResponse([.. items]));
     }
 
     // --- DTOs. camelCase JSON is the framework default; records stay clean. ---
 
     /// <summary>
     /// One harvested credential, attributed to the task that captured it.
+    /// <paramref name="Id"/> is the row's stable id -- the value a
+    /// <c>$cred-&lt;id&gt;</c> task reference addresses. The id renders in
+    /// the hyphenated form so the placeholder grammar reads it directly.
     /// <paramref name="Secret"/> is the material when the source carried it
     /// (the reference <c>collect.cred</c> lists stores without secret
     /// material; a harvesting module may carry it) -- the UI masks it by
@@ -163,8 +101,9 @@ public static class CredentialEndpoints
         string? Source,
         string? Host,
         string? Note,
-        string? TaskId,
-        string? ImplantId,
+        string Id,
+        string TaskId,
+        string ImplantId,
         string Verb,
         DateTimeOffset CapturedAt);
 

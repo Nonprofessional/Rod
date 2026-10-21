@@ -2,6 +2,7 @@ using Google.Protobuf;
 using Rod.Audit;
 using Rod.CoreState;
 using Rod.CoreState.Application;
+using Rod.CoreState.Collaboration;
 using Rod.CoreState.Pki;
 using Rod.CoreState.Tasks;
 using Rod.V1;
@@ -13,14 +14,15 @@ namespace Rod.Transport.Endpoints;
 // (architecture.md Sec 8): build the signed TaskRequest frame, record the
 // dispatch in the audit trail, and slice a staged payload into its chunk run.
 // Extracted from BeaconEndpoint so the live beacon carriages and the envelope
-// deliver byte-identical tasking -- the signature, the staged marker, and the
-// TaskDispatched audit write have exactly one implementation.
+// deliver byte-identical tasking -- the signature, the staged marker, and
+// the TaskDispatched audit write have exactly one implementation.
 
 /// <summary>
 /// Marshals dispatched tasking for every beacon transport: the signed
 /// <see cref="TaskRequest"/> frame, its audit record, and the staged-payload
 /// chunk run a StagedPull demands. Singleton: stateless composition over the
-/// tasking CA and the audit and artifact stores.
+/// tasking CA, the audit and artifact stores, and the task-reference
+/// resolver.
 /// </summary>
 internal sealed class BeaconTasking
 {
@@ -32,12 +34,18 @@ internal sealed class BeaconTasking
     private readonly IImplantCertificateAuthority _ca;
     private readonly IAuditStore _audit;
     private readonly IArtifactStore _artifacts;
+    private readonly TaskReferenceService? _references;
 
-    public BeaconTasking(IImplantCertificateAuthority ca, IAuditStore audit, IArtifactStore artifacts)
+    public BeaconTasking(
+        IImplantCertificateAuthority ca,
+        IAuditStore audit,
+        IArtifactStore artifacts,
+        TaskReferenceService? references = null)
     {
         _ca = ca;
         _audit = audit;
         _artifacts = artifacts;
+        _references = references;
     }
 
     /// <summary>
@@ -50,8 +58,8 @@ internal sealed class BeaconTasking
     /// the implant id binds the task to its intended executor, and the implant
     /// verifies against the CA it already trusts before executing.
     /// </summary>
-    public TaskRequest BuildSignedRequest(TaskDispatched dispatched)
-        => BuildSignedRequest(dispatched, fronting: null);
+    public Task<TaskRequest> BuildSignedRequestAsync(TaskDispatched dispatched, CancellationToken cancellationToken = default)
+        => BuildSignedRequestAsync(dispatched, fronting: null, cancellationToken);
 
     /// <summary>
     /// The fronting half (architecture.md Sec 5.2, the Pivot class): when
@@ -62,14 +70,30 @@ internal sealed class BeaconTasking
     /// (Sec 9): the tuple's executor binding is unchanged, the marker only
     /// routes. A null or matching <paramref name="fronting"/> produces the
     /// ordinary own-tasking shape, byte-for-byte.
+    ///
+    /// Credential placeholders in the arguments resolve here and nowhere
+    /// else (architecture.md Sec 15.3, ADR-005): the frame and its signature
+    /// carry the secret the implant executes, while the task row, the live
+    /// bus, and the TaskDispatched audit record keep the placeholder form
+    /// the operator wrote -- the plaintext never lands in a store.
     /// </summary>
-    public TaskRequest BuildSignedRequest(TaskDispatched dispatched, ImplantId? fronting)
+    public async Task<TaskRequest> BuildSignedRequestAsync(
+        TaskDispatched dispatched,
+        ImplantId? fronting,
+        CancellationToken cancellationToken = default)
     {
+        var arguments = dispatched.Arguments;
+        if (_references is not null && TaskReferences.ContainsCredential(arguments))
+        {
+            arguments = await _references.SubstituteCredentialsAsync(
+                dispatched.EngagementId, arguments, cancellationToken);
+        }
+
         var request = new TaskRequest
         {
             TaskId = dispatched.TaskId.ToString(),
             Verb = dispatched.Verb,
-            Arguments = dispatched.Arguments,
+            Arguments = arguments,
         };
         // The typed arm's marker (architecture.md Sec 10): a staged task tells
         // the implant its payload is server-side and demanded, not inline. The
@@ -90,16 +114,16 @@ internal sealed class BeaconTasking
     /// Frames the signed request as the opaque <see cref="Frame"/> every
     /// transport writes downstream.
     /// </summary>
-    public Frame MarshalFrame(TaskDispatched dispatched)
-        => new() { Payload = ByteString.CopyFrom(BuildSignedRequest(dispatched).ToByteArray()) };
+    public async Task<Frame> MarshalFrameAsync(TaskDispatched dispatched, CancellationToken cancellationToken = default)
+        => new() { Payload = ByteString.CopyFrom((await BuildSignedRequestAsync(dispatched, cancellationToken)).ToByteArray()) };
 
     /// <summary>
     /// The fronting marshal: the frame for a stream whose implant may front
     /// the task's target (architecture.md Sec 5.2). See
-    /// <see cref="BuildSignedRequest(TaskDispatched, ImplantId?)"/>.
+    /// <see cref="BuildSignedRequestAsync(TaskDispatched, ImplantId?, CancellationToken)"/>.
     /// </summary>
-    public Frame MarshalFrame(TaskDispatched dispatched, ImplantId fronting)
-        => new() { Payload = ByteString.CopyFrom(BuildSignedRequest(dispatched, fronting).ToByteArray()) };
+    public async Task<Frame> MarshalFrameAsync(TaskDispatched dispatched, ImplantId fronting, CancellationToken cancellationToken = default)
+        => new() { Payload = ByteString.CopyFrom((await BuildSignedRequestAsync(dispatched, fronting, cancellationToken)).ToByteArray()) };
 
     /// <summary>
     /// Records the dispatch (architecture.md Sec 11). Dispatch is server-driven

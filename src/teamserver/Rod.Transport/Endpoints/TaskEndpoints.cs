@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Routing;
 using Rod.Audit;
 using Rod.CoreState;
 using Rod.CoreState.Application;
+using Rod.CoreState.Collaboration;
 using Rod.CoreState.Implants;
 using Rod.CoreState.Operators;
 using Rod.CoreState.Tasks;
@@ -182,6 +183,7 @@ public static class TaskEndpoints
                 or TaskRejectionReason.NoChannelCarrier
                 or TaskRejectionReason.ImplantRetired
                 or TaskRejectionReason.EngagementClosed
+                or TaskRejectionReason.UnknownTaskReference
                     => Results.Json(new Problem(ex.Message), statusCode: StatusCodes.Status422UnprocessableEntity),
                 _ => Results.NotFound(new Problem(ex.Message)),
             };
@@ -439,6 +441,7 @@ public static class TaskEndpoints
         IImplantRepository implants,
         LiveChannelHub channels,
         Rod.Transport.Channels.DegradedChannelHub degraded,
+        Rod.CoreState.Collaboration.TaskReferenceService references,
         Rod.CoreState.Operators.Interaction.OperatorInteractionService interaction,
         Rod.CoreState.Operators.IOperatorRepository operators,
         IAuditStore audit,
@@ -496,6 +499,33 @@ public static class TaskEndpoints
                 + "input is refused until they release it or disconnect."));
         }
 
+        // Task references in typed input hold to the same rule the issuance
+        // path enforces (architecture.md Sec 15.3, ADR-005): well-formed
+        // <c>@task-</c>/<c>$cred-</c> tokens must resolve in the engagement,
+        // and a credential token resolves on the wire only -- the bytes the
+        // hub carries hold the secret, the audit record below decodes the
+        // placeholder the operator typed, so the plaintext never lands.
+        var wire = data;
+        var typed = Encoding.UTF8.GetString(data);
+        if (TaskReferences.Extract(typed).Count > 0)
+        {
+            var unresolved = await references.UnresolvedAsync(
+                task.EngagementId, typed, cancellationToken);
+            if (unresolved.Count > 0)
+            {
+                return Results.Json(
+                    new Problem("Channel input references "
+                        + string.Join(", ", unresolved.Select(t => t.Render()))
+                        + " -- no such task or credential in this engagement."),
+                    statusCode: StatusCodes.Status422UnprocessableEntity);
+            }
+
+            var substituted = await references.SubstituteCredentialsAsync(
+                task.EngagementId, typed, cancellationToken);
+            if (!ReferenceEquals(substituted, typed))
+                wire = Encoding.UTF8.GetBytes(substituted);
+        }
+
         // A poll-mode implant (the degraded advertisement) takes its input
         // through the parking queue even while one of its cycle's streams
         // happens to be open: those streams are transient -- the idle window
@@ -505,7 +535,7 @@ public static class TaskEndpoints
         if (await degraded.AdvertisedAsync(task.ImplantId, cancellationToken))
         {
             if (!await degraded.TryEnqueueAsync(
-                    task.ImplantId, new TaskId(taskValue), data, body.Eof, cancellationToken))
+                    task.ImplantId, new TaskId(taskValue), wire, body.Eof, cancellationToken))
             {
                 return Results.Conflict(
                     new Problem("The implant's poll cycle is not accepting channel input."));
@@ -518,17 +548,17 @@ public static class TaskEndpoints
         // pivot child's channel has no sink of its own (Sec 5.2): its input
         // rides the fronting parent's stream, so a child that holds no sink
         // routes through its parent.
-        else if (!channels.TryEnqueue(task.ImplantId, taskValue, data, body.Eof))
+        else if (!channels.TryEnqueue(task.ImplantId, taskValue, wire, body.Eof))
         {
             var target = await implants.FindAsync(task.ImplantId, cancellationToken);
             if (target is { Class: ImplantClass.Pivot, ParentImplantId: { } fronting }
-                && channels.TryEnqueue(fronting, taskValue, data, body.Eof))
+                && channels.TryEnqueue(fronting, taskValue, wire, body.Eof))
             {
                 // Rode the fronting parent's live stream.
             }
             else if (target is not { Class: ImplantClass.Pivot }
                 && await degraded.TryEnqueueAsync(
-                    task.ImplantId, new TaskId(taskValue), data, body.Eof, cancellationToken))
+                    task.ImplantId, new TaskId(taskValue), wire, body.Eof, cancellationToken))
             {
                 // Parked for the implant's next poll contact: the input
                 // lands when the cycle delivers it, not instantly -- the

@@ -305,7 +305,7 @@ internal sealed class EnvelopeBeaconContact
             if (dispatched is null)
                 break;
 
-            var frame = _tasking.MarshalFrame(dispatched);
+            var frame = await _tasking.MarshalFrameAsync(dispatched, cancellationToken);
             var wireSize = EnvelopeFraming.WireSize(frame);
 
             if (TransportCapabilities.EvaluateClaim(

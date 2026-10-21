@@ -211,6 +211,17 @@ public static class TransportHost
         // in the console through the ordinary tasking path, so the store
         // carries no bookkeeping of its own.
         services.AddSingleton<Rod.CoreState.Snippets.ITaskSnippetStore, Rod.CoreState.Snippets.InMemoryTaskSnippetStore>();
+        // The engagement-scoped collaboration surfaces (architecture.md
+        // Sec 15.3, ADR-005): comments, chat channels and messages, and the
+        // harvested-credential rows -- in-memory by default, Postgres-backed
+        // when the connection string is set. Mutable process knowledge:
+        // these rows ride the timeline and the live bus as ordinary events
+        // and never enter the audit chain.
+        services.AddSingleton<Rod.CoreState.Collaboration.ICommentStore, Rod.CoreState.Collaboration.InMemoryCommentStore>();
+        services.AddSingleton<Rod.CoreState.Collaboration.IChatStore, Rod.CoreState.Collaboration.InMemoryChatStore>();
+        services.AddSingleton<Rod.CoreState.Collaboration.ICredentialStore, Rod.CoreState.Collaboration.InMemoryCredentialStore>();
+        services.AddSingleton<Rod.CoreState.Collaboration.TaskReferenceService>();
+        services.AddSingleton<Rod.CoreState.Collaboration.CredentialHarvester>();
         // The engagement-scoped delivery campaigns (architecture.md
         // Sec 11.5): the tracked-lure rows -- sending profile, recipients
         // with their baked-credential bindings, evidence stamps -- in-memory

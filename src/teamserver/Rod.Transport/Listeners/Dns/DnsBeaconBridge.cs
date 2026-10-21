@@ -452,7 +452,7 @@ internal sealed class DnsBeaconBridge
             if (dispatched is null)
                 break;
 
-            var marshaled = _tasking.BuildSignedRequest(dispatched).ToByteArray();
+            var marshaled = (await _tasking.BuildSignedRequestAsync(dispatched, cancellationToken)).ToByteArray();
             if (TransportCapabilities.EvaluateClaim(
                     TransportCapabilities.Dns, dispatched.Verb, marshaled.Length, MaxTaskRequestBytes, degraded)
                 != ClaimDecision.Claim)
