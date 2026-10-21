@@ -53,12 +53,19 @@ public sealed record PackageRules(IReadOnlyList<string> Include, IReadOnlyList<s
 /// <summary>
 /// One verb row of the manifest's version matrix (architecture.md Sec 15.2,
 /// the contract trilogy's third contract): the verb this module registers,
-/// its module-scoped version, and an optional per-verb teamserver floor. A
-/// verb row is what lets a module iterate one verb without republishing the
-/// whole package's semantics -- the row version is the iteration record the
-/// registry catalog reads and install checks.
+/// its module-scoped version, an optional per-verb teamserver floor, and the
+/// verb's ATT&CK techniques (ADR-007) -- the authoritative per-verb
+/// declaration the teamserver's coverage matrix renders; the module-level
+/// <c>[attack]</c> list is its validated roll-up. A verb row is what lets a
+/// module iterate one verb without republishing the whole package's
+/// semantics -- the row version is the iteration record the registry catalog
+/// reads and install checks.
 /// </summary>
-public sealed record VerbDeclaration(string Name, SemVer Version, SemVer? TeamserverMin)
+public sealed record VerbDeclaration(
+    string Name,
+    SemVer Version,
+    SemVer? TeamserverMin,
+    IReadOnlyList<string>? Techniques = null)
 {
     public sealed override string ToString()
         => TeamserverMin is { } floor
@@ -139,6 +146,27 @@ public sealed record ModuleManifest
                 errors.Add($"attack.techniques[{i}] '{Techniques[i]}' is not an ATT&CK technique id (T#### or T####.###).");
         }
 
+        // The module-level [attack] list is the display roll-up of the verb
+        // rows' declarations (ADR-007): once any verb row declares its own
+        // techniques, a non-empty module-level list must agree with the
+        // union exactly, so the registry catalog and the coverage matrix can
+        // never read two different stories. Rows that declare none keep the
+        // older summary-only shape working, and a verbless manifest (a build
+        // unit) keeps its module-level list to itself.
+        if (Techniques.Count > 0 && Verbs.Any(v => v.Techniques is { Count: > 0 }))
+        {
+            var declared = Techniques.Distinct().OrderBy(t => t, StringComparer.Ordinal).ToArray();
+            var union = Verbs.SelectMany(v => v.Techniques ?? [])
+                .Distinct()
+                .OrderBy(t => t, StringComparer.Ordinal)
+                .ToArray();
+            if (!declared.SequenceEqual(union))
+                errors.Add(
+                    "attack.techniques must be exactly the union of the verbs' techniques "
+                    + $"(it is the roll-up): declared [{string.Join(",", declared)}], "
+                    + $"verb rows carry [{string.Join(",", union)}].");
+        }
+
         var seenVerbs = new HashSet<string>(StringComparer.Ordinal);
         for (var i = 0; i < Verbs.Count; i++)
         {
@@ -147,6 +175,11 @@ public sealed record ModuleManifest
                 errors.Add($"verbs[{i}] '{verb.Name}' is not a namespaced verb (namespace.action, lowercase segments).");
             else if (!seenVerbs.Add(verb.Name))
                 errors.Add($"verbs[{i}] '{verb.Name}' is declared twice.");
+            for (var t = 0; t < (verb.Techniques?.Count ?? 0); t++)
+            {
+                if (!TechniquePattern.IsMatch(verb.Techniques![t]))
+                    errors.Add($"verbs[{i}].techniques[{t}] '{verb.Techniques[t]}' is not an ATT&CK technique id (T#### or T####.###).");
+            }
         }
 
         return errors;

@@ -14,10 +14,14 @@ description = "Host enumeration reference module: server-side registration for r
 teamserver = "1.0.0"
 
 # The verb version matrix (architecture.md Sec 15.2): the verb iterates under
-# its own module-scoped version, independently of the package version.
+# its own module-scoped version, independently of the package version. The
+# row's techniques are the authoritative per-verb ATT&CK declaration (ADR-007)
+# -- the same ids the server-side descriptor registers -- with the module-level
+# [attack] list as their validated roll-up.
 [[verbs]]
 name = "recon.hostenum"
 version = "1.1.0"
+techniques = ["T1082"]
 
 [[compatibility.targets]]
 implant-class = "implant"

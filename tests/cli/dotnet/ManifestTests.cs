@@ -75,8 +75,79 @@ public class ManifestTests
         Assert.Empty(errors);
         Assert.NotNull(manifest);
         Assert.Equal(2, manifest!.Verbs.Count);
-        Assert.Equal(new VerbDeclaration("demo.run", new SemVer(1, 0, 0, null), null), manifest.Verbs[0]);
-        Assert.Equal(new VerbDeclaration("demo.sweep", new SemVer(0, 3, 1, null), new SemVer(1, 4, 0, null)), manifest.Verbs[1]);
+        // Member-wise: the record's Techniques is an interface-typed list, so
+        // record equality would compare references.
+        Assert.Equal("demo.run", manifest.Verbs[0].Name);
+        Assert.Equal(new SemVer(1, 0, 0, null), manifest.Verbs[0].Version);
+        Assert.Null(manifest.Verbs[0].TeamserverMin);
+        Assert.Empty(manifest.Verbs[0].Techniques ?? []);
+        Assert.Equal("demo.sweep", manifest.Verbs[1].Name);
+        Assert.Equal(new SemVer(0, 3, 1, null), manifest.Verbs[1].Version);
+        Assert.Equal(new SemVer(1, 4, 0, null), manifest.Verbs[1].TeamserverMin);
+        Assert.Empty(manifest.Verbs[1].Techniques ?? []);
+    }
+
+    [Fact]
+    public void VerbRows_CarryTheirTechniques()
+    {
+        // The per-verb ATT&CK declaration (ADR-007): the row's techniques are
+        // the authoritative mapping the coverage matrix renders, normalizing
+        // to canonical uppercase like the module-level list. Here the verb
+        // rows' union matches the module-level roll-up, so validation passes.
+        var toml = Valid + """
+
+            [[verbs]]
+            name = "demo.run"
+            version = "1.0.0"
+            techniques = ["t1082"]
+
+            [[verbs]]
+            name = "demo.sweep"
+            version = "0.3.1"
+            teamserver = "1.4.0"
+            techniques = ["T1059.003"]
+            """;
+        var errors = ManifestToml.Load(toml, out var manifest);
+
+        Assert.Empty(errors);
+        Assert.NotNull(manifest);
+        Assert.Equal(["T1082"], manifest!.Verbs[0].Techniques);
+        Assert.Equal(["T1059.003"], manifest.Verbs[1].Techniques);
+    }
+
+    [Fact]
+    public void VerbTechniques_MustMatchTheModuleLevelRollUp()
+    {
+        // ADR-007: once verb rows declare techniques, the module-level
+        // [attack] list is their roll-up; a mismatch is refused so the
+        // catalog and the matrix cannot disagree.
+        var toml = Valid + """
+
+            [[verbs]]
+            name = "demo.run"
+            version = "1.0.0"
+            techniques = ["T1046"]
+            """;
+        var errors = ManifestToml.Load(toml, out var manifest);
+
+        Assert.NotNull(manifest);
+        Assert.Contains(errors, e => e.Contains("must be exactly the union of the verbs' techniques"));
+    }
+
+    [Fact]
+    public void VerbTechniques_OutsideTheIdGrammar_AreNamed()
+    {
+        var toml = Valid.Replace("techniques = [\"t1082\", \"T1059.003\"]", "techniques = []") + """
+
+            [[verbs]]
+            name = "demo.run"
+            version = "1.0.0"
+            techniques = ["T105"]
+            """;
+        var errors = ManifestToml.Load(toml, out var manifest);
+
+        Assert.NotNull(manifest);
+        Assert.Contains(errors, e => e.Contains("'T105' is not an ATT&CK technique id"));
     }
 
     [Fact]
@@ -179,6 +250,34 @@ public class ManifestTests
     }
 
     [Fact]
+    public void CanonicalForm_FoldsVerbTechniquesIntoTheRowLine()
+    {
+        // The row's techniques ride the same signed line as its version and
+        // floor (ADR-007): a tampered technique list breaks the signature
+        // exactly like a tampered version.
+        ManifestToml.Load(Valid + """
+
+            [[verbs]]
+            name = "demo.run"
+            version = "1.0.0"
+            techniques = ["t1082", "T1059.003"]
+
+            [[verbs]]
+            name = "demo.sweep"
+            version = "0.3.1"
+            teamserver = "1.4.0"
+            techniques = ["T1082"]
+            """, out var manifest);
+        var canonical = CanonicalForm.Build(manifest!, new Dictionary<string, string>());
+
+        // Ids normalize to uppercase and sort ordinally within the line.
+        Assert.EndsWith(
+            "verb/demo.sweep=0.3.1 teamserver=1.4.0 techniques=T1082",
+            canonical);
+        Assert.Contains("verb/demo.run=1.0.0 techniques=T1059.003,T1082\n", canonical);
+    }
+
+    [Fact]
     public void MissingRequiredFields_AreEachNamed()
     {
         var errors = ManifestToml.Load("[module]\nname = \"x\"\n", out var manifest);
@@ -261,6 +360,7 @@ public class CanonicalFormTests
         Targets = [new TargetMatrix("implant", "linux", "amd64")],
         Opsec = new OpsecMetadata(true, "Stages one file."),
         Techniques = ["T1082"],
+        Verbs = [new VerbDeclaration("demo-sweep.run", new SemVer(0, 1, 0, null), null, ["T1082"])],
     };
 
     [Fact]
@@ -280,6 +380,7 @@ public class CanonicalFormTests
             Manifest() with { Opsec = new OpsecMetadata(false, "Stages one file.") },
             Manifest() with { Techniques = ["T1005"] },
             Manifest() with { Targets = [new TargetMatrix("implant", "windows", "amd64")] },
+            Manifest() with { Verbs = [new VerbDeclaration("demo-sweep.run", new SemVer(0, 1, 0, null), null, ["T1005"])] },
         };
         foreach (var edited in edits)
             Assert.NotEqual(baseline, CanonicalForm.Build(edited, payload));

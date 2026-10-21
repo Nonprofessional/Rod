@@ -47,16 +47,24 @@ public static class CanonicalForm
                 .OrderBy(t => t, StringComparer.Ordinal)));
 
         // The verb version matrix rides one line per verb, name-sorted, with
-        // a per-verb floor folded in -- so a tampered verb version or floor
-        // breaks the signature exactly like a tampered OPSEC mark.
+        // a per-verb floor and the row's ATT&CK techniques folded in -- so a
+        // tampered verb version, floor, or technique list breaks the
+        // signature exactly like a tampered OPSEC mark.
         foreach (var verb in manifest.Verbs
                      .GroupBy(v => v.Name, StringComparer.Ordinal)
                      .Select(g => g.OrderByDescending(v => v.Version).First())
                      .OrderBy(v => v.Name, StringComparer.Ordinal))
         {
-            Line("verb/" + verb.Name, verb.TeamserverMin is { } floor
+            var value = verb.TeamserverMin is { } floor
                 ? $"{verb.Version} teamserver={floor}"
-                : verb.Version.ToString());
+                : verb.Version.ToString();
+            if (verb.Techniques is { Count: > 0 })
+            {
+                value += " techniques="
+                    + string.Join(",", verb.Techniques.Select(t => t.ToUpperInvariant()).Distinct().OrderBy(t => t, StringComparer.Ordinal));
+            }
+
+            Line("verb/" + verb.Name, value);
         }
 
         // Payload paths use '/' separators and the 'file/' prefix so a

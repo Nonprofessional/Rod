@@ -87,6 +87,7 @@ public static class ManifestToml
         [TomlPropertyName("name")] public string? Name { get; set; }
         [TomlPropertyName("version")] public string? Version { get; set; }
         [TomlPropertyName("teamserver")] public string? Teamserver { get; set; }
+        [TomlPropertyName("techniques")] public List<string>? Techniques { get; set; }
     }
 
     /// <summary>Parses manifest text; syntax errors and semantic errors come
@@ -187,7 +188,14 @@ public static class ManifestToml
                 verbFloor = parsedFloor;
             }
 
-            verbs.Add(new VerbDeclaration(verbName, verbVersion, verbFloor));
+            // The row's techniques are the authoritative per-verb ATT&CK
+            // declaration (ADR-007); they normalize like the module-level list.
+            var verbTechniques = (row.Techniques ?? [])
+                .Where(t => !string.IsNullOrWhiteSpace(t))
+                .Select(t => t.Trim().ToUpperInvariant())
+                .ToList();
+
+            verbs.Add(new VerbDeclaration(verbName, verbVersion, verbFloor, verbTechniques));
         }
 
         if (errors.Count > 0)
@@ -253,16 +261,19 @@ public static class ManifestToml
         sb.AppendLine($"lands-on-disk = {landsOnDisk.ToString().ToLowerInvariant()}  # what running the module leaves on the target");
         sb.AppendLine();
         sb.AppendLine("[attack]");
-        sb.AppendLine("techniques = []  # ATT&CK ids this module covers, e.g. [\"T1082\"]");
+        sb.AppendLine("techniques = []  # the roll-up of the verb rows' techniques, e.g. [\"T1082\"]");
         sb.AppendLine();
         sb.AppendLine("# The verb version matrix (one row per verb the module registers): the");
-        sb.AppendLine("# module-scoped version each verb iterates under, with an optional");
-        sb.AppendLine("# per-verb teamserver floor. The rows ride the signed canonical form.");
+        sb.AppendLine("# module-scoped version each verb iterates under, an optional per-verb");
+        sb.AppendLine("# teamserver floor, and the verb's ATT&CK techniques (ADR-007) -- the");
+        sb.AppendLine("# authoritative declaration the coverage matrix renders. The rows ride");
+        sb.AppendLine("# the signed canonical form.");
         sb.AppendLine();
         sb.AppendLine("[[verbs]]");
         sb.AppendLine($"name = \"{name}.run\"");
         sb.AppendLine("version = \"0.1.0\"");
         sb.AppendLine("# teamserver = \"1.0.0\"  # optional per-verb floor");
+        sb.AppendLine("# techniques = [\"T1082\"]  # this verb's ATT&CK techniques");
         sb.AppendLine();
         sb.AppendLine("# Optional packaging rules; uncomment to narrow what publish packs.");
         sb.AppendLine("# [package]");
